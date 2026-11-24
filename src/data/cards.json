@@ -1,0 +1,194 @@
+[
+  {
+    "id": "rewind",
+    "name": "倒转",
+    "item": "旧手表",
+    "cost": 2,
+    "effects": [{ "type": "rewind" }],
+    "story": "当掉手表换药费的父亲，想把时间倒回去",
+    "color": "#C9973F"
+  },
+  {
+    "id": "promise",
+    "name": "守诺",
+    "item": "婚戒",
+    "cost": 1,
+    "effects": [{ "type": "shield", "value": 5 }],
+    "story": "当掉婚戒换车票的新娘，说“等我回来赎它”",
+    "color": "#8FA8C8"
+  },
+  {
+    "id": "old_book",
+    "name": "旧书",
+    "item": "旧书",
+    "cost": 1,
+    "effects": [{ "type": "draw", "value": 2 }],
+    "story": "当掉一整箱旧书换一顿饭的穷学生",
+    "color": "#5A3A22"
+  },
+  {
+    "id": "abacus",
+    "name": "算盘",
+    "item": "算盘",
+    "cost": 1,
+    "effects": [{ "type": "renqing", "value": 2 }],
+    "story": "老账房先生的算盘，打了一辈子账",
+    "color": "#8A5A33"
+  },
+  {
+    "id": "kerosene_lamp",
+    "name": "煤油灯",
+    "item": "煤油灯",
+    "cost": 1,
+    "effects": [{ "type": "illuminate" }],
+    "story": "停电夜里唯一亮着的灯",
+    "color": "#E8B34B"
+  },
+  {
+    "id": "bronze_mirror",
+    "name": "铜镜",
+    "item": "铜镜",
+    "cost": 2,
+    "effects": [{ "type": "reflect" }],
+    "story": "出嫁时陪嫁的镜子，照见的都是别人",
+    "color": "#C9973F"
+  },
+  {
+    "id": "palm_fan",
+    "name": "蒲扇",
+    "item": "蒲扇",
+    "cost": 1,
+    "effects": [
+      { "type": "shield", "value": 3 },
+      { "type": "draw", "value": 1 }
+    ],
+    "story": "夏天摇了一整个夏天的蒲扇，扇柄磨得发亮",
+    "color": "#D9A066"
+  },
+  {
+    "id": "fountain_pen",
+    "name": "钢笔",
+    "item": "钢笔",
+    "cost": 1,
+    "effects": [{ "type": "damage", "value": 4 }],
+    "story": "记者的钢笔，写过一篇没能发表的报道",
+    "color": "#2E4A73"
+  },
+  {
+    "id": "radio",
+    "name": "收音机",
+    "item": "收音机",
+    "cost": 1,
+    "effects": [{ "type": "reveal" }],
+    "story": "每晚准时响起的收音机，主人已经走了",
+    "color": "#4E739E"
+  },
+  {
+    "id": "sewing_machine",
+    "name": "缝纫机",
+    "item": "缝纫机",
+    "cost": 2,
+    "effects": [{ "type": "heal", "value": 6 }],
+    "story": "母亲的缝纫机，补过全家人的衣服",
+    "color": "#4E7A5A"
+  },
+  {
+    "id": "camera",
+    "name": "相机",
+    "item": "相机",
+    "cost": 1,
+    "effects": [
+      { "type": "damage", "value": 3 },
+      { "type": "draw", "value": 1 }
+    ],
+    "story": "拍过全城的照相馆老师傅的相机",
+    "color": "#2E2118"
+  },
+  {
+    "id": "steelyard_weight",
+    "name": "秤砣",
+    "item": "秤砣",
+    "cost": 1,
+    "effects": [{ "type": "damage", "value": 5 }],
+    "story": "菜市场老秤砣，缺斤短两的反面",
+    "color": "#C9973F"
+  },
+  {
+    "id": "thermos",
+    "name": "暖水瓶",
+    "item": "暖水瓶",
+    "cost": 1,
+    "effects": [{ "type": "shield", "value": 4 }],
+    "story": "冬天唯一的暖水瓶，全家轮流抱着睡",
+    "color": "#B03A2E"
+  },
+  {
+    "id": "rattle_drum",
+    "name": "拨浪鼓",
+    "item": "拨浪鼓",
+    "cost": 0,
+    "effects": [{ "type": "draw", "value": 1 }],
+    "story": "孩子出生那天买的拨浪鼓",
+    "color": "#D9A066"
+  },
+  {
+    "id": "enamel_mug",
+    "name": "搪瓷缸",
+    "item": "搪瓷缸",
+    "cost": 1,
+    "effects": [
+      { "type": "damage", "value": 2 },
+      { "type": "shield", "value": 2 }
+    ],
+    "story": "工厂发的搪瓷缸，磕掉漆也还在用",
+    "color": "#F2E3C6"
+  },
+  {
+    "id": "flashlight",
+    "name": "手电",
+    "item": "手电",
+    "cost": 1,
+    "effects": [{ "type": "renqing_next", "value": 1 }],
+    "story": "巡夜人的手电，照过每一条巷子",
+    "color": "#E8B34B"
+  },
+  {
+    "id": "marbles",
+    "name": "弹珠",
+    "item": "玻璃弹珠",
+    "cost": 1,
+    "effects": [
+      { "type": "damage", "value": 1 },
+      { "type": "draw", "value": 1 }
+    ],
+    "story": "胡同里赢回来的一兜玻璃弹珠",
+    "color": "#8FA8C8"
+  },
+  {
+    "id": "cotton_coat",
+    "name": "旧棉袄",
+    "item": "旧棉袄",
+    "cost": 2,
+    "effects": [{ "type": "shield", "value": 8 }],
+    "story": "奶奶亲手做的棉袄，补丁摞补丁",
+    "color": "#4E7A5A"
+  },
+  {
+    "id": "tin_frog",
+    "name": "铁皮青蛙",
+    "item": "铁皮青蛙",
+    "cost": 1,
+    "effects": [{ "type": "damage_conditional", "value": 3, "bonus": 3 }],
+    "story": "供销社橱窗里的铁皮青蛙，没人买得起",
+    "color": "#4E7A5A"
+  },
+  {
+    "id": "pawn_ticket",
+    "name": "当票",
+    "item": "当票",
+    "cost": 0,
+    "effects": [{ "type": "discard_for_renqing", "value": 2 }],
+    "story": "每一张当票背后，都是一个没讲完的故事",
+    "color": "#B03A2E"
+  }
+]
