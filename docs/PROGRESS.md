@@ -120,3 +120,21 @@
   - 修复：删除 `demonActedThisRound`，改为持久标志 `demonHasActed`（初始 `false`，`endTurn` 心魔行动时置 `true` 且永不重置），同步更新 `src/game/battle.ts`、`src/game/effects.ts`、`src/game/montecarlo.ts`；更新 `tests/unit/effects.test.ts` 对应用例并在 `tests/unit/battle.test.ts` 新增跨回合状态机集成用例（R1 打 3 伤、R2/R3 打 6 伤）；`src/data/cards.json` 与定稿 `docs/GAME_DESIGN.md` 未改动，并在 `docs/DECISIONS.md` 补记语义澄清决策。
   - 复验：`npm run build`（exit 0，`dist/assets/index-BCzWRqKE.js` 1,236.16 kB）、`npm run test`（6/6 文件，44/44 通过）、`npm run test:e2e`（10/10 通过）全部绿灯。
 - **PR 状态**：PR：https://github.com/zhuuchaofan/game-studio/pull/5，CI 两次运行（push 与 pull_request）`build-and-test` 全部 success；未合并，等制作人确认。
+
+## 2026-11-24 — P3 人情 + 1 天流程串联 + 像素修正（feature/p3-day-loop）
+- **范围**：按 `proto-tasks/04-p3-day-loop.md` 与定稿 GDD v1.0 实现跨天流程串联与真 8-bit 像素修正：
+  - **范围 A（1 天流程串联）**：
+    - 新增存档模块 `src/game/save.ts`（`SaveData` v1、localStorage 键 `pawnshop-cards-save-v1`、`createNewGame` / `loadSave` / `saveGame` / `clearSave` / `applyDayResult` / `maxRenqingForLevel` / `demonIdForDay`，版本不符或损坏 JSON 安全返回 `null`）。
+    - `src/data/balance.json` 仅追加 `renqingBase: 3`、`renqingPerLevel: 1`、`renqingCap: 6` 三字段（不改动任何已有平衡数值）；人情上限按 `min(3 + (shopLevel - 1) * 1, 6)` 随当铺等级提升（1 级 3 点 → 4 级起 6 点封顶），`CardBattleScene` 由场景 `data` 接收 `maxRenqing`（向后兼容 P2 默认值）。
+    - 场景串联：`TitleScene` 有存档时在“开始”下方 34px 处显示“继续”（无存档不画），“开始”新开并覆盖存档；`PawnshopScene` 接入 `SaveData`、HUD 右上角增加 `第N天`、每天按 `?seed=` + 天数用纯函数 Fisher-Yates（`shuffleItems`）洗牌当客顺序、多天牌组超过 3 张时分两行紧凑展示、点击“进入夜里牌局”走 6 帧拉灯转场并按天轮换心魔（第 1 天 A「药费」，第 2 天起 B「车票」）；新增 `TransitionScene`（6 条横向色带 12 FPS 自上而下由暖色翻转为冷色，零半透明）；`ResultScene` 结算即自动存档、展示“第 N 天 · 当铺 Lv.x”与“下一天”/“返回标题”双按钮；`src/main.ts` 注册 `TransitionScene`。
+  - **范围 B（真 8-bit 像素修正）**：
+    - 开源像素字体：从官方 Release（tag `2026.11.10`）下载 Fusion Pixel Font 12px 等宽简中版（`fusion-pixel-12px-monospaced-zh_hans.ttf`）至 `/tmp`，核验 `OFL.txt` 确为 SIL OFL 1.1 后复制至 `docs/fonts/OFL.txt` 并登记台账 `docs/ASSET_LEDGER.md`（含 Ark Pixel / Cubic 11 / Galmuri 上游许可说明）；新增生成脚本 `scripts/generate-pixel-font.py` 生成 1-bit 点阵 `src/data/pixel-font.json`（423 字形，89.6 KB ≤ 200 KB，原始 TTF 不入库）；新增 `src/game/pixelFont.ts`（`loadPixelFont` / `addPixelText` / 纯布局与 Phaser 3.90.0 `BitmapFontData` 转换），在 `BootScene.preload` 预载；全场景全部 `this.add.text` 替换为位图字体（`PAWN SHOP CARDS` 24px 2×，其余 12px），`grep -rn "add.text" src/scenes/` 与 `grep -rn "fontFamily" src/` 均 0 命中。
+    - 32×32 真像素插画：新增 `src/data/pixelart.ts`（20 张牌面 + 3 件旧物复用 + 2 个心魔，全部原创逐像素手绘 32×32 点阵，严格 16 色调色板且单图 ≤ 12 色）与 `src/game/pixelart.ts`（`pixelRowsToTexture` + `validatePixelRows`）；替换 `CardBattleScene` 手牌色块与心魔 `drawDemonSilhouette`（函数已删除），替换 `PawnshopScene` 左侧旧物 `drawItemPixelArt`（函数已删除）。
+  - **待评审项记录**：P2 蒙特卡洛结论（A 91.3%、B 97.3% 3 回合胜率、零血量归零负、生存压力过小）及铁皮青蛙“本回合”措辞仍待制作人决定，P3 沿用既有数值与 `demonHasActed` 实现未改动。
+- **分支名**：`feature/p3-day-loop`
+- **验证证据**：
+  - `npm run build` 退出码 0（`tsc --noEmit` + `vite build`，`dist/index.html` 0.70 kB，JS 1,357.40 kB ≤ 2 MB 预算）；
+  - `npm run test` 9/9 文件、61/61 单测全部通过（新增 `save.test.ts` 9、`pixelart.test.ts` 6、`pixelFont.test.ts` 2；既有 44 用例全绿）；
+  - `npm run test:e2e` 13/13 全部通过（新增 `dayloop.spec.ts` 3，覆及第 1 天→6 帧拉灯转场中间帧→夜里胜局→自动存档→第 2 天 HUD/人情 4/心魔 B→刷新后“继续”读档 round-trip→负局牌组不变天数 +1→桌面 1280×720 与手机竖屏 390×844 截图；既有 10 用例全绿，`pawnshop.spec.ts` 按洗牌后种子顺序更新断言），无失败请求、无 `pageerror`；
+  - 像素修正前后对比：修正前全场景为浏览器抗锯齿 `monospace` 字体 + `Graphics.fillRect` 色块占位；修正后所有文字均为 Fusion Pixel 12px 1-bit 硬边位图点阵（24px 标题整数 2× 锐利无锯齿），20 张牌面 + 3 件旧物 + 2 个心魔全部替换为 32×32 手绘 16 色真像素插画，桌面与竖屏截图逐张核验清晰无重叠。
+- **PR 状态**：PR 待建。
