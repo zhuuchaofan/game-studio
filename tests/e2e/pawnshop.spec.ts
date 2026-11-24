@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { clickLogical } from './helpers';
 
 interface DebugState {
   phase: 'title' | 'negotiating' | 'feedback' | 'summary';
@@ -8,9 +9,6 @@ interface DebugState {
   deck: string[];
   log: string[];
 }
-
-const LOGICAL_WIDTH = 320;
-const LOGICAL_HEIGHT = 180;
 
 // Logical button centers matching TitleScene & PawnshopScene layout
 const BUTTONS = {
@@ -44,18 +42,6 @@ async function waitForPhase(page: Page, expectedPhase: DebugState['phase']): Pro
     })
     .toBe(expectedPhase);
   return getDebugState(page);
-}
-
-async function clickLogical(
-  page: Page,
-  canvas: Locator,
-  point: { x: number; y: number },
-): Promise<void> {
-  const box = await canvas.boundingBox();
-  expect(box).not.toBeNull();
-  const clientX = box!.x + (point.x / LOGICAL_WIDTH) * box!.width;
-  const clientY = box!.y + (point.y / LOGICAL_HEIGHT) * box!.height;
-  await page.mouse.click(clientX, clientY);
 }
 
 function trackErrors(page: Page): { pageErrors: string[]; failedRequests: string[] } {

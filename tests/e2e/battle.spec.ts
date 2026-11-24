@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { clickLogical, LOGICAL_WIDTH } from './helpers';
 
 interface PawnshopDebugState {
   phase: 'title' | 'negotiating' | 'feedback' | 'summary';
@@ -43,8 +44,6 @@ interface BattleDebugState {
   loseReason?: string | null;
 }
 
-const LOGICAL_WIDTH = 320;
-const LOGICAL_HEIGHT = 180;
 const CARD_WIDTH = 48;
 const CARD_GAP = 4;
 const HAND_MARGIN_X = 6;
@@ -86,18 +85,6 @@ function computeHandCardX(index: number, count: number): number {
   const totalWidth = CARD_WIDTH + (count - 1) * step;
   const startCenterX = Math.floor((LOGICAL_WIDTH - totalWidth) / 2) + Math.floor(CARD_WIDTH / 2);
   return startCenterX + index * step;
-}
-
-async function clickLogical(
-  page: Page,
-  canvas: Locator,
-  point: { x: number; y: number },
-): Promise<void> {
-  const box = await canvas.boundingBox();
-  expect(box).not.toBeNull();
-  const clientX = box!.x + (point.x / LOGICAL_WIDTH) * box!.width;
-  const clientY = box!.y + (point.y / LOGICAL_HEIGHT) * box!.height;
-  await page.mouse.click(clientX, clientY);
 }
 
 async function waitForPawnshopPhase(
@@ -154,7 +141,6 @@ async function waitForBattleReady(
           }
           return true;
         }, expectedPhase ?? null),
-      { timeout: 10000 },
     )
     .toBe(true);
   return getBattleState(page);
