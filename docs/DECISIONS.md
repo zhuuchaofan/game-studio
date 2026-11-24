@@ -32,3 +32,13 @@
 - **决策**：Phaser `3.90.0`（精确）、TypeScript `5.9.x`、Vite `8.3.8`、Vitest、Playwright。
 - **理由**：P0 05 号文档结论；npm 上 `phaser` 的 latest 标签已指向 4.2.1，`^` 会装错；TS 7.0.2 刚出，求稳用 5.9.x。
 - **影响**：`package.json` 必须写死版本号；升级须另行决策。
+
+## 2026-11-24 — `push_files` 403，改走逐文件 contents API 推送
+- **决策**：快照推送（git trees API）报 403 后，改用 `create_or_update_file` 逐文件推送 19 个文件上 `feature/m0-scaffold` 分支。
+- **理由**：实测 contents API 可用（14 个代码/配置文件 + 5 个文档全部成功，各有 commit SHA）；`push_files` 的 403 原因未明（疑似连接器侧 git 数据库 API 权限不足），不硬试。
+- **影响**：分支上有 20 个单文件提交（无本地 git 历史）；后续推送沿用逐文件方式；`push_files` 问题待以后复查。
+
+## 2026-11-24 — workflow 文件无法推送，CI 与部署阻塞，PR 暂不合并
+- **决策**：`.github/workflows/ci.yml` 与 `deploy-pages.yml` 经 contents API 推送报 403（GitHub 要求 workflow 权限，本次 App 安装未授予）；CI 与 Pages 部署记为“阻塞、未验证”，PR #1 保持开启、暂不合并。
+- **理由**：红线要求“CI 绿了再合”；没有 workflow 文件就没有 CI 运行，无法验证“绿”，不能把“无 CI 结果”当作通过。
+- **影响**：需制作人二选一：① 调整 Muse App 安装权限授予 workflow 权限后由我重推两个文件；② 在网页上手动创建两个文件（内容与本地 `repo/.github/workflows/` 一致），文件进 main 后 CI 首次运行、部署工作流首次运行，届时再验证并合并。
