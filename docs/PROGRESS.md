@@ -137,10 +137,16 @@
   - `npm run test` 9/9 文件、61/61 单测全部通过（新增 `save.test.ts` 9、`pixelart.test.ts` 6、`pixelFont.test.ts` 2；既有 44 用例全绿）；
   - `npm run test:e2e` 13/13 全部通过（新增 `dayloop.spec.ts` 3，覆及第 1 天→6 帧拉灯转场中间帧→夜里胜局→自动存档→第 2 天 HUD/人情 4/心魔 B→刷新后“继续”读档 round-trip→负局牌组不变天数 +1→桌面 1280×720 与手机竖屏 390×844 截图；既有 10 用例全绿，`pawnshop.spec.ts` 按洗牌后种子顺序更新断言），无失败请求、无 `pageerror`；
   - 像素修正前后对比：修正前全场景为浏览器抗锯齿 `monospace` 字体 + `Graphics.fillRect` 色块占位；修正后所有文字均为 Fusion Pixel 12px 1-bit 硬边位图点阵（24px 标题整数 2× 锐利无锯齿），20 张牌面 + 3 件旧物 + 2 个心魔全部替换为 32×32 手绘 16 色真像素插画，桌面与竖屏截图逐张核验清晰无重叠。
-- **PR 状态**：PR 待建（制作人决定：以后提交由 AGY 自己做，`git push` + `gh pr create`，不再走连接器逐文件推送；本分支 25 个 P3 文件已推完并逐个核对一致，PR 由 AGY 认证就绪后创建）。
+- **PR 状态**：PR #6 已建并合并（merge commit f7af78d）。
 - **CI 可靠性修复（2026-11-24 追加，本地已改、待 AGY 一并推送）**：`ci.yml` 在 E2E 前加
   `actions/cache@v4` 缓存 `~/.cache/ms-playwright`（key 按 `package-lock.json`
   哈希，Playwright 版本变则失效重下）；`npx playwright install --with-deps chromium`
   保留，缓存命中时跳过约 150MB 下载。原因：P1/P2 每推文件单独触发 CI，有运行
   跑 6 分多钟才绿、偶发失败发邮件。`.github/workflows/` 不能走连接器推送（403），
   由 AGY 直接 push。
+
+## 部署故障记录（2026-11-24）
+- Deploy #3、#4、#5、#6 全部失败。
+- **#6 第 1 次**：构建成功、artifact 已上传，但部署步取不到 artifact 元数据（报错 `No artifacts named github-pages were found`）。
+- **第 2 次 Re-run failed jobs**：重跑又上传了一个同名 artifact，运行里出现 2 个 `github-pages` 成品，`deploy-pages@v4` 要求恰好 1 个，报 `Artifact count is 2` 而失败。
+- **结论**：重跑修不好，必须触发一次全新的部署运行；本次提交即为触发全新部署的提交。
