@@ -3,10 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
-  // Serial on CI: parallel Chromium instances contend for the shared
-  // runner's CPU (software rendering), which stalls the game loop and
-  // makes phase waits time out in the longest multi-day flow tests.
-  workers: process.env.CI ? 1 : undefined,
+  // Do NOT force workers: 1 on CI (reverted 2026-11-24): serial made CI
+  // strictly worse — 2 workers: 1-2 E2E failures per run; 1 worker:
+  // 8-11 failures, including 1s pawnshop tests timing out at 15s.
+  // Keep Playwright's default (2 workers on the 4-core runner).
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: 'list',
