@@ -1,0 +1,157 @@
+import { describe, expect, it } from 'vitest';
+import cardsJson from '../../src/data/cards.json';
+import demonsJson from '../../src/data/demons.json';
+import itemsJson from '../../src/data/items.json';
+import pixelFontJson from '../../src/data/pixel-font.json';
+import { CARD_PIXEL_ART, DEMON_PIXEL_ART, ITEM_PIXEL_ART } from '../../src/data/pixelart';
+import {
+  MAX_COLORS_PER_SPRITE,
+  parsePaletteChar,
+  PIXEL_PALETTE,
+  SPRITE_SIZE,
+  validatePixelRows,
+} from '../../src/game/pixelart';
+
+describe('Pixel art validation (20 cards + 3 items + 2 demons)', () => {
+  it('validates helper functions and rejects malformed sprites', () => {
+    expect(parsePaletteChar('.')).toBe(-1);
+    expect(parsePaletteChar('0')).toBe(0);
+    expect(parsePaletteChar('9')).toBe(9);
+    expect(parsePaletteChar('A')).toBe(10);
+    expect(parsePaletteChar('f')).toBe(15);
+    expect(parsePaletteChar('G')).toBeNull();
+    expect(parsePaletteChar(' ')).toBeNull();
+
+    const wrongRows = validatePixelRows(['0'.repeat(32)]);
+    expect(wrongRows.valid).toBe(false);
+
+    const wrongCols = validatePixelRows(Array.from({ length: 32 }, () => '0'.repeat(31)));
+    expect(wrongCols.valid).toBe(false);
+
+    const badChar = validatePixelRows(
+      Array.from({ length: 32 }, (_, idx) => (idx === 0 ? 'Z' + '0'.repeat(31) : '0'.repeat(32))),
+    );
+    expect(badChar.valid).toBe(false);
+
+    const tooManyColors = validatePixelRows(
+      Array.from({ length: 32 }, () => '0123456789ABCDEF' + '.'.repeat(16)),
+    );
+    expect(tooManyColors.valid).toBe(false);
+    expect(tooManyColors.colorCount).toBe(16);
+  });
+
+  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 20 cards in cards.json', () => {
+    expect(cardsJson).toHaveLength(20);
+    expect(Object.keys(CARD_PIXEL_ART)).toHaveLength(20);
+
+    for (const card of cardsJson) {
+      const sprite = CARD_PIXEL_ART[card.id];
+      expect(sprite, `Missing pixel art for card "${card.id}" (${card.name})`).toBeDefined();
+
+      const res = validatePixelRows(sprite, SPRITE_SIZE, PIXEL_PALETTE, MAX_COLORS_PER_SPRITE);
+      expect(res.errors, `Card "${card.id}" validation errors`).toEqual([]);
+      expect(res.valid).toBe(true);
+      expect(res.colorCount).toBeLessThanOrEqual(MAX_COLORS_PER_SPRITE);
+      expect(res.colorCount).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 3 pawnshop items in items.json', () => {
+    expect(itemsJson).toHaveLength(3);
+    expect(Object.keys(ITEM_PIXEL_ART)).toHaveLength(3);
+
+    for (const item of itemsJson) {
+      const sprite = ITEM_PIXEL_ART[item.id];
+      expect(sprite, `Missing pixel art for item "${item.id}" (${item.name})`).toBeDefined();
+
+      const res = validatePixelRows(sprite, SPRITE_SIZE, PIXEL_PALETTE, MAX_COLORS_PER_SPRITE);
+      expect(res.errors, `Item "${item.id}" validation errors`).toEqual([]);
+      expect(res.valid).toBe(true);
+      expect(res.colorCount).toBeLessThanOrEqual(MAX_COLORS_PER_SPRITE);
+    }
+  });
+
+  it('defines valid 32x32 16-color (<=12 colors) pixel art for both demons in demons.json', () => {
+    expect(demonsJson).toHaveLength(2);
+    expect(Object.keys(DEMON_PIXEL_ART)).toHaveLength(2);
+
+    for (const demon of demonsJson) {
+      const sprite = DEMON_PIXEL_ART[demon.id];
+      expect(sprite, `Missing pixel art for demon "${demon.id}" (${demon.name})`).toBeDefined();
+
+      const res = validatePixelRows(sprite, SPRITE_SIZE, PIXEL_PALETTE, MAX_COLORS_PER_SPRITE);
+      expect(res.errors, `Demon "${demon.id}" validation errors`).toEqual([]);
+      expect(res.valid).toBe(true);
+      expect(res.colorCount).toBeLessThanOrEqual(MAX_COLORS_PER_SPRITE);
+    }
+  });
+});
+
+describe('Pixel bitmap font JSON coverage', () => {
+  function collectStrings(value: unknown, out: string[]): void {
+    if (typeof value === 'string') {
+      out.push(value);
+    } else if (Array.isArray(value)) {
+      for (const item of value) {
+        collectStrings(item, out);
+      }
+    } else if (value && typeof value === 'object') {
+      for (const v of Object.values(value)) {
+        collectStrings(v, out);
+      }
+    }
+  }
+
+  it('covers every character in cards.json, items.json, demons.json, and title/UI text', () => {
+    const glyphs = pixelFontJson.glyphs as Record<string, { advance: number; rows: string[] }>;
+    const allStrings: string[] = [
+      'PAWN SHOP CARDS',
+      '当铺纸牌',
+      '开始',
+      '继续',
+      '下一天',
+      '返回标题',
+      '进入夜里牌局',
+      '结束回合',
+      '赢了！',
+      '心魔还在……',
+      '白天结束',
+      '没有牌可打',
+      '白天未收到旧物纸牌',
+      '第 1 天 · 当铺 Lv.1',
+    ];
+
+    collectStrings(cardsJson, allStrings);
+    collectStrings(itemsJson, allStrings);
+    collectStrings(demonsJson, allStrings);
+
+    const missing = new Set<string>();
+    for (const str of allStrings) {
+      for (const ch of str) {
+        if (ch === '\n' || ch === '\r') {
+          continue;
+        }
+        if (!(ch in glyphs)) {
+          missing.add(ch);
+        }
+      }
+    }
+
+    expect([...missing]).toEqual([]);
+  });
+
+  it('uses 12px binary 0/1 rows matching each glyph advance width', () => {
+    expect(pixelFontJson.size).toBe(12);
+    const glyphs = pixelFontJson.glyphs as Record<string, { advance: number; rows: string[] }>;
+    expect(Object.keys(glyphs).length).toBeGreaterThan(200);
+
+    for (const [ch, glyph] of Object.entries(glyphs)) {
+      expect(glyph.rows, `Glyph "${ch}" row count`).toHaveLength(12);
+      expect(glyph.advance, `Glyph "${ch}" advance`).toBeGreaterThan(0);
+      for (const row of glyph.rows) {
+        expect(row.length, `Glyph "${ch}" row width`).toBe(glyph.advance);
+        expect(row).toMatch(/^[01]+$/);
+      }
+    }
+  });
+});

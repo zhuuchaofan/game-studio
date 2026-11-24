@@ -168,3 +168,58 @@
 - **决策**：19 号牌“铁皮青蛙”（`damage_conditional`，`value: 3, bonus: 3`）的触发条件由字面“敌方本回合已行动”澄清为“敌方此前回合已行动”——在 `BattleState` 中用持久标志 `demonHasActed`（初始 `false`，`endTurn` 心魔行动时置 `true` 且不再重置）取代原 `demonActedThisRound`，使铁皮青蛙在 R1 打 3 伤、R2/R3 打 6 伤；`src/data/cards.json` 效果声明不变，`docs/GAME_DESIGN.md` 为定稿文档暂不动，交由制作人定夺是否修订措辞。
 - **理由**：本作牌局为玩家先手回合制（玩家仅能在 `play` 阶段出牌，心魔在 `endTurn` 的 `demonAct` 阶段才行动）；原 `demonActedThisRound` 进入下一回合即重置为 `false`，导致真实对局中玩家出牌时该标志恒为 `false`，铁皮青蛙永远只能打 3 伤、严格弱于 1 费 4 伤的“钢笔”，沦为违背 GDD 验证清单“无废牌”要求的废牌。
 - **影响**：铁皮青蛙确立为“R1 较弱（3 伤）、R2/R3 发力（6 伤）”的后手爆发 1 费牌，与钢笔（恒定 4 伤）形成清晰取舍；`src/game/effects.ts`、`src/game/battle.ts`、`src/game/montecarlo.ts` 及单测同步使用 `demonHasActed` 并补充跨回合状态机集成用例。
+
+## 2026-11-24 — P3 存档格式 v1 与自动存档时机
+- **决策**：新增 `src/game/save.ts`，localStorage 键定为 `'pawnshop-cards-save-v1'`，结构 `{ version: 1, day, money, reputation, deck, shopLevel, redeemTickets }`；读档时版本号不符、缺字段或 JSON 损坏一律静默返回 `null`（不崩溃、不弹窗）；在 `ResultScene` 确定胜负并算出奖励后立即自动 `saveGame`；败局“执念加重”本次仅做占位记录，不引入新数值。
+- **理由**：对齐 `docs/ARCHITECTURE.md` 第 6/8 节（跨天状态独立 `SaveData` 模块且带 `version` 字段）与原型无须手动存档的轻量体验；单测可通过注入 `StorageLike` mock 覆盖全部异常分支。
+- **影响**：跨天进度（天数、钱、口碑、牌组、当铺等级、赎当券）在刷新页面后稳定持久化；后续版本升级时按 `version` 字段做迁移即可。
+
+## 2026-11-24 — TitleScene “开始”直接覆盖旧存档，无存档不画“继续”
+- **决策**：有合法存档时 `TitleScene` 在“开始”下方 34px 处显示“继续”按钮（读档进当前天 `PawnshopScene`）；无存档时不绘制“继续”按钮；点击“开始”立即 `createNewGame()` 并 `saveGame` 覆盖旧存档，不弹二次确认框。
+- **理由**：延续 P1“不画死按钮”原则，原型阶段先以单自动档跑通 1 天流程与读档 round-trip，降低交互复杂度。
+- **影响**：多档位（3 档 + 自动档）与覆盖确认留待垂直切片阶段实现。
+
+## 2026-11-24 — 夜里心魔按天轮换（占位规则：第 1 天 A，第 2 天起 B）
+- **决策**：`demonIdForDay(day)` 在第 1 天夜里固定派发心魔 A「药费」（教学），第 2 天及以后均派发心魔 B「车票」（第 4 天及以后仍为 B）；URL 参数 `?demon=a|b` 仍具有最高优先级供测试覆盖。
+- **理由**：原型范围仅有 2 种心魔，按天切换可让玩家在连续两天的完整循环中自然体验教学与大招预警两种节奏，不引入超出原型范围的新心魔。
+- **影响**：`PawnshopScene` 转场进入夜里牌局时按 `save.day` 传入 `demonId`；正式版扩充 7 个大心魔时直接替换该调度函数即可。
+
+## 2026-11-24 — 胜场升 1 级且人情上限随等级提升至 6 封顶
+- **决策**：`src/data/balance.json` 追加 `renqingBase: 3`、`renqingPerLevel: 1`、`renqingCap: 6` 三字段（不改动任何已有数值）；每赢一场夜里牌局 `shopLevel += 1`，`maxRenqing = min(3 + (shopLevel - 1) * 1, 6)`（1 级 3 点、2 级 4 点、3 级 5 点、4 级起 6 点封顶）；`CardBattleScene` 通过场景 `data.maxRenqing` 注入，不传时默认回退 `balance.json.maxRenqing`。
+- **理由**：落实定稿 GDD 机制卡 2（开局 3 点、每升 1 级 +1、最高 6）并保持对 P2 既有单测与调用方的完全向后兼容。
+- **影响**：胜局次日夜里即能体验人情上限成长（如第 2 天 4/4 人情）；负局等级与人情上限保持不变。
+
+## 2026-11-24 — 白天当客按 `?seed=` + 天数确定性洗牌
+- **决策**：在 `src/game/pawnshop.ts` 新增纯函数 `deriveDaySeed(baseSeed, day)` 与 Fisher-Yates `shuffleItems(items, rng)`，每天进入 `PawnshopScene` 时按当日派生种子洗牌 3 位当客顺序，同时保留独立的 URL `?seed=` RNG 供三档报价接受率判定。
+- **理由**：消除 P1 固定顺序的重复感，同时确保固定 `?seed=` + 天数下顺序 100% 可复现且不破坏 P1 报价接受/拒绝分支的种子概率序列。
+- **影响**：P1 既有 E2E 测试 `tests/e2e/pawnshop.spec.ts` 已按 `seed=7, day=1` 的确定性洗牌顺序（婚戒 → 旧手表 → 旧书）更新断言，未删任何用例。
+
+## 2026-11-24 — 白天→夜里 6 帧硬边“拉灯”转场实现方式
+- **决策**：新增 `TransitionScene`（仅在 `PawnshopScene` 结算屏点击“进入夜里牌局”时触发），将 320×180 画面分为 6 条 30px 横向色带，以 12 FPS（约 83ms/帧）自上而下依次由暖色（烛光/旧纸/灯黄/铜棕/木棕/深木）硬切为冷色（夜黑/深蓝），右侧同步下拉像素拉灯绳，播完 6 帧后切入 `CardBattleScene`。
+- **理由**：严格遵守 `docs/ART_STYLE.md` §1/§6“禁止渐变与大面积半透明、不用淡入淡出、6 帧暖转冷拉灯”的 8-bit 规范。
+- **影响**：其余场景切换保持瞬切不拖沓；暴露只读钩子 `window.__TRANSITION_DEBUG__` 供 E2E 稳定捕获中间帧截图。
+
+## 2026-11-24 — 开源像素字体选定 Fusion Pixel 12px（OFL-1.1）与 JSON 点阵子集化方案
+- **决策**：全项目文字统一采用 **Fusion Pixel Font 12px 等宽简体中文版**（TakWolf，Release `2026.11.10`，SIL OFL 1.1；备选 Zpix 仅在 Fusion Pixel 无法下载时启用，本次官方 Release 顺利获取故未启用备选）；构建时将官方 TTF 下载至 `/tmp` 用 `scripts/generate-pixel-font.py` 按项目全部字符串字面量与 JSON 数据提取字符并 12px 阈值二值化为纯文本 `src/data/pixel-font.json`（423 字形，89.6 KB），原始 TTF 不入库；运行时由 `src/game/pixelFont.ts` 拼出内存 Canvas 纹理并注册进 Phaser `cache.bitmapFont`，全场景 `this.add.text` 改为 `addPixelText`（`BitmapText` + `setTint`）。
+- **理由**：彻底消除浏览器系统字体抗锯齿违和感；不提交 7MB 二进制 TTF 既规避连接器推送二进制风险又控制构建体积（JSON 仅 89.6 KB）；许可全文副本（`docs/fonts/OFL.txt`）与上游字体（Ark Pixel / Cubic 11 / Galmuri）信息完整登记在 `docs/ASSET_LEDGER.md`。
+- **影响**：所有场景文字达到真 8-bit 硬边点阵效果，后续若新增游戏文案只需重跑 `scripts/generate-pixel-font.py` 即可自动补全字形（单测 `pixelart.test.ts` 强制校验 0 缺字）。
+
+## 2026-11-24 — 牌面、旧物与心魔采用 32×32 原创手绘 16 色点阵方案
+- **决策**：新增纯文本 `src/data/pixelart.ts` 手绘 20 张原型牌面 + 3 件旧物（手表/婚戒/旧书复用牌面画法）+ 2 个心魔的 32×32 点阵，严格限定使用 `docs/ART_STYLE.md` 16 色调色板且单图 ≤ 12 色、统一 1px 描边，不用 AI 生图；由 `src/game/pixelart.ts` 的 `pixelRowsToTexture` 转为 Phaser 纹理替换原有 `Graphics.fillRect` 占位（删除 `PawnshopScene.drawItemPixelArt` 与 `CardBattleScene.drawDemonSilhouette`）。
+- **理由**：以纯文本可审、可单测的方式交付真 8-bit 牌面与立绘，避免外部素材版权与风格割裂问题，同时保持 48×64 牌框与 320×180 整数缩放规范不变。
+- **影响**：牌局与白天场景具备高辨识度的真像素视觉表现；场景背景（柜台/牌桌/台灯）按任务书边界暂维持现状，留待正式美术阶段统一替换。
+
+## 2026-11-24 — P2 蒙特卡洛平衡结论与铁皮青蛙措辞维持待评审（P3 未改数值与定稿 GDD）
+- **决策**：P3 不改动任何已有平衡数值（`balance.json` 仅追加 `renqingBase/renqingPerLevel/renqingCap`）且不修改定稿 `docs/GAME_DESIGN.md` 中铁皮青蛙“本回合”措辞；P2 蒙特卡洛模拟结论（A 91.3%、B 97.3% 3 回合胜率、零血量归零负、30 血下生存压力偏小）继续挂作制作人待评审项，铁皮青蛙实现保持 `demonHasActed`（R1 3 伤、R2/R3 6 伤）。
+- **理由**：遵守 P3 任务书红线，数值与定稿文档修订权归制作人，原型 P3 聚焦流程串联与像素修正。
+- **影响**：待制作人拍板是否调整血量/心魔伤害 JSON 或修订 GDD 措辞后再另开轻量任务执行。
+
+## 2026-11-24 — CI 缓存 Playwright 浏览器（actions/cache）
+- **决策**：`ci.yml` 的 `build-and-test` job 在单元测试之后、安装 Playwright Chromium 之前加一步 `Cache Playwright browsers`（`actions/cache@v4`，`path: ~/.cache/ms-playwright`，`key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}`，`restore-keys` 前缀 `${{ runner.os }}-playwright-`）；`npx playwright install --with-deps chromium` 保留原样。
+- **理由**：P1/P2 每次推文件都单独触发 CI，有运行跑 6 分多钟才绿，疑似 Playwright 浏览器下载重试、偶发失败，失败就给制作人发邮件；缓存命中后安装步跳过约 150MB 下载，只装系统依赖。key 绑 `package-lock.json` 哈希，Playwright 版本变化时自动失效重下。
+- **影响**：CI 运行更快更稳；未改动任何测试步骤与行为。`.github/workflows/` 不能走连接器推送（403），本次改动由 AGY 在 GitHub 认证就绪后直接 `git push` 提交。
+
+## 2026-11-24 — 以后提交由 AGY 自己做，不再走连接器逐文件推送
+- **决策**：push 分支、开 PR 改由 AGY 在本地直接 `git push` + `gh pr create` 提交；协调员不再用 Muse GitHub 连接器逐文件推送，也不再弹审批卡。
+- **理由**：逐文件推送是 CI 邮件轰炸的根源之一——一个 PR 十几个提交触发几十次 CI 运行；且制作人反馈每次提交 CI 老是不通过、GitHub 失败邮件发得烦。
+- **影响**：本分支 `feature/p3-day-loop` 的 25 个 P3 文件已在决定前经连接器推完并逐个核对一致；PR 尚未建，等 AGY 认证就绪后由 AGY 创建；待 AGY 一并推送的本地改动：`.github/workflows/ci.yml`（CI 缓存）、`docs/PROGRESS.md` 与 `docs/DECISIONS.md` 的 CI 修复记录。

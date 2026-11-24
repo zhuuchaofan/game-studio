@@ -1,6 +1,6 @@
 import balanceJson from '../data/balance.json';
 import itemsJson from '../data/items.json';
-import type { RngFn } from '../utils/rng';
+import { hashSeed, type RngFn } from '../utils/rng';
 
 export type OfferTier = 'low' | 'fair' | 'high';
 
@@ -45,6 +45,7 @@ export interface OfferOutcome {
 }
 
 export interface PawnshopState {
+  day: number;
   phase: PawnshopPhase;
   customerIndex: number;
   money: number;
@@ -55,6 +56,15 @@ export interface PawnshopState {
   lastOutcome: OfferOutcome | null;
 }
 
+export interface PawnshopInitialOptions {
+  day?: number;
+  money?: number;
+  reputation?: number;
+  deck?: readonly string[];
+  items?: readonly PawnItem[];
+  balance?: BalanceConfig;
+}
+
 export interface PawnshopDebugSnapshot {
   phase: DebugPhase;
   customerIndex: number;
@@ -62,6 +72,12 @@ export interface PawnshopDebugSnapshot {
   reputation: number;
   deck: string[];
   log: string[];
+  day?: number;
+  shopLevel?: number;
+  redeemTickets?: number;
+  maxRenqing?: number;
+  itemsOrder?: string[];
+  hasSave?: boolean;
 }
 
 /**
@@ -142,18 +158,64 @@ export function resolveOffer(rate: number, rng: RngFn): boolean {
 }
 
 /**
- * Creates a fresh daytime pawnshop state from balance and item data.
+ * Derives a deterministic seed from the base URL seed and the current day number.
+ */
+export function deriveDaySeed(baseSeed: number, day: number): number {
+  return hashSeed(`${baseSeed >>> 0}:day:${day}`);
+}
+
+/**
+ * Pure Fisher-Yates shuffle returning a new array of cloned PawnItems.
+ */
+export function shuffleItems(items: readonly PawnItem[], rng: RngFn): PawnItem[] {
+  const result = items.map((item) => ({ ...item }));
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = result[i];
+    result[i] = result[j];
+    result[j] = tmp;
+  }
+  return result;
+}
+
+function isBalanceConfig(value: unknown): value is BalanceConfig {
+  return typeof value === 'object' && value !== null && 'tiers' in value;
+}
+
+/**
+ * Creates a fresh daytime pawnshop state from balance and item data,
+ * optionally overriding day/money/reputation/deck/items from SaveData.
  */
 export function createInitialState(
-  balance: BalanceConfig = BALANCE,
-  items: readonly PawnItem[] = ITEMS,
+  initialOrBalance?: PawnshopInitialOptions | BalanceConfig,
+  legacyItems?: readonly PawnItem[],
 ): PawnshopState {
+  if (isBalanceConfig(initialOrBalance)) {
+    const items = legacyItems ?? ITEMS;
+    return {
+      day: 1,
+      phase: 'negotiating',
+      customerIndex: 0,
+      money: initialOrBalance.startingMoney,
+      reputation: initialOrBalance.startingReputation,
+      deck: [],
+      log: [],
+      items: items.map((item) => ({ ...item })),
+      lastOutcome: null,
+    };
+  }
+
+  const opts = initialOrBalance ?? {};
+  const balance = opts.balance ?? BALANCE;
+  const items = opts.items ?? legacyItems ?? ITEMS;
+
   return {
+    day: opts.day ?? 1,
     phase: 'negotiating',
     customerIndex: 0,
-    money: balance.startingMoney,
-    reputation: balance.startingReputation,
-    deck: [],
+    money: opts.money ?? balance.startingMoney,
+    reputation: opts.reputation ?? balance.startingReputation,
+    deck: opts.deck ? [...opts.deck] : [],
     log: [],
     items: items.map((item) => ({ ...item })),
     lastOutcome: null,
@@ -196,6 +258,7 @@ export function settle(
     : `${currentItem.name}:${tierConfig.label}(${price})->拒绝`;
 
   return {
+    day: state.day,
     phase: 'feedback',
     customerIndex: state.customerIndex,
     money: nextMoney,
