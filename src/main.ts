@@ -4,6 +4,7 @@ import { CardBattleScene } from './scenes/CardBattleScene';
 import { PawnshopScene } from './scenes/PawnshopScene';
 import { ResultScene } from './scenes/ResultScene';
 import { TitleScene } from './scenes/TitleScene';
+import { TransitionScene } from './scenes/TransitionScene';
 import { BASE_HEIGHT, BASE_WIDTH, calculateScaledDimensions } from './utils/scale';
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -18,7 +19,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.NONE,
   },
-  scene: [BootScene, TitleScene, PawnshopScene, CardBattleScene, ResultScene],
+  scene: [BootScene, TitleScene, PawnshopScene, TransitionScene, CardBattleScene, ResultScene],
 };
 
 const game = new Phaser.Game(config);
