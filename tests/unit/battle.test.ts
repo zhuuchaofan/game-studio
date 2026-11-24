@@ -226,4 +226,77 @@ describe('Battle state machine', () => {
     state = playCard(state, frogIdxR3);
     expect(state.demonHp).toBe(5);
   });
+
+  it('plays P4 new cards (飞驰, 余音, 集邮) using existing effect types without introducing new mechanics', () => {
+    const rng = mulberry32(19);
+    let state = createBattle(
+      ['飞驰', '余音', '集邮', '守诺', '旧书', '钢笔'],
+      'c',
+      rng,
+      CARDS,
+      DEMONS,
+      BALANCE,
+    );
+
+    expect(state.demonId).toBe('c');
+    expect(state.demonName).toBe('房租');
+    expect(state.demonHp).toBe(22);
+
+    // 集邮 (cost 1): draw 1 + renqing +1 (net 0 renqing, hand size unchanged)
+    const stampIdx = state.hand.indexOf('集邮');
+    if (stampIdx >= 0) {
+      const prevHandLen = state.hand.length;
+      state = playCard(state, stampIdx);
+      expect(state.renqing).toBe(3);
+      expect(state.hand).toHaveLength(prevHandLen);
+    }
+
+    // 余音 (cost 1): damage 3 + renqing +1 (net 0 renqing)
+    const echoIdx = state.hand.indexOf('余音');
+    expect(echoIdx).toBeGreaterThanOrEqual(0);
+    const hpBeforeEcho = state.demonHp;
+    state = playCard(state, echoIdx);
+    expect(state.demonHp).toBe(hpBeforeEcho - 3);
+    expect(state.renqing).toBe(3);
+
+    // 飞驰 (cost 2): damage 6
+    const gallopIdx = state.hand.indexOf('飞驰');
+    expect(gallopIdx).toBeGreaterThanOrEqual(0);
+    const hpBeforeGallop = state.demonHp;
+    state = playCard(state, gallopIdx);
+    expect(state.demonHp).toBe(hpBeforeGallop - 6);
+    expect(state.renqing).toBe(1);
+  });
+
+  it('verifies Demon C (房租) escalating damage 3->4->5 and Demon D (学费) Round 3 skill "开学" 10 damage', () => {
+    // Demon C: 22 HP, 3 -> 4 -> 5
+    let stateC = createBattle(TEST_DECK, 'c', mulberry32(21), CARDS, DEMONS, BALANCE);
+    expect(stateC.demonHp).toBe(22);
+    expect(getIntent(stateC).current).toEqual({ round: 1, damage: 3 });
+    stateC = endTurn(stateC);
+    expect(stateC.playerHp).toBe(27);
+    expect(getIntent(stateC).current).toEqual({ round: 2, damage: 4 });
+    stateC = endTurn(stateC);
+    expect(stateC.playerHp).toBe(23);
+    expect(getIntent(stateC).current).toEqual({ round: 3, damage: 5 });
+    stateC = endTurn(stateC);
+    expect(stateC.playerHp).toBe(18);
+    expect(stateC.result).toBe('lose_timeout');
+
+    // Demon D: 16 HP, 1 -> 2 -> 10 (skill: 开学)
+    let stateD = createBattle(TEST_DECK, 'd', mulberry32(22), CARDS, DEMONS, BALANCE);
+    expect(stateD.demonHp).toBe(16);
+    expect(getIntent(stateD).current).toEqual({ round: 1, damage: 1 });
+    expect(getIntent(stateD).upcomingSkill).toBeNull();
+    stateD = endTurn(stateD);
+    expect(stateD.playerHp).toBe(29);
+    expect(getIntent(stateD).current).toEqual({ round: 2, damage: 2 });
+    expect(getIntent(stateD).upcomingSkill).toEqual({ round: 3, damage: 10, skill: '开学' });
+    stateD = endTurn(stateD);
+    expect(stateD.playerHp).toBe(27);
+    expect(getIntent(stateD).current).toEqual({ round: 3, damage: 10, skill: '开学' });
+    stateD = endTurn(stateD);
+    expect(stateD.playerHp).toBe(17);
+    expect(stateD.result).toBe('lose_timeout');
+  });
 });

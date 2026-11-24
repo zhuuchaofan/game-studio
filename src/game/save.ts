@@ -215,9 +215,15 @@ export function maxRenqingForLevel(
   return Math.min(raw, balance.renqingCap);
 }
 
+export type DemonId = 'a' | 'b' | 'c' | 'd';
+
+const DEMON_ROTATION: readonly DemonId[] = ['a', 'b', 'c', 'd'];
+
 /**
- * Placeholder night demon rotation rule: Day 1 -> 'a' (药费), Day 2+ -> 'b' (车票).
+ * Night demon rotation rule: Day 1 -> 'a' (药费), Day 2 -> 'b' (车票),
+ * Day 3 -> 'c' (房租), Day 4 -> 'd' (学费), cycling A -> B -> C -> D from Day 5 onward.
  */
-export function demonIdForDay(day: number): 'a' | 'b' {
-  return day <= 1 ? 'a' : 'b';
+export function demonIdForDay(day: number): DemonId {
+  const normalizedDay = Math.max(1, Math.floor(day));
+  return DEMON_ROTATION[(normalizedDay - 1) % DEMON_ROTATION.length];
 }

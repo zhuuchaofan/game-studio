@@ -467,10 +467,10 @@ test('completes full flow from P1 Pawnshop summary -> CardBattleScene (real P1 d
   await expect(canvas).toBeVisible();
 
   const battleStart = await navigateThroughDayToBattle(page, canvas);
-  // Real P1 deck collected from 3 high-tier offers: 倒转, 守诺, 旧书
+  // Real deck collected from 3 high-tier offers on seed=7 Day 1: 余音, 倒转, 旧书
   expect(battleStart.demonId).toBe('a');
   expect(battleStart.hand).toHaveLength(3);
-  expect([...battleStart.hand].sort()).toEqual(['倒转', '守诺', '旧书'].sort());
+  expect([...battleStart.hand].sort()).toEqual(['余音', '倒转', '旧书'].sort());
   expect(battleStart.deckCount).toBe(0);
 
   // Play through 3 rounds to ResultScene

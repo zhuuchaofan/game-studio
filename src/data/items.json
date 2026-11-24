@@ -25,5 +25,32 @@
     "cardName": "旧书",
     "cardCost": 1,
     "color": "#5A3A22"
+  },
+  {
+    "id": "bicycle",
+    "name": "永久自行车",
+    "trueValue": 80,
+    "story": "骑了十年的永久牌自行车，儿子考上大学那天骑去送的",
+    "cardName": "飞驰",
+    "cardCost": 2,
+    "color": "#4E7A5A"
+  },
+  {
+    "id": "erhu",
+    "name": "二胡",
+    "trueValue": 50,
+    "story": "街头拉琴老人的二胡，琴弦断了也舍不得扔",
+    "cardName": "余音",
+    "cardCost": 1,
+    "color": "#8A5A33"
+  },
+  {
+    "id": "stamp_album",
+    "name": "邮票册",
+    "trueValue": 30,
+    "story": "攒了二十年的邮票册，最后一页还空着",
+    "cardName": "集邮",
+    "cardCost": 1,
+    "color": "#4E739E"
   }
 ]

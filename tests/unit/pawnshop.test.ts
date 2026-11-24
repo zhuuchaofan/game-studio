@@ -12,7 +12,7 @@ import {
 
 describe('quotePrice', () => {
   it('computes 50% / 100% / 150% quotes from item trueValue in items.json', () => {
-    const [watch, ring, book] = ITEMS;
+    const [watch, ring, book, bicycle, erhu, stampAlbum] = ITEMS;
 
     expect(quotePrice(watch.trueValue, 'low')).toBe(20);
     expect(quotePrice(watch.trueValue, 'fair')).toBe(40);
@@ -25,10 +25,26 @@ describe('quotePrice', () => {
     expect(quotePrice(book.trueValue, 'low')).toBe(10);
     expect(quotePrice(book.trueValue, 'fair')).toBe(20);
     expect(quotePrice(book.trueValue, 'high')).toBe(30);
+
+    expect(quotePrice(bicycle.trueValue, 'low')).toBe(40);
+    expect(quotePrice(bicycle.trueValue, 'fair')).toBe(80);
+    expect(quotePrice(bicycle.trueValue, 'high')).toBe(120);
+
+    expect(quotePrice(erhu.trueValue, 'low')).toBe(25);
+    expect(quotePrice(erhu.trueValue, 'fair')).toBe(50);
+    expect(quotePrice(erhu.trueValue, 'high')).toBe(75);
+
+    expect(quotePrice(stampAlbum.trueValue, 'low')).toBe(15);
+    expect(quotePrice(stampAlbum.trueValue, 'fair')).toBe(30);
+    expect(quotePrice(stampAlbum.trueValue, 'high')).toBe(45);
   });
 
-  it('keeps total max high-tier cost within starting money', () => {
-    const totalHighCost = ITEMS.reduce((sum, item) => sum + quotePrice(item.trueValue, 'high'), 0);
+  it('keeps original 3-item max high-tier cost within starting money', () => {
+    const baseThree = ITEMS.slice(0, 3);
+    const totalHighCost = baseThree.reduce(
+      (sum, item) => sum + quotePrice(item.trueValue, 'high'),
+      0,
+    );
     expect(totalHighCost).toBe(180);
     expect(totalHighCost).toBeLessThanOrEqual(BALANCE.startingMoney);
   });

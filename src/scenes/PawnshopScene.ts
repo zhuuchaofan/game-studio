@@ -4,6 +4,7 @@ import {
   advanceCustomer,
   BALANCE,
   createInitialState,
+  DAILY_CUSTOMER_COUNT,
   deriveDaySeed,
   formatSignedDelta,
   ITEMS,
@@ -65,9 +66,9 @@ export class PawnshopScene extends Phaser.Scene {
     const { seed, rng } = createRngFromUrl();
     this.rng = rng;
 
-    // 每天开始时按 ?seed= + 天数洗牌当客顺序（Fisher-Yates，固定种子可复现）
+    // 每天开始时按 ?seed= + 天数洗牌当客池并取前 3 位（Fisher-Yates，固定种子可复现）
     const shuffleRng = mulberry32(deriveDaySeed(seed, this.save.day));
-    const shuffledItems = shuffleItems(ITEMS, shuffleRng);
+    const shuffledItems = shuffleItems(ITEMS, shuffleRng).slice(0, DAILY_CUSTOMER_COUNT);
 
     this.state = createInitialState({
       day: this.save.day,
@@ -363,7 +364,7 @@ export class PawnshopScene extends Phaser.Scene {
       const slotXs = [72, centerX, BASE_WIDTH - 72];
       this.state.deck.forEach((cardName, index) => {
         const x = slotXs[index] ?? centerX;
-        const matchedItem = this.state.items.find((item) => item.cardName === cardName);
+        const matchedItem = ITEMS.find((item) => item.cardName === cardName);
         const stripColor = matchedItem ? parseHexColor(matchedItem.color) : PALETTE.brass.num;
 
         this.contentLayer.add(
@@ -389,7 +390,7 @@ export class PawnshopScene extends Phaser.Scene {
         const col = index % 3;
         const x = slotXs[col];
         const y = row === 0 ? 104 : 124;
-        const matchedItem = this.state.items.find((item) => item.cardName === cardName);
+        const matchedItem = ITEMS.find((item) => item.cardName === cardName);
         const stripColor = matchedItem ? parseHexColor(matchedItem.color) : PALETTE.brass.num;
 
         this.contentLayer.add(

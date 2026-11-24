@@ -108,7 +108,9 @@ export class CardBattleScene extends Phaser.Scene {
     const deckParam = params.get('deck');
 
     const resolvedDemonId =
-      demonParam === 'a' || demonParam === 'b' ? demonParam : (data?.demonId ?? 'a');
+      demonParam === 'a' || demonParam === 'b' || demonParam === 'c' || demonParam === 'd'
+        ? demonParam
+        : (data?.demonId ?? 'a');
     const resolvedDeck =
       deckParam === 'test' ? [...TEST_DECK] : data?.deck ? [...data.deck] : [];
 

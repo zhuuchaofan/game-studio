@@ -190,5 +190,38 @@
     "effects": [{ "type": "discard_for_renqing", "value": 2 }],
     "story": "每一张当票背后，都是一个没讲完的故事",
     "color": "#B03A2E"
+  },
+  {
+    "id": "gallop",
+    "name": "飞驰",
+    "item": "永久自行车",
+    "cost": 2,
+    "effects": [{ "type": "damage", "value": 6 }],
+    "story": "骑了十年的永久牌自行车，儿子考上大学那天骑去送的",
+    "color": "#4E7A5A"
+  },
+  {
+    "id": "echo",
+    "name": "余音",
+    "item": "二胡",
+    "cost": 1,
+    "effects": [
+      { "type": "damage", "value": 3 },
+      { "type": "renqing", "value": 1 }
+    ],
+    "story": "街头拉琴老人的二胡，琴弦断了也舍不得扔",
+    "color": "#8A5A33"
+  },
+  {
+    "id": "stamp_collecting",
+    "name": "集邮",
+    "item": "邮票册",
+    "cost": 1,
+    "effects": [
+      { "type": "draw", "value": 1 },
+      { "type": "renqing", "value": 1 }
+    ],
+    "story": "攒了二十年的邮票册，最后一页还空着",
+    "color": "#4E739E"
   }
 ]

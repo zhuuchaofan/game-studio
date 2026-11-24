@@ -150,3 +150,27 @@
 - **#6 第 1 次**：构建成功、artifact 已上传，但部署步取不到 artifact 元数据（报错 `No artifacts named github-pages were found`）。
 - **第 2 次 Re-run failed jobs**：重跑又上传了一个同名 artifact，运行里出现 2 个 `github-pages` 成品，`deploy-pages@v4` 要求恰好 1 个，报 `Artifact count is 2` 而失败。
 - **结论**：重跑修不好，必须触发一次全新的部署运行；本次提交即为触发全新部署的提交。
+
+## 2026-11-24 — P4 内容扩充（feature/p4-content-expansion）
+- **范围**：按 `proto-tasks/05-p4-content-expansion.md` 在不改核心玩法、技术架构、美术方向及 `src/data/balance.json` 的前提下完成内容扩充：
+  - **旧物池扩充（3 → 6 种，`src/data/items.json`）**：保留既有 3 件旧物不动，追加 `bicycle`（永久自行车，真值 80，牌「飞驰」2 费，`#4E7A5A` 玉绿）、`erhu`（二胡，真值 50，牌「余音」1 费，`#8A5A33` 铜棕）、`stamp_album`（邮票册，真值 30，牌「集邮」1 费，`#4E739E` 雾蓝）。
+  - **新牌扩充（20 → 23 张，`src/data/cards.json`）**：仅复用已有效果类型（`damage` / `renqing` / `draw`），追加 `gallop`（飞驰，2 费，伤害 6）、`echo`（余音，1 费，伤害 3 + 人情 1）、`stamp_collecting`（集邮，1 费，抽牌 1 + 人情 1）。
+  - **新心魔与 4 天轮换（2 → 4 种，`src/data/demons.json` + `src/game/save.ts`）**：保留心魔 A/B 不动，追加 `c`（房租，22 血，R1–R3 依次 3/4/5 伤）与 `d`（学费，16 血，R1–R2 依次 1/2 伤、R3 技能「开学」10 伤）；`demonIdForDay` 类型扩展为 `DemonId = 'a' | 'b' | 'c' | 'd'`，按 `(day - 1) % 4` 循环 A→B→C→D；`CardBattleScene` URL 参数 `?demon=` 同步支持 `a|b|c|d`。
+  - **每天当客仍为 3 位（`src/game/pawnshop.ts` + `src/scenes/PawnshopScene.ts`）**：洗牌算法 `shuffleItems` 与按天种子 `deriveDaySeed` 不动，6 个旧物洗牌后取前 3 个（`DAILY_CUSTOMER_COUNT = 3`），固定种子可复现。
+  - **手绘 32×32 像素插画与字形补齐（`src/data/pixelart.ts` + `src/data/pixel-font.json`）**：为 3 个新旧物与 2 个新心魔各手绘一张 32×32 像素画（严格 16 色调色板、单图 ≤ 12 色、1 像素描边，零 AI 生图），并登记入 `CARD_PIXEL_ART` / `ITEM_PIXEL_ART` / `DEMON_PIXEL_ART`；重跑 `scripts/generate-pixel-font.py`（临时 TTF 放 `/tmp` 用完即删，未入库）补齐 30 个新增汉字（423 → 453 字形，96.5 KB）。
+  - **文档更新**：新建 `proto-tasks/05-p4-content-expansion.md`；`docs/GAME_DESIGN.md` 文末增补第 10 节 P4 增补内容（v1.0 定稿核心一字未改）；同步更新本进度记录与 `docs/DECISIONS.md`。
+- **分支名**：`feature/p4-content-expansion`（改动留工作区待协调员验收，未提交/未推送/未建 PR）。
+- **验证证据**：
+  - `npm run build` 退出码 0（`tsc --noEmit` + `vite build`，`dist/index.html` 0.70 kB，JS 1,371.20 kB ≤ 2 MB 预算）；
+  - `npx tsc --noEmit` 退出码 0；
+  - `npx vitest run` 9/9 文件、63/63 单测全部通过；
+  - `npm run test:e2e`（Playwright，localhost）14/14 全部通过（含新增 P4 用例验证新旧物出现与第 3/4/5 天 C→D→A 轮换，以及桌面/竖屏与新插画截图核查），无失败请求、无 `pageerror`；
+  - **蒙特卡洛模拟结果（`TEST_DECK` 10 张，贪心策略，每种心魔 1000 局，种子 1～1000，`balance.json` 未改）**：
+    - 心魔 A「药费」（20 血）：胜率 **91.3%**（913/1000），平均结束回合 **2.99**，胜局均血 **24.05**（血归零 0，超时 87）；
+    - 心魔 B「车票」（18 血）：胜率 **97.3%**（973/1000），平均结束回合 **2.76**，胜局均血 **26.50**（血归零 0，超时 27）；
+    - 心魔 C「房租」（22 血）：胜率 **82.1%**（821/1000），平均结束回合 **3.00**，胜局均血 **23.00**（血归零 0，超时 179）；
+    - 心魔 D「学费」（16 血）：胜率 **99.3%**（993/1000），平均结束回合 **2.42**，胜局均血 **28.17**（血归零 0，超时 7）。
+
+- **CI 修复（PR #7 首轮 CI 失败后）**：两轮 CI 均因 E2E 阶段等待超时失败（`waitForPawnshopPhase` 默认 5s、`waitForBattleReady` 10s），非数值/逻辑错误——本地构建+单测+E2E 两次全绿，CI 日志中失败均为阶段滞后超时（两轮失败点不同、且有 5 个用例首轮失败重试后通过，属 CI runner 慢的环境抖动）。修复：`playwright.config.ts` 加 `timeout: 90000`（单测默认 30s 不够多日流程用例）与 `expect.timeout: 15000`（覆盖全部 `expect.poll` 等待），不改游戏代码与测试逻辑。
+- **CI 修复续（超时加长后仍失败）**：两轮新 CI 仍失败，且失败用例在两次运行间互换（一次 P4 用例、一次全流程用例），均为阶段等待超时、本地全绿——定性为 CI runner 并行负载抖动而非逻辑 bug。追加修复：`playwright.config.ts` 在 CI 时 `workers: 1`（串行跑 E2E，避免并行 Chromium 软渲染抢 CPU 拖垮游戏循环）；本地以 `CI=true` 验证：13 passed + 1 flaky（重试后通过），0 failed。
+- **CI 故障调查（2026-11-24，制作人定方向“查 runner 环境”）**：6 次运行全败在 E2E（构建与单测都过）。日志核对：失败全是阶段等待超时（`waitForPawnshopPhase` / `waitForBattleReady`，15s 内阶段未变，如 `Expected: "feedback"` / `Expected: "negotiating" Received: "feedback"`），无数值断言失败；冒烟与 subpath 每次都过；同一提交两次运行结果不同（4 败 vs 11 败）。关键证据：6 次运行日志均写明 worker 数——2 workers 时每轮 1–2 败（只败长流程用例），1 worker（串行提交 8e985fa）后每轮 8–11 败，连 1 秒的收当用例也在 15s 超时；串行假设被证伪。另查：阶段切换本身是点击处理函数内同步完成的（`handleOffer`/`advanceCustomer` 直接改 phase 再渲染，无 tween/定时器依赖），点击靠 Phaser 游戏循环（rAF）处理，故超时即游戏循环在 runner 上间歇性停转；本地 `CI=true` 同配置多次全绿，无法复现，属 runner 环境问题而非游戏逻辑 bug。修复：只回滚串行提交，删 `workers: 1`、恢复 Playwright 默认（runner 4 核 → 2 workers），保留 `timeout: 90000` / `expect.timeout: 15000`。另记：`waitForBattleReady` 的 10s 超时是写死的，不受 `expect.timeout` 覆盖（首轮 dayloop:275 即败于此），如仍红可作后续调整点；串行提交 8e985fa 建议随回滚废弃，不保留。

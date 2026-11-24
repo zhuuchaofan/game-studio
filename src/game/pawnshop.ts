@@ -131,6 +131,8 @@ export const BALANCE: BalanceConfig = {
   tiers: balanceJson.tiers,
 };
 
+export const DAILY_CUSTOMER_COUNT = 3;
+
 export const ITEMS: readonly PawnItem[] = itemsJson.map((item) => ({ ...item }));
 
 /**
@@ -191,7 +193,7 @@ export function createInitialState(
   legacyItems?: readonly PawnItem[],
 ): PawnshopState {
   if (isBalanceConfig(initialOrBalance)) {
-    const items = legacyItems ?? ITEMS;
+    const items = legacyItems ?? ITEMS.slice(0, DAILY_CUSTOMER_COUNT);
     return {
       day: 1,
       phase: 'negotiating',
@@ -207,7 +209,7 @@ export function createInitialState(
 
   const opts = initialOrBalance ?? {};
   const balance = opts.balance ?? BALANCE;
-  const items = opts.items ?? legacyItems ?? ITEMS;
+  const items = opts.items ?? legacyItems ?? ITEMS.slice(0, DAILY_CUSTOMER_COUNT);
 
   return {
     day: opts.day ?? 1,

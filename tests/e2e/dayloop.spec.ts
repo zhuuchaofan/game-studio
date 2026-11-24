@@ -289,21 +289,21 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   expect(titleNoSave.hasSave).toBe(false);
   await page.screenshot({ path: 'test-results/dayloop-desktop-title-nosave.png' });
 
-  // Click Start -> Day 1 PawnshopScene with deterministic seed=4 day=1 order: watch -> ring -> old_book
+  // Click Start -> Day 1 PawnshopScene with deterministic seed=4 day=1 top-3 order: watch -> bicycle -> ring
   await clickLogical(page, canvas, BUTTONS.titleStart);
   const day1Start = await waitForPawnshopPhase(page, 'negotiating');
   expect(day1Start.day).toBe(1);
   expect(day1Start.money).toBe(200);
   expect(day1Start.shopLevel).toBe(1);
   expect(day1Start.maxRenqing).toBe(3);
-  expect(day1Start.itemsOrder).toEqual(['watch', 'ring', 'old_book']);
+  expect(day1Start.itemsOrder).toEqual(['watch', 'bicycle', 'ring']);
   await page.screenshot({ path: 'test-results/dayloop-desktop-day1.png' });
 
-  // Buy all 3 items at High tier (total 180 -> money 20, rep +3, deck 3 cards)
+  // Buy all 3 items at High tier (60 + 120 + 90 = 270 -> money -70, rep +3, deck 3 cards)
   const day1Summary = await completeDayPawnshopHigh(page, canvas);
-  expect(day1Summary.money).toBe(20);
+  expect(day1Summary.money).toBe(-70);
   expect(day1Summary.reputation).toBe(3);
-  expect(day1Summary.deck).toEqual(['倒转', '守诺', '旧书']);
+  expect(day1Summary.deck).toEqual(['倒转', '飞驰', '守诺']);
 
   // Enter night battle -> must pass through 6-frame lamp-pull TransitionScene
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
@@ -348,22 +348,22 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   expect(winResult.savedData!.version).toBe(1);
   expect(winResult.savedData!.day).toBe(2);
   expect(winResult.savedData!.shopLevel).toBe(2);
-  expect(winResult.savedData!.money).toBe(40); // 20 + 20 winRewardMoney
+  expect(winResult.savedData!.money).toBe(-50); // -70 + 20 winRewardMoney
   expect(winResult.savedData!.redeemTickets).toBe(1);
   expect(winResult.savedData!.deck).toHaveLength(4);
   expect(winResult.savedData!.deck[3]).toBe(winResult.reward!.cardName);
   await page.screenshot({ path: 'test-results/dayloop-desktop-result.png' });
 
-  // Click "下一天" -> Day 2 PawnshopScene (day=2, money=40, shopLevel=2, maxRenqing=4, Day 2 shuffle order)
+  // Click "下一天" -> Day 2 PawnshopScene (day=2, money=-50, shopLevel=2, maxRenqing=4, Day 2 shuffle top-3)
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2.day).toBe(2);
-  expect(day2.money).toBe(40);
+  expect(day2.money).toBe(-50);
   expect(day2.reputation).toBe(3);
   expect(day2.shopLevel).toBe(2);
   expect(day2.maxRenqing).toBe(4);
   expect(day2.deck).toEqual(winResult.savedData!.deck);
-  expect(day2.itemsOrder).toEqual(['ring', 'watch', 'old_book']);
+  expect(day2.itemsOrder).toEqual(['watch', 'bicycle', 'old_book']);
   await page.screenshot({ path: 'test-results/dayloop-desktop-day2.png' });
 
   // Verify localStorage save round-trip after full page reload -> TitleScene shows Continue
@@ -379,7 +379,7 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   await clickLogical(page, canvas, BUTTONS.titleContinue);
   const restoredDay2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(restoredDay2.day).toBe(2);
-  expect(restoredDay2.money).toBe(40);
+  expect(restoredDay2.money).toBe(-50);
   expect(restoredDay2.shopLevel).toBe(2);
   expect(restoredDay2.maxRenqing).toBe(4);
   expect(restoredDay2.deck).toEqual(winResult.savedData!.deck);
@@ -412,8 +412,8 @@ test('lose flow advances day +1 while keeping deck, money, shopLevel, and redeem
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleStart);
   const day1Summary = await completeDayPawnshopHigh(page, canvas);
-  expect(day1Summary.money).toBe(20);
-  expect(day1Summary.deck).toEqual(['守诺', '倒转', '旧书']);
+  expect(day1Summary.money).toBe(35);
+  expect(day1Summary.deck).toEqual(['余音', '倒转', '旧书']);
 
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   const battle = await waitForBattleReady(page, 'play');
@@ -437,9 +437,9 @@ test('lose flow advances day +1 while keeping deck, money, shopLevel, and redeem
   expect(loseResult.savedData).toEqual({
     version: 1,
     day: 2,
-    money: 20,
+    money: 35,
     reputation: 3,
-    deck: ['守诺', '倒转', '旧书'],
+    deck: ['余音', '倒转', '旧书'],
     shopLevel: 1,
     redeemTickets: 0,
   });
@@ -448,10 +448,10 @@ test('lose flow advances day +1 while keeping deck, money, shopLevel, and redeem
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
   const day2AfterLose = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2AfterLose.day).toBe(2);
-  expect(day2AfterLose.money).toBe(20);
+  expect(day2AfterLose.money).toBe(35);
   expect(day2AfterLose.shopLevel).toBe(1);
   expect(day2AfterLose.maxRenqing).toBe(3);
-  expect(day2AfterLose.deck).toEqual(['守诺', '倒转', '旧书']);
+  expect(day2AfterLose.deck).toEqual(['余音', '倒转', '旧书']);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -490,6 +490,119 @@ test('renders pixel font, 32x32 pixel art, and day loop cleanly on mobile portra
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2.day).toBe(2);
   await page.screenshot({ path: 'test-results/dayloop-mobile-day2.png' });
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('P4 content expansion: new pawnshop items appear in 3-customer lineup and Night 3/4/5 rotate Demon C (房租) -> D (学费) -> A (药费)', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+
+  await page.goto('/?seed=4&deck=test');
+
+  // Seed localStorage at Day 3 so we can verify real UI loop across Days 3 -> 4 -> 5
+  await page.evaluate((key) => {
+    const day3Save: SaveSnapshot = {
+      version: 1,
+      day: 3,
+      money: 200,
+      reputation: 2,
+      deck: ['倒转', '守诺', '旧书'],
+      shopLevel: 2,
+      redeemTickets: 1,
+    };
+    localStorage.setItem(key, JSON.stringify(day3Save));
+  }, SAVE_STORAGE_KEY);
+  await page.reload();
+
+  const canvas = page.locator('#game-container canvas');
+  await expect(canvas).toBeVisible();
+
+  const titleState = await waitForPawnshopPhase(page, 'title');
+  expect(titleState.hasSave).toBe(true);
+  expect(titleState.day).toBe(3);
+
+  // Day 3 Pawnshop: 6-item pool shuffled and sliced to 3 customers; seed=4 day=3 has erhu (二胡) first!
+  await clickLogical(page, canvas, BUTTONS.titleContinue);
+  const day3Start = await waitForPawnshopPhase(page, 'negotiating');
+  expect(day3Start.day).toBe(3);
+  expect(day3Start.itemsOrder).toHaveLength(3);
+  expect(day3Start.itemsOrder).toContain('erhu');
+  await page.screenshot({ path: 'test-results/p4-day3-erhu.png' });
+
+  const day3Summary = await completeDayPawnshopHigh(page, canvas);
+  expect(day3Summary.log.some((entry) => entry.includes('二胡'))).toBe(true);
+  expect(day3Summary.deck).toContain('余音');
+
+  // Night 3 -> Demon C (房租, HP 22)
+  await clickLogical(page, canvas, BUTTONS.enterNightBattle);
+  const night3 = await waitForBattleReady(page, 'play');
+  expect(night3.day).toBe(3);
+  expect(night3.demonId).toBe('c');
+  expect(night3.demonName).toBe('房租');
+  expect(night3.demonHp).toBe(22);
+  await page.screenshot({ path: 'test-results/p4-night3-demon-c.png' });
+
+  // End 3 turns to advance cleanly to Day 4
+  for (let r = 1; r <= 3; r += 1) {
+    await clickLogical(page, canvas, BUTTONS.endTurn);
+    if (r < 3) {
+      await expect
+        .poll(async () => {
+          const s = await getBattleState(page);
+          return !s.isAnimating && s.round === r + 1;
+        })
+        .toBe(true);
+    }
+  }
+  const night3Result = await waitForBattleReady(page, 'result_scene');
+  expect(night3Result.savedData!.day).toBe(4);
+
+  // Day 4 Pawnshop -> Night 4 -> Demon D (学费, HP 16, Round 3 skill "开学" 10 dmg)
+  await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  const day4Start = await waitForPawnshopPhase(page, 'negotiating');
+  expect(day4Start.day).toBe(4);
+  expect(day4Start.itemsOrder).toHaveLength(3);
+  await completeDayPawnshopHigh(page, canvas);
+  await clickLogical(page, canvas, BUTTONS.enterNightBattle);
+
+  const night4 = await waitForBattleReady(page, 'play');
+  expect(night4.day).toBe(4);
+  expect(night4.demonId).toBe('d');
+  expect(night4.demonName).toBe('学费');
+  expect(night4.demonHp).toBe(16);
+  await page.screenshot({ path: 'test-results/p4-night4-demon-d.png' });
+
+  // End 3 turns to advance cleanly to Day 5
+  for (let r = 1; r <= 3; r += 1) {
+    await clickLogical(page, canvas, BUTTONS.endTurn);
+    if (r < 3) {
+      await expect
+        .poll(async () => {
+          const s = await getBattleState(page);
+          return !s.isAnimating && s.round === r + 1;
+        })
+        .toBe(true);
+    }
+  }
+  const night4Result = await waitForBattleReady(page, 'result_scene');
+  expect(night4Result.savedData!.day).toBe(5);
+
+  // Day 5 Pawnshop -> Night 5 -> loops back to Demon A (药费)
+  await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  const day5Start = await waitForPawnshopPhase(page, 'negotiating');
+  expect(day5Start.day).toBe(5);
+  expect(day5Start.itemsOrder).toHaveLength(3);
+  await completeDayPawnshopHigh(page, canvas);
+  await clickLogical(page, canvas, BUTTONS.enterNightBattle);
+
+  const night5 = await waitForBattleReady(page, 'play');
+  expect(night5.day).toBe(5);
+  expect(night5.demonId).toBe('a');
+  expect(night5.demonName).toBe('药费');
+  expect(night5.demonHp).toBe(20);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
