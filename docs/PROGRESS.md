@@ -83,3 +83,18 @@
   5. **手表效果恢复“倒转 1 回合”**：第 1 号“倒转”恢复为将敌我双方生命恢复到上一回合开始时的数值（人情与手牌不回溯），并列为原型平衡测试重点观察项。
   6. **笔误与已落实表述修正**：`docs/ART_STYLE.md` 玉绿用途移除“旧书”、旧书主色改为木棕（2 号）；`docs/ARCHITECTURE.md` 补记 CI 已在 main（PR #1、#2 已合）；`docs/GAME_DESIGN.md` 第 9 节改为 6 项原型验证清单；三份文档状态行统一改为“定稿（原型 v1.0，2026-11-24）”。
 - 分支：`docs/finalize-gdd`；PR：https://github.com/zhuuchaofan/game-studio/pull/3，CI 两次运行（push 与 pull_request）`build-and-test` 全部 success；未合并，等制作人确认。
+
+## 2026-11-24 — P1 白天收当（feature/p1-pawnshop）
+- **范围**：按 `proto-tasks/02-p1-pawnshop.md` 与定稿 GDD v1.0 实现白天收当闭环：
+  - 数据配置：`src/data/balance.json`（P1 占位数值：开局钱 200、口碑 0、生命 30、人情 3/3、三档估价 50%/100%/150%、接受率 30%/80%/100%、成交口碑 -1/+0/+1、被拒 +0）、`src/data/items.json`（旧手表真值 40→倒转 2 费、婚戒真值 60→守诺 1 费、旧书真值 20→旧书 1 费；三档报价全部按真值 × 档位计算）。
+  - 纯逻辑层：`src/game/pawnshop.ts`（`quotePrice`、`resolveOffer`、`settle`、`advanceCustomer` 等纯函数，状态不可变）与 `src/utils/rng.ts`（mulberry32 种子随机数，支持 `?seed=`）。
+  - 场景与入口：`BootScene` 启动后即转 `TitleScene`（沿用金框卡片标题风格 + “开始”按钮，暂不做“继续”）；`PawnshopScene` 实现白天暖色 16 色程序化像素画、常驻顶部 HUD、3 位当客固定顺序（旧手表→婚戒→旧书）三档估价与成交/拒绝反馈、“白天结束”结算屏与“返回标题”；`src/main.ts` 注册新场景，缩放逻辑未改。
+  - 测试与测试钩子：`window.__PAWNSHOP_DEBUG__`（测试专用钩子，非正式功能）；新增单元测试 `tests/unit/pawnshop.test.ts`、`tests/unit/rng.test.ts` 与 E2E 测试 `tests/e2e/pawnshop.spec.ts`（固定种子验证三档接受/拒绝分支数学与结算屏 + 桌面 1280×720 与手机竖屏 390×844 截图）。
+- **分支名**：`feature/p1-pawnshop`
+- **验证证据**：
+  - `npm run build` 退出码 0（`tsc --noEmit` + `vite build`，`dist/index.html` 0.70 kB，JS 1,210.79 kB）；
+  - `npm run test` 3/3 文件、20/20 单测全部通过（`scale.test.ts` 5、`rng.test.ts` 7、`pawnshop.test.ts` 8）；
+  - `npm run test:e2e` 5/5 全部通过（`pawnshop.spec.ts` 3 + `smoke.spec.ts` 1 + `subpath.spec.ts` 1），无失败请求、无 `pageerror`；
+  - E2E 截图已保存在 `test-results/`（桌面标题/收当/结算 + 手机竖屏标题/收当）并人工核查渲染清晰无错位；
+  - `grep -nE '40|60|20' src/scenes/*.ts` 0 命中，场景代码无写死游戏数值。
+- **PR 状态**：PR 待建。
