@@ -82,4 +82,4 @@
   4. **删粮票**：移除牌局内货币概念（第 7 号粮票已替换为蒲扇），三份文档确认 0 处残留。
   5. **手表效果恢复“倒转 1 回合”**：第 1 号“倒转”恢复为将敌我双方生命恢复到上一回合开始时的数值（人情与手牌不回溯），并列为原型平衡测试重点观察项。
   6. **笔误与已落实表述修正**：`docs/ART_STYLE.md` 玉绿用途移除“旧书”、旧书主色改为木棕（2 号）；`docs/ARCHITECTURE.md` 补记 CI 已在 main（PR #1、#2 已合）；`docs/GAME_DESIGN.md` 第 9 节改为 6 项原型验证清单；三份文档状态行统一改为“定稿（原型 v1.0，2026-11-24）”。
-- 分支：`docs/finalize-gdd`；PR 状态：PR 待建。
+- 分支：`docs/finalize-gdd`；PR：https://github.com/zhuuchaofan/game-studio/pull/3，CI 两次运行（push 与 pull_request）`build-and-test` 全部 success；未合并，等制作人确认。
