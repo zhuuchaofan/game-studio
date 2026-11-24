@@ -213,3 +213,13 @@
 - **决策**：P3 不改动任何已有平衡数值（`balance.json` 仅追加 `renqingBase/renqingPerLevel/renqingCap`）且不修改定稿 `docs/GAME_DESIGN.md` 中铁皮青蛙“本回合”措辞；P2 蒙特卡洛模拟结论（A 91.3%、B 97.3% 3 回合胜率、零血量归零负、30 血下生存压力偏小）继续挂作制作人待评审项，铁皮青蛙实现保持 `demonHasActed`（R1 3 伤、R2/R3 6 伤）。
 - **理由**：遵守 P3 任务书红线，数值与定稿文档修订权归制作人，原型 P3 聚焦流程串联与像素修正。
 - **影响**：待制作人拍板是否调整血量/心魔伤害 JSON 或修订 GDD 措辞后再另开轻量任务执行。
+
+## 2026-11-24 — CI 缓存 Playwright 浏览器（actions/cache）
+- **决策**：`ci.yml` 的 `build-and-test` job 在单元测试之后、安装 Playwright Chromium 之前加一步 `Cache Playwright browsers`（`actions/cache@v4`，`path: ~/.cache/ms-playwright`，`key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}`，`restore-keys` 前缀 `${{ runner.os }}-playwright-`）；`npx playwright install --with-deps chromium` 保留原样。
+- **理由**：P1/P2 每次推文件都单独触发 CI，有运行跑 6 分多钟才绿，疑似 Playwright 浏览器下载重试、偶发失败，失败就给制作人发邮件；缓存命中后安装步跳过约 150MB 下载，只装系统依赖。key 绑 `package-lock.json` 哈希，Playwright 版本变化时自动失效重下。
+- **影响**：CI 运行更快更稳；未改动任何测试步骤与行为。`.github/workflows/` 不能走连接器推送（403），本次改动由 AGY 在 GitHub 认证就绪后直接 `git push` 提交。
+
+## 2026-11-24 — 以后提交由 AGY 自己做，不再走连接器逐文件推送
+- **决策**：push 分支、开 PR 改由 AGY 在本地直接 `git push` + `gh pr create` 提交；协调员不再用 Muse GitHub 连接器逐文件推送，也不再弹审批卡。
+- **理由**：逐文件推送是 CI 邮件轰炸的根源之一——一个 PR 十几个提交触发几十次 CI 运行；且制作人反馈每次提交 CI 老是不通过、GitHub 失败邮件发得烦。
+- **影响**：本分支 `feature/p3-day-loop` 的 25 个 P3 文件已在决定前经连接器推完并逐个核对一致；PR 尚未建，等 AGY 认证就绪后由 AGY 创建；待 AGY 一并推送的本地改动：`.github/workflows/ci.yml`（CI 缓存）、`docs/PROGRESS.md` 与 `docs/DECISIONS.md` 的 CI 修复记录。
