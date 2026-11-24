@@ -10,12 +10,16 @@ import {
 import {
   applyDayResult,
   clearSave,
+  clearTutorialDone,
   createNewGame,
   demonIdForDay,
   loadSave,
+  loadTutorialDone,
   maxRenqingForLevel,
   SAVE_STORAGE_KEY,
   saveGame,
+  saveTutorialDone,
+  TUTORIAL_STORAGE_KEY,
   type SaveData,
   type StorageLike,
 } from '../../src/game/save';
@@ -187,6 +191,53 @@ describe('SaveData & localStorage persistence', () => {
       redeemTickets: 1,
     });
     expect(afterLose.deck).not.toBe(initial.deck);
+  });
+
+  it('persists tutorial completion backward-compatibly without breaking legacy v1 saves', () => {
+    const storage = createMemoryStorage();
+    expect(loadTutorialDone(storage)).toBe(false);
+
+    // Legacy v1 save without tutorialCompleted loads cleanly and defaults tutorial to incomplete
+    const legacySave = {
+      version: 1,
+      day: 1,
+      money: 200,
+      reputation: 0,
+      deck: [],
+      shopLevel: 1,
+      redeemTickets: 0,
+    };
+    storage.setItem(SAVE_STORAGE_KEY, JSON.stringify(legacySave));
+    expect(loadSave(storage)).toEqual(legacySave);
+    expect(loadTutorialDone(storage)).toBe(false);
+
+    // Optional boolean tutorialCompleted inside SaveData is accepted and honored
+    storage.setItem(
+      SAVE_STORAGE_KEY,
+      JSON.stringify({ ...legacySave, tutorialCompleted: true }),
+    );
+    expect(loadSave(storage)?.tutorialCompleted).toBe(true);
+    expect(loadTutorialDone(storage)).toBe(true);
+
+    // Corrupted non-boolean tutorialCompleted still causes loadSave to return null
+    storage.setItem(
+      SAVE_STORAGE_KEY,
+      JSON.stringify({ ...legacySave, tutorialCompleted: 'yes' }),
+    );
+    expect(loadSave(storage)).toBeNull();
+    expect(loadTutorialDone(storage)).toBe(false);
+
+    // Dedicated tutorial key persists independently across save clears / new games
+    saveTutorialDone(true, storage);
+    expect(storage.store.get(TUTORIAL_STORAGE_KEY)).toBe('1');
+    expect(loadTutorialDone(storage)).toBe(true);
+
+    clearSave(storage);
+    expect(loadSave(storage)).toBeNull();
+    expect(loadTutorialDone(storage)).toBe(true);
+
+    clearTutorialDone(storage);
+    expect(loadTutorialDone(storage)).toBe(false);
   });
 });
 

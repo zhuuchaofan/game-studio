@@ -2,7 +2,7 @@
   {
     "id": "a",
     "name": "药费",
-    "hp": 20,
+    "hp": 24,
     "actions": [
       { "round": 1, "damage": 3 },
       { "round": 2, "damage": 3 },
@@ -12,7 +12,7 @@
   {
     "id": "b",
     "name": "车票",
-    "hp": 18,
+    "hp": 22,
     "actions": [
       { "round": 1, "damage": 2 },
       { "round": 2, "damage": 2 },
@@ -22,7 +22,7 @@
   {
     "id": "c",
     "name": "房租",
-    "hp": 22,
+    "hp": 26,
     "actions": [
       { "round": 1, "damage": 3 },
       { "round": 2, "damage": 4 },
@@ -32,7 +32,7 @@
   {
     "id": "d",
     "name": "学费",
-    "hp": 16,
+    "hp": 20,
     "actions": [
       { "round": 1, "damage": 1 },
       { "round": 2, "damage": 2 },

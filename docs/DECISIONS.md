@@ -253,3 +253,28 @@
 - **决策**：在白天收当 `negotiating` 阶段的当客卡片右下角增加「跳过当客」按钮（64×18，16 色调色板 + 1px 墨黑描边；常态旧纸底、三档全买不起时灯黄底高亮），逻辑由纯函数 `skipCustomer(state)` 实现：不成交、钱/口碑/牌组均不变、不消耗 RNG、追加 `<物品名>:跳过` 日志并直接推进到下一位当客（最后一位则直接进入 `summary`）；调试钩子 `getState()` 补充 `canSkip` 字段。
 - **理由**：钱不能变负数规则（PR #8）实施后，当 `money < quotePrice(trueValue, 'low')` 时三档全部置灰不可点，白天界面无其他出口且 `settle` 兜底不推进阶段，流程必卡死。跳过直接推进（不经额外 `feedback` 二次确认）贴合玩家“不收、看下一位”的直觉，且在有钱时也允许主动跳过（避免被迫低价赌 -1 口碑或塞入不想要的牌）。
 - **影响**：彻底消除三档全买不起死角；既有三档按钮坐标与原有 E2E 用例 100% 兼容不受影响；补齐点阵字体中新增汉字「跳」（`src/data/pixel-font.json` 453 → 454 字形）；同步更新 `docs/GAME_DESIGN.md` §11.3、`docs/PROGRESS.md` 与 `proto-tasks/07-skip-customer.md`。
+
+## 2026-11-24 — P5 数值平衡：四心魔血量各 +4，伤害与 `balance.json` 不动（制作人 21:20 定）
+- **决策**：`src/data/demons.json` 中四心魔血量统一 +4——A「药费」20→24、B「车票」18→22、C「房租」22→26、D「学费」16→20；各心魔 `actions` 伤害配置与 `src/data/balance.json` 均保持不变。
+- **理由**：原血量下固定 10 张测试牌组贪心策略胜率偏高（A 91.3% / B 97.3% / C 82.1% / D 99.3%），按制作人拍板的 P5 数值方案小幅抬高 3 回合输出门槛。
+- **影响**：重跑同口径蒙特卡洛（`TEST_DECK` 10 张，贪心策略，每种心魔 1000 局），新胜率为 A **65.9%**、B **82.1%**、C **55.9%**、D **91.3%**（仍全部可在 3 回合内击杀，败局均为 3 回合超时）；同步更新 `docs/GAME_DESIGN.md`、`docs/PROGRESS.md` 及写死旧血量的单测与 E2E 断言。
+
+## 2026-11-24 — 19 号铁皮青蛙 GDD 措辞与 `demonHasActed` 实现对齐（制作人 21:20 定）
+- **决策**：仅修订 `docs/GAME_DESIGN.md` 第 64 行 19 号牌「铁皮青蛙」的效果措辞，由“造成 3 点伤害；若敌方本回合已行动，改为 6 点”改为“造成 3 点伤害；若敌方此前已行动过，改为 6 点”；不修改 `src/` 代码、数值或效果实现。
+- **理由**：牌局为玩家先手回合制，代码实现已采用持久标志 `demonHasActed`（R1 打 3 伤，R2/R3 打 6 伤），原 GDD“本回合”字面表述与实现不一致，制作人确认按实现修订文档措辞。
+- **影响**：消除 GDD 与实现间的文案偏差，后续校验与玩家说明均以“此前已行动过”为准。
+
+## 2026-11-24 — P5 新手教程：第 1 天非阻塞气泡、向后兼容持久化与标题重看入口
+- **决策**：不单独做教程关，将 6 步新手引导（收当 → 报价三档 → 成交得牌 → 夜里出牌 → 人情 → 结算）直接嵌入正常第 1 天流程（纯状态机 `src/game/tutorial.ts` + 16 色像素气泡 `src/game/tutorialBubble.ts`）；气泡严格避开所有待点按钮与手牌区（不遮挡、无半透明遮罩），点击气泡推进、右下角常驻「跳过教程」；标题画面右下角（`(266, 154)`）增设常驻「教程」入口重看第 1 天引导；教程完成标记在 `src/game/save.ts` 采用独立 localStorage 键 `'pawnshop-cards-tutorial-v1'`（同时在 v1 `SaveData` 兼容可选布尔字段 `tutorialCompleted?: boolean`，非布尔值仍判损坏返回 `null`）。
+- **理由**：独立键 + 可选字段既保证旧版 v1 存档与既有全流程存档结构断言 100% 向后兼容，又确保玩家打完第 1 天后点标题「开始」开新档时不会重复弹出新手教程；非阻塞避让布局遵守 `docs/ART_STYLE.md` 禁止大面积半透明叠加的规范，且完全不影响既有操作流与 E2E 测试。
+- **影响**：`TitleScene` / `PawnshopScene` / `CardBattleScene` / `ResultScene` 调试钩子统一暴露 `tutorialActive`、`currentStep`、`tutorialDone`、`tutorialCopy`；重跑 `scripts/generate-pixel-font.py` 补齐教程文案字形（`src/data/pixel-font.json` 477 → 510 字形）。
+
+## 2026-11-24 — P5 音效与 BGM：WebAudio 纯代码合成、独立静音键持久化与首次手势解锁
+- **决策**：新增 `src/game/audio.ts` 以原生 WebAudio API 实时合成昼夜两段循环 Chiptune（方波旋律 + 三角波低音）与 5 类 8-bit 音效（点按钮/出牌/收牌/成交/击败“叮”声），零外部音频文件、零新增依赖；默认开启、主增益 `0.2`；静音状态用独立 localStorage 键 `'pawnshop-cards-audio-v1'` 持久化（不改动 `SaveData` v1 结构）；在 `window` 捕获阶段注册首次交互解锁监听以遵守浏览器自动播放策略，无 `AudioContext` 时静默降级；标题画面左下角新增对称的「音量:开 / 音量:关」按钮并暴露只读钩子 `window.__AUDIO_DEBUG__` 供 E2E 断言。
+- **理由**：满足零素材成本与零依赖红线，同时兼容无头浏览器与移动端自动播放限制；独立持久化键避免破坏既有 `SaveData` 单测与 E2E 严格快照断言。
+- **影响**：白天/夜里场景切换自动切换曲目、关键玩法操作全部带 8-bit 音效反馈；`src/data/pixel-font.json` 补齐「量」字形（510 → 511 字形）。
+
+## 2026-11-24 — P5 竖屏方案选 b：保持整数缩放 + 画布外 DOM 横屏提示条
+- **决策**：严格保留 `src/utils/scale.ts` `calculateIntegerScale` 整数缩放（不做非整数铺满），新增纯函数 `isPortraitViewport(width, height)`；在 `index.html` 中 `#game-container` 下方增加 16 色像素风 DOM 提示条 `#portrait-hint`（「横屏体验更佳」，`pointer-events: none`），由 `src/main.ts` 在启动、`READY`、`resize` 与 `orientationchange` 时同步显隐（`height > width` 显示，横屏隐藏）。
+- **理由**：按制作人拍板的方案 b 兼顾像素锐利与竖屏提示；DOM 提示放在画布外留白区，绝不遮挡 320×180 画面且不影响竖屏全程可玩性与既有触控/E2E 坐标。
+- **影响**：竖屏手机清晰提示横屏体验更佳、横屏自动消失，整数缩放与全部既有测试 100% 兼容。

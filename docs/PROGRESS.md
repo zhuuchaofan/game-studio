@@ -207,3 +207,39 @@
   - `npm run test` 9/9 文件、73/73 单测全部通过；
   - `npm run test:e2e` 17/17 全部通过（含新增 `skip-customer.spec.ts` 2 用例），无失败请求、无 `pageerror`。
 - **PR 状态**：（建 PR 后由汇报提供链接与 CI 状态）
+
+## 2026-11-24 — P5 小项 0 / 3 / 5（feature/p5-tutorial-polish，首批）
+- **范围**：按 `proto-tasks/08-p5-tutorial-polish.md` 先行完成子项 0、3、5（不含子项 1 教程、2 音效/BGM、4 竖屏提示）：
+  - **子项 0（E2E `clickLogical` 去重）**：删除 `tests/e2e/skip-customer.spec.ts` 本地无 2-rAF 等待的 `clickLogical` 副本及冗余常量，改为从 `./helpers` 导入统一实现。
+  - **子项 3（心魔血量各 +4 与蒙特卡洛复验）**：`src/data/demons.json` 四心魔血量上调 +4（A 药费 20→24、B 车票 18→22、C 房租 22→26、D 学费 16→20），`actions` 伤害与 `src/data/balance.json` 均未改动；同步更新 `docs/GAME_DESIGN.md` 心魔血量说明、`docs/DECISIONS.md` 及写死旧血量的单测/E2E 断言（`tests/unit/battle.test.ts`、`tests/unit/montecarlo.test.ts`、`tests/e2e/battle.spec.ts`、`tests/e2e/dayloop.spec.ts`）。
+  - **蒙特卡洛模拟结果（`TEST_DECK` 10 张，贪心策略，每种心魔 1000 局，种子 1～1000，`balance.json` 未改）**：
+    - 心魔 A「药费」（24 血，原 20 血 91.3%）：胜率 **65.9%**（659/1000），平均结束回合 **3.00**，胜局均血 **24.00**（血归零 0，超时 341）；
+    - 心魔 B「车票」（22 血，原 18 血 97.3%）：胜率 **82.1%**（821/1000），平均结束回合 **3.00**，胜局均血 **26.00**（血归零 0，超时 179）；
+    - 心魔 C「房租」（26 血，原 22 血 82.1%）：胜率 **55.9%**（559/1000），平均结束回合 **3.00**，胜局均血 **23.00**（血归零 0，超时 441）；
+    - 心魔 D「学费」（20 血，原 16 血 99.3%）：胜率 **91.3%**（913/1000），平均结束回合 **2.99**，胜局均血 **27.03**（血归零 0，超时 87）。
+  - **子项 5（铁皮青蛙 GDD 措辞对齐）**：仅改 `docs/GAME_DESIGN.md` 第 64 行 19 号铁皮青蛙效果文案，由“若敌方本回合已行动，改为 6 点”改为“若敌方此前已行动过，改为 6 点”，与 `src/game/battle.ts` / `src/game/effects.ts` 的持久标志 `demonHasActed`（R1 3 伤、R2/R3 6 伤）保持一致，未改动任何 `src/` 实现或数值。
+- **分支名**：`feature/p5-tutorial-polish`（改动留工作区，未提交/未推送/未建 PR）。
+
+## 2026-11-24 — P5 小项 1：新手教程（feature/p5-tutorial-polish）
+- **范围**：按 `proto-tasks/08-p5-tutorial-polish.md` 子项 1 在正常第 1 天内实现全程 6 步像素引导气泡（不单独做教程关；未触碰子项 2 音效/BGM 与子项 4 竖屏提示）：
+  - **纯逻辑与气泡 UI**：新增 `src/game/tutorial.ts`（6 步流程状态机：收当 → 报价三档 → 成交得牌 → 夜里出牌 → 人情 → 结算；老掌柜口吻短文案；320×180 非重叠坐标计算）与 `src/game/tutorialBubble.ts`（16 色主调色板、12px 点阵字体、无半透明、点气泡继续、右下角常驻「跳过教程」）。
+  - **存档向后兼容（`src/game/save.ts`）**：新增独立键 `TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1'`（`loadTutorialDone` / `saveTutorialDone` / `clearTutorialDone`）并在 v1 `SaveData` 兼容可选布尔字段 `tutorialCompleted?: boolean`（缺省未完成，损坏/非布尔/版本不符仍返回 `null`）。
+  - **场景与测试钩子**：`TitleScene` 右下角增常驻「教程」按钮（`TITLE_TUTORIAL_BUTTON`，重进第 1 天带引导）；`PawnshopScene` / `CardBattleScene` / `ResultScene` 接入教程状态同步与气泡渲染，并经 `TransitionScene` 透传教程状态；全四主场景调试钩子统一暴露 `tutorialActive`、`currentStep`、`tutorialDone`、`tutorialCopy`。
+  - **字形与文档**：重跑 `scripts/generate-pixel-font.py` 补齐教程文案字形（`src/data/pixel-font.json` 477 → 510 字形，109.5 KB）；更新 `docs/GAME_DESIGN.md`（§12）、`docs/DECISIONS.md` 与本文件。
+  - **测试与截图**：新增 `tests/unit/tutorial.test.ts`（5 用例，含 320×180 防遮挡几何断言）、扩展 `tests/unit/save.test.ts` 与 `tests/unit/pixelart.test.ts`；新增 `tests/e2e/tutorial.spec.ts`（2 用例，覆盖首次第 1 天 6 步推进、打完不复现、标题「教程」重看、跳过立即关闭并持久化），保存 7 张实测截图于 `test-results/tutorial-*.png` 并人工核验位置与文案清晰无遮挡。
+
+## 2026-11-24 — P5 小项 2（WebAudio 音效 + BGM）与小项 4（竖屏方案 b）（feature/p5-tutorial-polish）
+- **范围**：按 `proto-tasks/08-p5-tutorial-polish.md` 顺序完成子项 2 与子项 4（未触碰已完成的子项 0 / 1 / 3 / 5）：
+  - **子项 2（WebAudio 合成音效 + BGM，零外部音频文件、零新依赖）**：
+    - 新增 `src/game/audio.ts`（`AudioEngine` + 单例 `audio` + `installAudioDebugHook`）：两段 32 步循环 8-bit Chiptune（`day` 暖调五声音阶当铺主题、`night` 冷调小调牌局主题，方波主旋律 + 三角波低音）与 5 种短促合成音效（`button_click` 点按钮、`play_card` 出牌、`receive_card` 收牌、`deal_closed` 成交、`demon_defeated` 击败清脆“叮”声，贴合 GDD 第 95 行）；默认开启且主音量柔和（`DEFAULT_MASTER_VOLUME = 0.2`），静音时立即将主 `GainNode` 置 0 并停掉 BGM 调度与 SFX 合成；遵守浏览器自动播放策略，捕获阶段首次交互后才创建/恢复 `AudioContext`，无 `AudioContext` 或异常时静默降级不崩溃。
+    - 持久化与标题开关：`src/game/save.ts` 新增独立键 `AUDIO_STORAGE_KEY = 'pawnshop-cards-audio-v1'` 与 `loadAudioMuted` / `saveAudioMuted`（不改动 `SaveData` 结构）；`TitleScene` 左下角（与右下「教程」对称，`x: 54, y: 154, 60×22`）增 16 色像素风「音量:开 / 音量:关」开关；用 `scripts/generate-pixel-font.py` 补齐「量」字形（`src/data/pixel-font.json` 510 → 511 字形，109.8 KB，临时 TTF 用完即删）。
+    - 场景接线：`TitleScene` 停 BGM、`PawnshopScene` 播 `day`、`TransitionScene` 拉灯转场停播、`CardBattleScene` 播 `night`；所有菜单/操作按钮接 `button_click`，成交接 `deal_closed` + `receive_card`，出牌接 `play_card`，心魔碎裂接 `demon_defeated`，胜利得新牌接 `receive_card`。
+  - **子项 4（竖屏方案 b：保持整数缩放 + 横屏提示）**：
+    - 保持 `src/utils/scale.ts` `calculateIntegerScale` 整数缩放不动，新增纯函数 `isPortraitViewport(width, height)`；`index.html` 在 `#game-container` 下方增加 16 色像素风 `#portrait-hint`（「横屏体验更佳」，`pointer-events: none` 不遮挡画布）；`src/main.ts` 在启动、`READY`、`resize`、`orientationchange` 同步显隐（竖屏显示、横屏隐藏），竖屏全程保持可玩。
+  - **文档**：`docs/GAME_DESIGN.md` 增补 §13（v1.0 核心不动），同步更新 `docs/DECISIONS.md` 与本文件。
+- **验证证据**：
+  - `npx tsc --noEmit` 退出码 0（0 错误）；
+  - `npm run build` 退出码 0（`dist/index.html` 1.36 kB，JS `1,404.50 kB` ≤ 2 MB 预算）；
+  - `npx vitest run` 11/11 文件、87/87 单测全部通过（新增 `tests/unit/audio.test.ts` 6 用例、扩展 `tests/unit/scale.test.ts` +2 用例与 `tests/unit/pixelart.test.ts` 字形覆盖）；
+  - `npm run test:e2e`（Playwright，localhost）21/21 全部通过（新增 `tests/e2e/audio.spec.ts` 与 `tests/e2e/portrait.spec.ts`），无失败请求、无 `pageerror`；
+  - 实测截图人工核查通过：`test-results/audio-title-volume.png`（标题左下「音量:开」清晰对称）、`test-results/portrait-hint-390x844.png`（390×844 竖屏下 1× 整数缩放画布 + 下方「↻ 横屏体验更佳」无遮挡）。

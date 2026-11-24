@@ -4,6 +4,7 @@ import {
   BASE_WIDTH,
   calculateIntegerScale,
   calculateScaledDimensions,
+  isPortraitViewport,
 } from '../../src/utils/scale';
 
 describe('calculateIntegerScale', () => {
@@ -37,5 +38,23 @@ describe('calculateScaledDimensions', () => {
       width: BASE_WIDTH * 4,
       height: BASE_HEIGHT * 4,
     });
+  });
+
+  it('keeps 1x crisp integer scaling in portrait phone viewport 390x844', () => {
+    expect(calculateScaledDimensions(390, 844)).toEqual({
+      scale: 1,
+      width: BASE_WIDTH,
+      height: BASE_HEIGHT,
+    });
+  });
+});
+
+describe('isPortraitViewport', () => {
+  it('returns true only when height exceeds width', () => {
+    expect(isPortraitViewport(390, 844)).toBe(true);
+    expect(isPortraitViewport(720, 1280)).toBe(true);
+    expect(isPortraitViewport(1280, 720)).toBe(false);
+    expect(isPortraitViewport(844, 390)).toBe(false);
+    expect(isPortraitViewport(500, 500)).toBe(false);
   });
 });

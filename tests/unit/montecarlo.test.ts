@@ -25,16 +25,16 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
 
     // Output summary for balance observation & reporting
     console.info(
-      `[MonteCarlo] Demon A (${statsA.demonName}, HP 20): winRate=${(statsA.winRate * 100).toFixed(1)}% (${statsA.wins}/${statsA.runs}), avgEndRound=${statsA.avgEndRound.toFixed(2)}, avgWinHp=${statsA.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsA.lossesHp}, lossesTimeout=${statsA.lossesTimeout}`,
+      `[MonteCarlo] Demon A (${statsA.demonName}, HP 24): winRate=${(statsA.winRate * 100).toFixed(1)}% (${statsA.wins}/${statsA.runs}), avgEndRound=${statsA.avgEndRound.toFixed(2)}, avgWinHp=${statsA.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsA.lossesHp}, lossesTimeout=${statsA.lossesTimeout}`,
     );
     console.info(
-      `[MonteCarlo] Demon B (${statsB.demonName}, HP 18): winRate=${(statsB.winRate * 100).toFixed(1)}% (${statsB.wins}/${statsB.runs}), avgEndRound=${statsB.avgEndRound.toFixed(2)}, avgWinHp=${statsB.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsB.lossesHp}, lossesTimeout=${statsB.lossesTimeout}`,
+      `[MonteCarlo] Demon B (${statsB.demonName}, HP 22): winRate=${(statsB.winRate * 100).toFixed(1)}% (${statsB.wins}/${statsB.runs}), avgEndRound=${statsB.avgEndRound.toFixed(2)}, avgWinHp=${statsB.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsB.lossesHp}, lossesTimeout=${statsB.lossesTimeout}`,
     );
     console.info(
-      `[MonteCarlo] Demon C (${statsC.demonName}, HP 22): winRate=${(statsC.winRate * 100).toFixed(1)}% (${statsC.wins}/${statsC.runs}), avgEndRound=${statsC.avgEndRound.toFixed(2)}, avgWinHp=${statsC.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsC.lossesHp}, lossesTimeout=${statsC.lossesTimeout}`,
+      `[MonteCarlo] Demon C (${statsC.demonName}, HP 26): winRate=${(statsC.winRate * 100).toFixed(1)}% (${statsC.wins}/${statsC.runs}), avgEndRound=${statsC.avgEndRound.toFixed(2)}, avgWinHp=${statsC.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsC.lossesHp}, lossesTimeout=${statsC.lossesTimeout}`,
     );
     console.info(
-      `[MonteCarlo] Demon D (${statsD.demonName}, HP 16): winRate=${(statsD.winRate * 100).toFixed(1)}% (${statsD.wins}/${statsD.runs}), avgEndRound=${statsD.avgEndRound.toFixed(2)}, avgWinHp=${statsD.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsD.lossesHp}, lossesTimeout=${statsD.lossesTimeout}`,
+      `[MonteCarlo] Demon D (${statsD.demonName}, HP 20): winRate=${(statsD.winRate * 100).toFixed(1)}% (${statsD.wins}/${statsD.runs}), avgEndRound=${statsD.avgEndRound.toFixed(2)}, avgWinHp=${statsD.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsD.lossesHp}, lossesTimeout=${statsD.lossesTimeout}`,
     );
 
     for (const stats of [statsA, statsB, statsC, statsD]) {

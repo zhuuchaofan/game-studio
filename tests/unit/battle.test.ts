@@ -37,7 +37,7 @@ describe('Battle state machine', () => {
     expect(state.drawPile).toHaveLength(5);
     expect(state.playerHp).toBe(30);
     expect(state.renqing).toBe(3);
-    expect(state.demonHp).toBe(20);
+    expect(state.demonHp).toBe(24);
 
     state = endTurn(state);
     expect(state.round).toBe(2);
@@ -130,7 +130,7 @@ describe('Battle state machine', () => {
     expect(state.phase).toBe('result');
     expect(state.result).toBe('lose_timeout');
     expect(state.playerHp).toBe(21);
-    expect(state.demonHp).toBe(20);
+    expect(state.demonHp).toBe(24);
   });
 
   it('loses by HP depletion when demon attack reduces playerHp to 0', () => {
@@ -147,7 +147,7 @@ describe('Battle state machine', () => {
   it('telegraphs Demon B Round 3 skill "远行" in Round 2 and deals 8 damage in Round 3', () => {
     const rng = mulberry32(12);
     let state = createBattle(TEST_DECK, 'b', rng, CARDS, DEMONS, BALANCE);
-    expect(state.demonHp).toBe(18);
+    expect(state.demonHp).toBe(22);
     expect(getIntent(state).current).toEqual({ round: 1, damage: 2 });
     expect(getIntent(state).upcomingSkill).toBeNull();
 
@@ -196,12 +196,12 @@ describe('Battle state machine', () => {
     // R1：心魔尚未行动，铁皮青蛙造成基础 3 点伤害
     expect(state.round).toBe(1);
     expect(state.demonHasActed).toBe(false);
-    expect(state.demonHp).toBe(20);
+    expect(state.demonHp).toBe(24);
     const frogIdxR1 = state.hand.indexOf('铁皮青蛙');
     expect(frogIdxR1).toBeGreaterThanOrEqual(0);
 
     state = playCard(state, frogIdxR1);
-    expect(state.demonHp).toBe(17);
+    expect(state.demonHp).toBe(21);
     expect(state.demonHasActed).toBe(false);
 
     // 结束 R1 -> 心魔行动并将 demonHasActed 置为 true，进入 R2 时不重置，且弃牌堆洗回抽到铁皮青蛙
@@ -214,7 +214,7 @@ describe('Battle state machine', () => {
 
     // R2：心魔此前回合已行动，铁皮青蛙触发条件分支造成 6 点伤害
     state = playCard(state, frogIdxR2);
-    expect(state.demonHp).toBe(11);
+    expect(state.demonHp).toBe(15);
 
     // 结束 R2 -> 进入 R3，demonHasActed 仍保持 true，再次打出仍为 6 点伤害
     state = endTurn(state);
@@ -224,7 +224,7 @@ describe('Battle state machine', () => {
     expect(frogIdxR3).toBeGreaterThanOrEqual(0);
 
     state = playCard(state, frogIdxR3);
-    expect(state.demonHp).toBe(5);
+    expect(state.demonHp).toBe(9);
   });
 
   it('plays P4 new cards (飞驰, 余音, 集邮) using existing effect types without introducing new mechanics', () => {
@@ -240,7 +240,7 @@ describe('Battle state machine', () => {
 
     expect(state.demonId).toBe('c');
     expect(state.demonName).toBe('房租');
-    expect(state.demonHp).toBe(22);
+    expect(state.demonHp).toBe(26);
 
     // 集邮 (cost 1): draw 1 + renqing +1 (net 0 renqing, hand size unchanged)
     const stampIdx = state.hand.indexOf('集邮');
@@ -269,9 +269,9 @@ describe('Battle state machine', () => {
   });
 
   it('verifies Demon C (房租) escalating damage 3->4->5 and Demon D (学费) Round 3 skill "开学" 10 damage', () => {
-    // Demon C: 22 HP, 3 -> 4 -> 5
+    // Demon C: 26 HP, 3 -> 4 -> 5
     let stateC = createBattle(TEST_DECK, 'c', mulberry32(21), CARDS, DEMONS, BALANCE);
-    expect(stateC.demonHp).toBe(22);
+    expect(stateC.demonHp).toBe(26);
     expect(getIntent(stateC).current).toEqual({ round: 1, damage: 3 });
     stateC = endTurn(stateC);
     expect(stateC.playerHp).toBe(27);
@@ -283,9 +283,9 @@ describe('Battle state machine', () => {
     expect(stateC.playerHp).toBe(18);
     expect(stateC.result).toBe('lose_timeout');
 
-    // Demon D: 16 HP, 1 -> 2 -> 10 (skill: 开学)
+    // Demon D: 20 HP, 1 -> 2 -> 10 (skill: 开学)
     let stateD = createBattle(TEST_DECK, 'd', mulberry32(22), CARDS, DEMONS, BALANCE);
-    expect(stateD.demonHp).toBe(16);
+    expect(stateD.demonHp).toBe(20);
     expect(getIntent(stateD).current).toEqual({ round: 1, damage: 1 });
     expect(getIntent(stateD).upcomingSkill).toBeNull();
     stateD = endTurn(stateD);

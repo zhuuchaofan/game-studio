@@ -74,7 +74,13 @@ export interface BattleDebugSnapshot {
     deck: string[];
     shopLevel: number;
     redeemTickets: number;
+    tutorialCompleted?: boolean;
   } | null;
+  /** 新手教程状态（供 E2E 测试断言用）。 */
+  tutorialActive?: boolean;
+  currentStep?: string | null;
+  tutorialDone?: boolean;
+  tutorialCopy?: string | null;
 }
 
 /**

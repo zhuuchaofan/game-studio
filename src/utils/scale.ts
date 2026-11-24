@@ -39,3 +39,10 @@ export function calculateScaledDimensions(
     height: baseHeight * scale,
   };
 }
+
+/**
+ * Returns true when the viewport is taller than it is wide (portrait orientation).
+ */
+export function isPortraitViewport(viewportWidth: number, viewportHeight: number): boolean {
+  return viewportHeight > viewportWidth;
+}

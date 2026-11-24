@@ -3,6 +3,7 @@ import balanceJson from '../data/balance.json';
 import cardsJson from '../data/cards.json';
 import demonsJson from '../data/demons.json';
 import { CARD_PIXEL_ART, DEMON_PIXEL_ART } from '../data/pixelart';
+import { audio, installAudioDebugHook } from '../game/audio';
 import {
   canPlayCard,
   createBattle,
@@ -20,7 +21,17 @@ import { TEST_DECK } from '../game/montecarlo';
 import { PALETTE, parseHexColor } from '../game/pawnshop';
 import { pixelRowsToTexture } from '../game/pixelart';
 import { addPixelText } from '../game/pixelFont';
-import { maxRenqingForLevel, type SaveData } from '../game/save';
+import { loadTutorialDone, maxRenqingForLevel, saveTutorialDone, type SaveData } from '../game/save';
+import {
+  advanceTutorialStep,
+  cloneTutorialState,
+  createTutorialState,
+  getTutorialCopy,
+  skipTutorial,
+  syncTutorialForBattle,
+  type TutorialState,
+} from '../game/tutorial';
+import { createTutorialBubble } from '../game/tutorialBubble';
 import { createRngFromUrl } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 import type { ResultSceneData } from './ResultScene';
@@ -30,6 +41,7 @@ export interface CardBattleSceneData {
   demonId?: string;
   maxRenqing?: number;
   save?: SaveData;
+  tutorial?: TutorialState;
 }
 
 const HUD_HEIGHT = 21;
@@ -79,6 +91,7 @@ export function computeHandCardX(index: number, count: number): number {
 export class CardBattleScene extends Phaser.Scene {
   private state!: BattleState;
   private save?: SaveData;
+  private tutorial!: TutorialState;
   private originalDeck: string[] = [];
   private isAnimating = false;
   private isEmptyDeck = false;
@@ -88,6 +101,7 @@ export class CardBattleScene extends Phaser.Scene {
   private demonLayer!: Phaser.GameObjects.Container;
   private handLayer!: Phaser.GameObjects.Container;
   private fxLayer!: Phaser.GameObjects.Container;
+  private tutorialBubble?: Phaser.GameObjects.Container;
   private feedbackText!: Phaser.GameObjects.BitmapText;
   private endTurnBg!: Phaser.GameObjects.Rectangle;
   private endTurnLabel!: Phaser.GameObjects.BitmapText;
@@ -101,7 +115,14 @@ export class CardBattleScene extends Phaser.Scene {
     this.isAnimating = false;
     this.isEmptyDeck = false;
     this.feedbackMessage = '';
+    this.tutorialBubble = undefined;
     this.save = data?.save ? { ...data.save, deck: [...data.save.deck] } : undefined;
+    this.tutorial = data?.tutorial
+      ? cloneTutorialState(data.tutorial)
+      : createTutorialState({
+          day: this.save?.day ?? 1,
+          tutorialDone: true,
+        });
 
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const demonParam = params.get('demon');
@@ -127,10 +148,14 @@ export class CardBattleScene extends Phaser.Scene {
 
     this.originalDeck = [...resolvedDeck];
 
+    installAudioDebugHook(audio);
+    audio.playBgm('night');
+
     this.drawNightBackdrop();
 
     if (resolvedDeck.length === 0) {
       this.isEmptyDeck = true;
+      this.tutorial = syncTutorialForBattle(this.tutorial, 'empty_deck');
       this.renderEmptyDeckView(resolvedDemonId, battleBalance);
       this.syncInputBounds();
       return;
@@ -146,12 +171,18 @@ export class CardBattleScene extends Phaser.Scene {
       battleBalance,
     );
 
+    this.tutorial = syncTutorialForBattle(this.tutorial, 'play');
+
     // 测试钩子（仅供 E2E 自动化测试断言用，非正式功能）
     window.__BATTLE_DEBUG__ = {
       getState: () => ({
         ...toBattleDebugSnapshot(this.state, this.isAnimating),
         day: this.save?.day ?? 1,
         shopLevel: this.save?.shopLevel ?? 1,
+        tutorialActive: this.tutorial.active,
+        currentStep: this.tutorial.currentStep,
+        tutorialDone: this.tutorial.done || loadTutorialDone(),
+        tutorialCopy: getTutorialCopy(this.tutorial.currentStep),
       }),
     };
 
@@ -162,7 +193,31 @@ export class CardBattleScene extends Phaser.Scene {
 
     this.createActionStrip();
     this.renderBattle();
+    this.renderTutorialBubble();
     this.syncInputBounds();
+  }
+
+  private renderTutorialBubble(): void {
+    if (this.tutorialBubble) {
+      this.tutorialBubble.destroy();
+      this.tutorialBubble = undefined;
+    }
+
+    if (!this.tutorial.active || !this.tutorial.currentStep) {
+      return;
+    }
+
+    this.tutorialBubble = createTutorialBubble(this, this.tutorial.currentStep, {
+      onAdvance: () => {
+        this.tutorial = advanceTutorialStep(this.tutorial);
+        this.renderTutorialBubble();
+      },
+      onSkip: () => {
+        this.tutorial = skipTutorial(this.tutorial);
+        saveTutorialDone(true);
+        this.renderTutorialBubble();
+      },
+    });
   }
 
   private drawNightBackdrop(): void {
@@ -223,6 +278,10 @@ export class CardBattleScene extends Phaser.Scene {
         isAnimating: false,
         day: this.save?.day ?? 1,
         shopLevel: this.save?.shopLevel ?? 1,
+        tutorialActive: this.tutorial.active,
+        currentStep: this.tutorial.currentStep,
+        tutorialDone: this.tutorial.done || loadTutorialDone(),
+        tutorialCopy: getTutorialCopy(this.tutorial.currentStep),
       }),
     };
 
@@ -253,7 +312,11 @@ export class CardBattleScene extends Phaser.Scene {
 
     btn.on('pointerover', () => btn.setFillStyle(PALETTE.nightBlue.num));
     btn.on('pointerout', () => btn.setFillStyle(PALETTE.deepBlue.num));
-    btn.on('pointerdown', () => this.scene.start('TitleScene'));
+    btn.on('pointerdown', () => {
+      audio.unlock();
+      audio.playSfx('button_click');
+      this.scene.start('TitleScene');
+    });
   }
 
   private createActionStrip(): void {
@@ -537,6 +600,8 @@ export class CardBattleScene extends Phaser.Scene {
       return;
     }
 
+    audio.unlock();
+    audio.playSfx('play_card');
     this.isAnimating = true;
     this.renderBattle();
 
@@ -594,6 +659,8 @@ export class CardBattleScene extends Phaser.Scene {
       return;
     }
 
+    audio.unlock();
+    audio.playSfx('button_click');
     this.isAnimating = true;
     const prevDemonHp = this.state.demonHp;
     const prevPlayerHp = this.state.playerHp;
@@ -640,7 +707,8 @@ export class CardBattleScene extends Phaser.Scene {
   }
 
   private playDemonShatterAndFinish(): void {
-    // 隐藏心魔剪影，生成 8×8 像素块在 12 帧内散开
+    // 隐藏心魔剪影，生成 8×8 像素块在 12 帧内散开，并配清脆“叮”声（GDD 第 95 行）
+    audio.playSfx('demon_defeated');
     this.demonLayer.removeAll(true);
 
     const shardColors = [
@@ -700,6 +768,7 @@ export class CardBattleScene extends Phaser.Scene {
       round: this.state.round,
       maxRounds: this.state.maxRounds,
       save: this.save,
+      tutorial: cloneTutorialState(this.tutorial),
     };
     this.scene.start('ResultScene', payload);
   }

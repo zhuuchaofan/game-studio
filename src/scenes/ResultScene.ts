@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import balanceJson from '../data/balance.json';
 import cardsJson from '../data/cards.json';
+import { audio, installAudioDebugHook } from '../game/audio';
 import {
   resolveWinReward,
   type BattleBalanceConfig,
@@ -12,9 +13,22 @@ import { addPixelText } from '../game/pixelFont';
 import {
   applyDayResult,
   createNewGame,
+  loadTutorialDone,
   saveGame,
+  saveTutorialDone,
   type SaveData,
 } from '../game/save';
+import {
+  advanceTutorialStep,
+  cloneTutorialState,
+  createTutorialState,
+  finishTutorialOnDayEnd,
+  getTutorialCopy,
+  skipTutorial,
+  syncTutorialForResult,
+  type TutorialState,
+} from '../game/tutorial';
+import { createTutorialBubble } from '../game/tutorialBubble';
 import { createRngFromUrl } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
@@ -27,6 +41,7 @@ export interface ResultSceneData {
   round: number;
   maxRounds: number;
   save?: SaveData;
+  tutorial?: TutorialState;
 }
 
 const CARDS: readonly CardDef[] = cardsJson as CardDef[];
@@ -44,6 +59,8 @@ export const RESULT_NEXT_DAY_BUTTON = { x: 88, y: 148, width: 116, height: 24 } 
 export const RESULT_RETURN_BUTTON = { x: 222, y: 148, width: 136, height: 24 } as const;
 
 export class ResultScene extends Phaser.Scene {
+  private tutorial!: TutorialState;
+  private tutorialBubble?: Phaser.GameObjects.Container;
   private handleWindowResize?: () => void;
 
   constructor() {
@@ -51,6 +68,7 @@ export class ResultScene extends Phaser.Scene {
   }
 
   create(data?: ResultSceneData): void {
+    this.tutorialBubble = undefined;
     const result = data?.result ?? 'lose_timeout';
     const deck = data?.deck ?? [];
     const demonId = data?.demonId ?? 'a';
@@ -65,6 +83,9 @@ export class ResultScene extends Phaser.Scene {
     if (result === 'win') {
       const { rng } = createRngFromUrl();
       reward = resolveWinReward(deck, CARDS, RESULT_BALANCE, rng);
+      if (reward.cardName) {
+        audio.playSfx('receive_card');
+      }
     } else if (result === 'lose_hp') {
       loseReason = '被打倒';
     } else {
@@ -81,6 +102,21 @@ export class ResultScene extends Phaser.Scene {
       reward,
     });
     saveGame(nextSave);
+
+    const incomingTutorial = data?.tutorial
+      ? cloneTutorialState(data.tutorial)
+      : createTutorialState({
+          day: currentSave.day,
+          tutorialDone: true,
+        });
+    this.tutorial = syncTutorialForResult(incomingTutorial);
+
+    // 只要第 1 天打完进入结算且未处于教程气泡展示中，即落盘完成标记
+    if (currentSave.day === 1 && !this.tutorial.active) {
+      saveTutorialDone(true);
+    }
+
+    installAudioDebugHook(audio);
 
     // 测试钩子（仅供 E2E 自动化测试断言用，非正式功能）
     window.__BATTLE_DEBUG__ = {
@@ -104,6 +140,10 @@ export class ResultScene extends Phaser.Scene {
         day: currentSave.day,
         shopLevel: nextSave.shopLevel,
         savedData: nextSave,
+        tutorialActive: this.tutorial.active,
+        currentStep: this.tutorial.currentStep,
+        tutorialDone: this.tutorial.done || loadTutorialDone(),
+        tutorialCopy: getTutorialCopy(this.tutorial.currentStep),
       }),
     };
 
@@ -166,6 +206,15 @@ export class ResultScene extends Phaser.Scene {
       });
     }
 
+    const completeIfDayOne = (): void => {
+      if (this.tutorial.active) {
+        this.tutorial = finishTutorialOnDayEnd(this.tutorial);
+        saveTutorialDone(true);
+      } else if (currentSave.day === 1) {
+        saveTutorialDone(true);
+      }
+    };
+
     // “下一天”按钮（带更新后存档进入下一天 PawnshopScene）
     this.createResultButton(
       RESULT_NEXT_DAY_BUTTON.x,
@@ -174,6 +223,7 @@ export class ResultScene extends Phaser.Scene {
       RESULT_NEXT_DAY_BUTTON.height,
       '下一天',
       () => {
+        completeIfDayOne();
         this.scene.start('PawnshopScene', { save: nextSave });
       },
     );
@@ -186,11 +236,39 @@ export class ResultScene extends Phaser.Scene {
       RESULT_RETURN_BUTTON.height,
       '返回标题',
       () => {
+        completeIfDayOne();
         this.scene.start('TitleScene');
       },
     );
 
+    this.renderTutorialBubble();
     this.syncInputBounds();
+  }
+
+  private renderTutorialBubble(): void {
+    if (this.tutorialBubble) {
+      this.tutorialBubble.destroy();
+      this.tutorialBubble = undefined;
+    }
+
+    if (!this.tutorial.active || !this.tutorial.currentStep) {
+      return;
+    }
+
+    this.tutorialBubble = createTutorialBubble(this, this.tutorial.currentStep, {
+      onAdvance: () => {
+        this.tutorial = advanceTutorialStep(this.tutorial);
+        if (this.tutorial.done) {
+          saveTutorialDone(true);
+        }
+        this.renderTutorialBubble();
+      },
+      onSkip: () => {
+        this.tutorial = skipTutorial(this.tutorial);
+        saveTutorialDone(true);
+        this.renderTutorialBubble();
+      },
+    });
   }
 
   private createResultButton(
@@ -213,7 +291,11 @@ export class ResultScene extends Phaser.Scene {
 
     btn.on('pointerover', () => btn.setFillStyle(PALETTE.nightBlue.num));
     btn.on('pointerout', () => btn.setFillStyle(PALETTE.nightBlack.num));
-    btn.on('pointerdown', onClick);
+    btn.on('pointerdown', () => {
+      audio.unlock();
+      audio.playSfx('button_click');
+      onClick();
+    });
   }
 
   private syncInputBounds(): void {
