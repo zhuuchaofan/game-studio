@@ -9,6 +9,7 @@ import {
   deriveDaySeed,
   formatSignedDelta,
   getTierAffordability,
+  hasAnyAffordableTier,
   ITEMS,
   PALETTE,
   parseHexColor,
@@ -16,6 +17,7 @@ import {
   resolveOffer,
   settle,
   shuffleItems,
+  skipCustomer,
   TIER_ORDER,
   toDebugSnapshot,
   wrapCjkText,
@@ -43,6 +45,10 @@ const PANEL_CENTER_Y = 75;
 const PANEL_HEIGHT = 92;
 const BUTTON_ROW_Y = 151;
 const STORY_WRAP_CHARS = 15;
+const SKIP_BUTTON_X = 270;
+const SKIP_BUTTON_Y = 107;
+const SKIP_BUTTON_WIDTH = 64;
+const SKIP_BUTTON_HEIGHT = 18;
 
 export class PawnshopScene extends Phaser.Scene {
   private save!: SaveData;
@@ -84,8 +90,9 @@ export class PawnshopScene extends Phaser.Scene {
     window.__PAWNSHOP_DEBUG__ = {
       getState: () => {
         const currentItem = this.state.items[this.state.customerIndex];
+        const isNegotiating = this.state.phase === 'negotiating' && Boolean(currentItem);
         const tierAffordability =
-          this.state.phase === 'negotiating' && currentItem
+          isNegotiating && currentItem
             ? getTierAffordability(this.state.money, currentItem.trueValue)
             : undefined;
         return {
@@ -95,6 +102,7 @@ export class PawnshopScene extends Phaser.Scene {
           redeemTickets: this.save.redeemTickets,
           maxRenqing: maxRenqingForLevel(this.save.shopLevel),
           itemsOrder: this.state.items.map((item) => item.id),
+          canSkip: isNegotiating,
           ...(tierAffordability ? { tierAffordability } : {}),
         };
       },
@@ -234,6 +242,22 @@ export class PawnshopScene extends Phaser.Scene {
         origin: [0, 0],
         lineSpacing: 5,
       }),
+    );
+
+    // 当客卡片右下角：跳过当客按钮（不成交、不扣钱、不改口碑、不给牌，直接进入下一位；
+    // 三档全买不起时以灯黄底高亮提示可用出口，其余情况为旧纸底，均为 16 色板 + 1px 墨黑描边）
+    const noneAffordable = !hasAnyAffordableTier(this.state.money, item.trueValue);
+    this.addActionButton(
+      SKIP_BUTTON_X,
+      SKIP_BUTTON_Y,
+      SKIP_BUTTON_WIDTH,
+      SKIP_BUTTON_HEIGHT,
+      '跳过当客',
+      null,
+      () => this.handleSkip(),
+      false,
+      noneAffordable ? PALETTE.lampYellow.num : PALETTE.oldPaper.num,
+      noneAffordable ? PALETTE.paperWhite.num : PALETTE.lampYellow.num,
     );
 
     // 三档报价按钮：低价 / 平价 / 高价
@@ -487,6 +511,8 @@ export class PawnshopScene extends Phaser.Scene {
     bottomText: string | null,
     onClick: () => void,
     disabled = false,
+    fillColor: number = PALETTE.candle.num,
+    hoverColor: number = PALETTE.lampYellow.num,
   ): void {
     // 买不起的档位：置灰禁用——银蓝底（16 色板内），与可点的烛光底明显区分，
     // 不设 interactive、无 hover 变色、不可点击。
@@ -497,15 +523,15 @@ export class PawnshopScene extends Phaser.Scene {
       this.contentLayer.add(bg);
     } else {
       const bg = this.add
-        .rectangle(x, y, width, height, PALETTE.candle.num)
+        .rectangle(x, y, width, height, fillColor)
         .setStrokeStyle(1, PALETTE.ink.num)
         .setInteractive({ useHandCursor: true });
 
       bg.on('pointerover', () => {
-        bg.setFillStyle(PALETTE.lampYellow.num);
+        bg.setFillStyle(hoverColor);
       });
       bg.on('pointerout', () => {
-        bg.setFillStyle(PALETTE.candle.num);
+        bg.setFillStyle(fillColor);
       });
       bg.on('pointerdown', onClick);
 
@@ -535,6 +561,15 @@ export class PawnshopScene extends Phaser.Scene {
         origin: 0.5,
       }),
     );
+  }
+
+  private handleSkip(): void {
+    if (this.state.phase !== 'negotiating') {
+      return;
+    }
+
+    this.state = skipCustomer(this.state);
+    this.renderCurrentPhase();
   }
 
   private handleOffer(tier: OfferTier): void {
