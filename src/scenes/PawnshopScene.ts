@@ -1,14 +1,18 @@
 import Phaser from 'phaser';
+import { ITEM_PIXEL_ART } from '../data/pixelart';
 import {
   advanceCustomer,
   BALANCE,
   createInitialState,
+  deriveDaySeed,
   formatSignedDelta,
+  ITEMS,
   PALETTE,
   parseHexColor,
   quotePrice,
   resolveOffer,
   settle,
+  shuffleItems,
   TIER_ORDER,
   toDebugSnapshot,
   wrapCjkText,
@@ -16,8 +20,20 @@ import {
   type PawnItem,
   type PawnshopState,
 } from '../game/pawnshop';
-import { createRngFromUrl, type RngFn } from '../utils/rng';
+import { pixelRowsToTexture } from '../game/pixelart';
+import { addPixelText } from '../game/pixelFont';
+import {
+  createNewGame,
+  demonIdForDay,
+  maxRenqingForLevel,
+  type SaveData,
+} from '../game/save';
+import { createRngFromUrl, mulberry32, type RngFn } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
+
+export interface PawnshopSceneData {
+  save?: SaveData;
+}
 
 const HUD_HEIGHT = 22;
 const PANEL_CENTER_Y = 75;
@@ -26,27 +42,51 @@ const BUTTON_ROW_Y = 151;
 const STORY_WRAP_CHARS = 15;
 
 export class PawnshopScene extends Phaser.Scene {
+  private save!: SaveData;
   private state!: PawnshopState;
   private rng!: RngFn;
   private contentLayer!: Phaser.GameObjects.Container;
-  private hudMoneyText!: Phaser.GameObjects.Text;
-  private hudRepText!: Phaser.GameObjects.Text;
-  private hudDeckText!: Phaser.GameObjects.Text;
-  private hudProgressText!: Phaser.GameObjects.Text;
+  private hudMoneyText!: Phaser.GameObjects.BitmapText;
+  private hudRepText!: Phaser.GameObjects.BitmapText;
+  private hudDeckText!: Phaser.GameObjects.BitmapText;
+  private hudProgressText!: Phaser.GameObjects.BitmapText;
+  private hudDayText!: Phaser.GameObjects.BitmapText;
   private handleWindowResize?: () => void;
 
   constructor() {
     super({ key: 'PawnshopScene' });
   }
 
-  create(): void {
-    const { rng } = createRngFromUrl();
+  create(data?: PawnshopSceneData): void {
+    this.save = data?.save
+      ? { ...data.save, deck: [...data.save.deck] }
+      : createNewGame();
+
+    const { seed, rng } = createRngFromUrl();
     this.rng = rng;
-    this.state = createInitialState();
+
+    // 每天开始时按 ?seed= + 天数洗牌当客顺序（Fisher-Yates，固定种子可复现）
+    const shuffleRng = mulberry32(deriveDaySeed(seed, this.save.day));
+    const shuffledItems = shuffleItems(ITEMS, shuffleRng);
+
+    this.state = createInitialState({
+      day: this.save.day,
+      money: this.save.money,
+      reputation: this.save.reputation,
+      deck: this.save.deck,
+      items: shuffledItems,
+    });
 
     // 测试钩子（仅供 E2E 自动化测试断言用，非正式功能）
     window.__PAWNSHOP_DEBUG__ = {
-      getState: () => toDebugSnapshot(this.state),
+      getState: () => ({
+        ...toDebugSnapshot(this.state),
+        day: this.state.day,
+        shopLevel: this.save.shopLevel,
+        redeemTickets: this.save.redeemTickets,
+        maxRenqing: maxRenqingForLevel(this.save.shopLevel),
+        itemsOrder: this.state.items.map((item) => item.id),
+      }),
     };
 
     this.drawDaytimeBackdrop();
@@ -95,50 +135,46 @@ export class PawnshopScene extends Phaser.Scene {
     this.add.rectangle(centerX, HUD_HEIGHT - 1, BASE_WIDTH, 1, PALETTE.brass.num);
     this.add.rectangle(centerX, HUD_HEIGHT, BASE_WIDTH, 1, PALETTE.ink.num);
 
-    const labelStyle: Phaser.Types.GameObjects.Text.TextStyle = {
-      fontFamily: 'monospace',
-      fontSize: '12px',
-      color: PALETTE.candle.hex,
-      resolution: 1,
-    };
-    const numStyle: Phaser.Types.GameObjects.Text.TextStyle = {
-      fontFamily: 'monospace',
-      fontSize: '12px',
+    addPixelText(this, 6, hudY, '钱:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudMoneyText = addPixelText(this, 24, hudY, '', {
       color: PALETTE.lampYellow.hex,
-      resolution: 1,
-    };
+      origin: [0, 0.5],
+    });
 
-    this.add.text(8, hudY, '钱:', labelStyle).setOrigin(0, 0.5);
-    this.hudMoneyText = this.add.text(28, hudY, '', numStyle).setOrigin(0, 0.5);
+    addPixelText(this, 60, hudY, '口碑:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudRepText = addPixelText(this, 90, hudY, '', {
+      color: PALETTE.brass.hex,
+      origin: [0, 0.5],
+    });
 
-    this.add.text(88, hudY, '口碑:', labelStyle).setOrigin(0, 0.5);
-    this.hudRepText = this.add
-      .text(124, hudY, '', { ...numStyle, color: PALETTE.brass.hex })
-      .setOrigin(0, 0.5);
+    addPixelText(this, 114, hudY, '牌:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudDeckText = addPixelText(this, 132, hudY, '', {
+      color: PALETTE.lampYellow.hex,
+      origin: [0, 0.5],
+    });
 
-    this.add.text(165, hudY, '牌组:', labelStyle).setOrigin(0, 0.5);
-    this.hudDeckText = this.add.text(199, hudY, '', numStyle).setOrigin(0, 0.5);
+    this.hudProgressText = addPixelText(this, 258, hudY, '', {
+      color: PALETTE.oldPaper.hex,
+      origin: [1, 0.5],
+    });
 
-    this.hudProgressText = this.add
-      .text(BASE_WIDTH - 8, hudY, '', {
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: PALETTE.oldPaper.hex,
-        resolution: 1,
-      })
-      .setOrigin(1, 0.5);
+    this.hudDayText = addPixelText(this, BASE_WIDTH - 6, hudY, '', {
+      color: PALETTE.paperWhite.hex,
+      origin: [1, 0.5],
+    });
   }
 
   private updateHud(): void {
     this.hudMoneyText.setText(`${this.state.money}`);
     this.hudRepText.setText(`${this.state.reputation}`);
     this.hudDeckText.setText(`${this.state.deck.length}`);
+    this.hudDayText.setText(`第${this.state.day}天`);
 
     if (this.state.phase === 'summary') {
       this.hudProgressText.setText('白天结束');
     } else {
       const current = Math.min(this.state.customerIndex + 1, this.state.items.length);
-      this.hudProgressText.setText(`当客 ${current}/${this.state.items.length}`);
+      this.hudProgressText.setText(`当客${current}/${this.state.items.length}`);
     }
   }
 
@@ -165,40 +201,28 @@ export class PawnshopScene extends Phaser.Scene {
 
     // 物品名与对应牌信息
     this.contentLayer.add(
-      this.add
-        .text(82, 37, item.name, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.ink.hex,
-          resolution: 1,
-        })
-        .setOrigin(0, 0),
+      addPixelText(this, 82, 37, item.name, {
+        color: PALETTE.ink.hex,
+        origin: [0, 0],
+      }),
     );
 
     this.contentLayer.add(
-      this.add
-        .text(BASE_WIDTH - 18, 37, `牌:${item.cardName}(${item.cardCost}费)`, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.copperBrown.hex,
-          resolution: 1,
-        })
-        .setOrigin(1, 0),
+      addPixelText(this, BASE_WIDTH - 18, 37, `牌:${item.cardName}(${item.cardCost}费)`, {
+        color: PALETTE.copperBrown.hex,
+        origin: [1, 0],
+      }),
     );
 
     this.contentLayer.add(this.add.rectangle(191, 55, 218, 1, PALETTE.oldPaper.num));
 
     // 一句故事
     this.contentLayer.add(
-      this.add
-        .text(82, 62, wrapCjkText(item.story, STORY_WRAP_CHARS), {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.deepWood.hex,
-          lineSpacing: 5,
-          resolution: 1,
-        })
-        .setOrigin(0, 0),
+      addPixelText(this, 82, 62, wrapCjkText(item.story, STORY_WRAP_CHARS), {
+        color: PALETTE.deepWood.hex,
+        origin: [0, 0],
+        lineSpacing: 5,
+      }),
     );
 
     // 三档报价按钮：低价 / 平价 / 高价
@@ -234,14 +258,10 @@ export class PawnshopScene extends Phaser.Scene {
 
     const headlineColor = outcome.accepted ? PALETTE.jade.hex : PALETTE.vermilion.hex;
     this.contentLayer.add(
-      this.add
-        .text(82, 37, outcome.message, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: headlineColor,
-          resolution: 1,
-        })
-        .setOrigin(0, 0),
+      addPixelText(this, 82, 37, outcome.message, {
+        color: headlineColor,
+        origin: [0, 0],
+      }),
     );
 
     this.contentLayer.add(this.add.rectangle(191, 55, 218, 1, PALETTE.oldPaper.num));
@@ -254,15 +274,11 @@ export class PawnshopScene extends Phaser.Scene {
       : ['钱、口碑、牌组均无变化', `未收下${outcome.item.name}`];
 
     this.contentLayer.add(
-      this.add
-        .text(82, 63, detailLines.join('\n'), {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.ink.hex,
-          lineSpacing: 6,
-          resolution: 1,
-        })
-        .setOrigin(0, 0),
+      addPixelText(this, 82, 63, detailLines.join('\n'), {
+        color: PALETTE.ink.hex,
+        origin: [0, 0],
+        lineSpacing: 6,
+      }),
     );
 
     const isLastCustomer = this.state.customerIndex >= this.state.items.length - 1;
@@ -289,89 +305,61 @@ export class PawnshopScene extends Phaser.Scene {
     // 标题条
     this.contentLayer.add(this.add.rectangle(centerX, 39, cardWidth, 22, PALETTE.deepWood.num));
     this.contentLayer.add(
-      this.add
-        .text(centerX, 39, '白天结束', {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.lampYellow.hex,
-          resolution: 1,
-        })
-        .setOrigin(0.5),
+      addPixelText(this, centerX, 39, `第${this.state.day}天 · 白天结束`, {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      }),
     );
 
     // 钱与口碑摘要条
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, 66, cardWidth - 18, 22, PALETTE.deepWood.num)
+        .rectangle(centerX, 64, cardWidth - 18, 20, PALETTE.deepWood.num)
         .setStrokeStyle(1, PALETTE.ink.num),
     );
 
     this.contentLayer.add(
-      this.add
-        .text(34, 66, '钱:', {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.candle.hex,
-          resolution: 1,
-        })
-        .setOrigin(0, 0.5),
+      addPixelText(this, 34, 64, '钱:', {
+        color: PALETTE.candle.hex,
+        origin: [0, 0.5],
+      }),
     );
     this.contentLayer.add(
-      this.add
-        .text(56, 66, `${this.state.money}`, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.lampYellow.hex,
-          resolution: 1,
-        })
-        .setOrigin(0, 0.5),
+      addPixelText(this, 54, 64, `${this.state.money}`, {
+        color: PALETTE.lampYellow.hex,
+        origin: [0, 0.5],
+      }),
     );
 
     this.contentLayer.add(
-      this.add
-        .text(centerX + 8, 66, '口碑:', {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.candle.hex,
-          resolution: 1,
-        })
-        .setOrigin(0, 0.5),
+      addPixelText(this, centerX + 8, 64, '口碑:', {
+        color: PALETTE.candle.hex,
+        origin: [0, 0.5],
+      }),
     );
     this.contentLayer.add(
-      this.add
-        .text(centerX + 44, 66, `${this.state.reputation}`, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.brass.hex,
-          resolution: 1,
-        })
-        .setOrigin(0, 0.5),
+      addPixelText(this, centerX + 42, 64, `${this.state.reputation}`, {
+        color: PALETTE.brass.hex,
+        origin: [0, 0.5],
+      }),
     );
 
     // 牌组列表
     this.contentLayer.add(
-      this.add
-        .text(28, 84, `收到牌组（${this.state.deck.length}张）：`, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.ink.hex,
-          resolution: 1,
-        })
-        .setOrigin(0, 0),
+      addPixelText(this, 28, 80, `当前牌组（${this.state.deck.length}张）：`, {
+        color: PALETTE.ink.hex,
+        origin: [0, 0],
+      }),
     );
 
     if (this.state.deck.length === 0) {
       this.contentLayer.add(
-        this.add
-          .text(centerX, 112, '今日未收到新牌', {
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            color: PALETTE.copperBrown.hex,
-            resolution: 1,
-          })
-          .setOrigin(0.5),
+        addPixelText(this, centerX, 112, '今日未收到新牌', {
+          color: PALETTE.copperBrown.hex,
+          origin: 0.5,
+        }),
       );
-    } else {
+    } else if (this.state.deck.length <= 3) {
       const slotXs = [72, centerX, BASE_WIDTH - 72];
       this.state.deck.forEach((cardName, index) => {
         const x = slotXs[index] ?? centerX;
@@ -385,23 +373,66 @@ export class PawnshopScene extends Phaser.Scene {
         );
         this.contentLayer.add(this.add.rectangle(x, 102, 80, 3, stripColor));
         this.contentLayer.add(
-          this.add
-            .text(x, 114, cardName, {
-              fontFamily: 'monospace',
-              fontSize: '12px',
-              color: PALETTE.ink.hex,
-              resolution: 1,
-            })
-            .setOrigin(0.5),
+          addPixelText(this, x, 114, cardName, {
+            color: PALETTE.ink.hex,
+            origin: 0.5,
+          }),
         );
       });
+    } else {
+      // 多天累计牌组超过 3 张时，分两行紧凑展示，防止重叠
+      const slotXs = [72, centerX, BASE_WIDTH - 72];
+      const maxSlots = 6;
+      const visible = this.state.deck.slice(0, this.state.deck.length > maxSlots ? 5 : maxSlots);
+      visible.forEach((cardName, index) => {
+        const row = Math.floor(index / 3);
+        const col = index % 3;
+        const x = slotXs[col];
+        const y = row === 0 ? 104 : 124;
+        const matchedItem = this.state.items.find((item) => item.cardName === cardName);
+        const stripColor = matchedItem ? parseHexColor(matchedItem.color) : PALETTE.brass.num;
+
+        this.contentLayer.add(
+          this.add
+            .rectangle(x, y, 82, 16, PALETTE.paperWhite.num)
+            .setStrokeStyle(1, PALETTE.ink.num),
+        );
+        this.contentLayer.add(this.add.rectangle(x, y - 6, 80, 2, stripColor));
+        this.contentLayer.add(
+          addPixelText(this, x, y + 1, cardName, {
+            color: PALETTE.ink.hex,
+            origin: 0.5,
+          }),
+        );
+      });
+      if (this.state.deck.length > maxSlots) {
+        this.contentLayer.add(
+          addPixelText(this, slotXs[2], 125, `等${this.state.deck.length}张`, {
+            color: PALETTE.copperBrown.hex,
+            origin: 0.5,
+          }),
+        );
+      }
     }
 
-    // 进入夜里牌局按钮 + 返回标题按钮（保留 (160, 151) 在“返回标题”命中区内以兼容既有 E2E）
+    // 进入夜里牌局按钮（经 6 帧拉灯转场）+ 返回标题按钮（保留 (160, 151) 在“返回标题”命中区内兼容既有 E2E）
     this.addActionButton(88, BUTTON_ROW_Y, 122, 26, '进入夜里牌局', null, () => {
-      this.scene.start('CardBattleScene', {
+      const updatedSave: SaveData = {
+        ...this.save,
+        day: this.state.day,
+        money: this.state.money,
+        reputation: this.state.reputation,
         deck: [...this.state.deck],
-        demonId: 'a',
+      };
+
+      this.scene.start('TransitionScene', {
+        next: 'CardBattleScene',
+        payload: {
+          deck: [...this.state.deck],
+          demonId: demonIdForDay(updatedSave.day),
+          maxRenqing: maxRenqingForLevel(updatedSave.shopLevel),
+          save: updatedSave,
+        },
       });
     });
 
@@ -419,7 +450,7 @@ export class PawnshopScene extends Phaser.Scene {
         .setStrokeStyle(1, PALETTE.ink.num),
     );
 
-    // 左侧旧物像素图框
+    // 左侧旧物 32×32 真像素插画框
     const boxX = 48;
     const boxY = PANEL_CENTER_Y;
     this.contentLayer.add(
@@ -428,87 +459,10 @@ export class PawnshopScene extends Phaser.Scene {
         .setStrokeStyle(1, PALETTE.ink.num),
     );
 
-    const graphic = this.add.graphics();
-    this.drawItemPixelArt(graphic, item, boxX, boxY);
-    this.contentLayer.add(graphic);
-  }
-
-  private drawItemPixelArt(
-    g: Phaser.GameObjects.Graphics,
-    item: PawnItem,
-    cx: number,
-    cy: number,
-  ): void {
-    const mainColor = parseHexColor(item.color);
-
-    if (item.id === 'watch') {
-      // 表带（木棕 + 墨黑描边）
-      g.fillStyle(PALETTE.ink.num);
-      g.fillRect(cx - 5, cy - 18, 10, 36);
-      g.fillStyle(PALETTE.woodBrown.num);
-      g.fillRect(cx - 4, cy - 17, 8, 34);
-      // 表壳（主色：黄铜）
-      g.fillStyle(PALETTE.ink.num);
-      g.fillRect(cx - 11, cy - 11, 22, 22);
-      g.fillStyle(mainColor);
-      g.fillRect(cx - 10, cy - 10, 19, 19);
-      // 受光高光与表冠
-      g.fillStyle(PALETTE.lampYellow.num);
-      g.fillRect(cx - 9, cy - 9, 18, 3);
-      g.fillStyle(PALETTE.ink.num);
-      g.fillRect(cx + 11, cy - 3, 3, 6);
-      g.fillStyle(mainColor);
-      g.fillRect(cx + 11, cy - 2, 2, 4);
-      // 表盘与指针
-      g.fillStyle(PALETTE.paperWhite.num);
-      g.fillRect(cx - 7, cy - 7, 14, 14);
-      g.fillStyle(PALETTE.ink.num);
-      g.fillRect(cx - 1, cy - 5, 2, 6);
-      g.fillRect(cx, cy - 1, 5, 2);
-      return;
-    }
-
-    if (item.id === 'ring') {
-      // 戒托宝石（纸白 + 灯黄高光）
-      g.fillStyle(PALETTE.ink.num);
-      g.fillRect(cx - 6, cy - 16, 12, 8);
-      g.fillStyle(PALETTE.paperWhite.num);
-      g.fillRect(cx - 5, cy - 15, 10, 6);
-      g.fillStyle(PALETTE.lampYellow.num);
-      g.fillRect(cx - 3, cy - 14, 4, 2);
-      // 戒环（主色：银蓝）
-      g.fillStyle(PALETTE.ink.num);
-      g.fillRect(cx - 12, cy - 8, 24, 21);
-      g.fillStyle(mainColor);
-      g.fillRect(cx - 11, cy - 7, 22, 19);
-      // 戒环暗面
-      g.fillStyle(PALETTE.mistBlue.num);
-      g.fillRect(cx - 11, cy + 8, 22, 5);
-      // 戒环内孔
-      g.fillStyle(PALETTE.ink.num);
-      g.fillRect(cx - 7, cy - 3, 14, 12);
-      g.fillStyle(PALETTE.paperWhite.num);
-      g.fillRect(cx - 6, cy - 2, 12, 10);
-      return;
-    }
-
-    // 默认旧书（主色：木棕）
-    g.fillStyle(PALETTE.ink.num);
-    g.fillRect(cx - 13, cy - 14, 26, 28);
-    g.fillStyle(mainColor);
-    g.fillRect(cx - 12, cy - 13, 24, 26);
-    // 书脊暗面与封面高光
-    g.fillStyle(PALETTE.deepWood.num);
-    g.fillRect(cx - 12, cy - 13, 5, 26);
-    g.fillStyle(PALETTE.copperBrown.num);
-    g.fillRect(cx - 5, cy - 11, 14, 3);
-    // 书页白边与黄铜标题签
-    g.fillStyle(PALETTE.candle.num);
-    g.fillRect(cx + 8, cy - 11, 3, 22);
-    g.fillStyle(PALETTE.brass.num);
-    g.fillRect(cx - 4, cy - 4, 10, 6);
-    g.fillStyle(PALETTE.ink.num);
-    g.fillRect(cx - 2, cy - 2, 6, 2);
+    const rows = ITEM_PIXEL_ART[item.id] ?? ITEM_PIXEL_ART.old_book;
+    const texKey = pixelRowsToTexture(this, `item-art-${item.id}`, rows);
+    const sprite = this.add.image(boxX, boxY, texKey).setOrigin(0.5);
+    this.contentLayer.add(sprite);
   }
 
   private addActionButton(
@@ -537,38 +491,26 @@ export class PawnshopScene extends Phaser.Scene {
 
     if (bottomText === null) {
       this.contentLayer.add(
-        this.add
-          .text(x, y, topText, {
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            color: PALETTE.ink.hex,
-            resolution: 1,
-          })
-          .setOrigin(0.5),
+        addPixelText(this, x, y, topText, {
+          color: PALETTE.ink.hex,
+          origin: 0.5,
+        }),
       );
       return;
     }
 
     this.contentLayer.add(
-      this.add
-        .text(x, y - 8, topText, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.ink.hex,
-          resolution: 1,
-        })
-        .setOrigin(0.5),
+      addPixelText(this, x, y - 8, topText, {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      }),
     );
 
     this.contentLayer.add(
-      this.add
-        .text(x, y + 8, bottomText, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.ink.hex,
-          resolution: 1,
-        })
-        .setOrigin(0.5),
+      addPixelText(this, x, y + 8, bottomText, {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      }),
     );
   }
 
