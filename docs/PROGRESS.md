@@ -172,3 +172,4 @@
     - 心魔 D「学费」（16 血）：胜率 **99.3%**（993/1000），平均结束回合 **2.42**，胜局均血 **28.17**（血归零 0，超时 7）。
 
 - **CI 修复（PR #7 首轮 CI 失败后）**：两轮 CI 均因 E2E 阶段等待超时失败（`waitForPawnshopPhase` 默认 5s、`waitForBattleReady` 10s），非数值/逻辑错误——本地构建+单测+E2E 两次全绿，CI 日志中失败均为阶段滞后超时（两轮失败点不同、且有 5 个用例首轮失败重试后通过，属 CI runner 慢的环境抖动）。修复：`playwright.config.ts` 加 `timeout: 90000`（单测默认 30s 不够多日流程用例）与 `expect.timeout: 15000`（覆盖全部 `expect.poll` 等待），不改游戏代码与测试逻辑。
+- **CI 修复续（超时加长后仍失败）**：两轮新 CI 仍失败，且失败用例在两次运行间互换（一次 P4 用例、一次全流程用例），均为阶段等待超时、本地全绿——定性为 CI runner 并行负载抖动而非逻辑 bug。追加修复：`playwright.config.ts` 在 CI 时 `workers: 1`（串行跑 E2E，避免并行 Chromium 软渲染抢 CPU 拖垮游戏循环）；本地以 `CI=true` 验证：13 passed + 1 flaky（重试后通过），0 failed。
