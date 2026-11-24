@@ -44,3 +44,32 @@
 
 ## 文档草稿
 - `docs/GAME_DESIGN.md`、`docs/ARCHITECTURE.md`、`docs/ART_STYLE.md`、`docs/PROGRESS.md`（本文件）、`docs/DECISIONS.md` 草稿已随本次推送上 `feature/m0-scaffold` 分支，待制作人评审后定稿。
+
+## 2026-11-24 14:08 — 试玩页手机全黑（制作人反馈，截图为证）
+- 现象：https://zhuuchaofan.github.io/game-studio/ 在手机上打开全黑。
+- 已查实的原因（不用再诊断）：Vite 默认 `base: '/'`，`dist/index.html` 用绝对路径引用
+  `/assets/index-*.js`，在 Pages 项目子路径 `/game-studio/` 下请求 404
+  （实测 `/assets/...` 返回 404，`/game-studio/assets/...` 返回 200），JS 没加载，Phaser 没启动，
+  只剩近黑色 body 背景。本地 Playwright 测试跑在根路径所以通过，没查出这个问题。
+- **教训**：部署验收不能只看标题或 HTTP 200——本次就是只核了标题“当铺纸牌 | PAWN SHOP CARDS”
+  与 HTTP 200 就报了“已上线”，实际手机上全黑。以后每次部署验收必须打开 live URL
+  实际截图看渲染（桌面 + 手机竖屏视口各一张），确认画面真出来、无失败请求。
+
+## 2026-11-24 14:10–14:20 — 修复 fix/pages-base-path（AGY 实现 + 协调员独立验证）
+- 修复：`vite.config.ts` 加 `base: './'`（相对路径，未写死 `/game-studio/`）；
+  新增回归测试 `tests/e2e/subpath.spec.ts`（测试内用 Node `http` 自启静态服务器，
+  把 `dist` 挂在 `/game-studio/` 下，断言访问后 `#game-container canvas` 可见、
+  无失败请求、无 `pageerror`）。`src/`、缩放逻辑、`playwright.config.ts`、`.github/` 均未动。
+- **新测试抓 bug 的证据（协调员亲自复现）**：先对旧构建（`base: '/'`）跑新测试，
+  失败：`HTTP 404 http://127.0.0.1:38267/assets/index-B9aY_xzb.js` +
+  `requestfailed ... (net::ERR_ABORTED)`，`1 failed`（AGY 的失败输出存于
+  `/tmp/subpath-old-build-failure.txt`；协调员用 sed 临时改回 `base: '/'` 重建后又复现一次，
+  同样 `1 failed`，随后恢复 `base: './'` 并重建）。
+- **协调员独立验证（新构建）**：`npm run build` 退出码 0（`dist/index.html` 0.70 kB，
+  JS 1,196.71 kB，引用已为 `./assets/index-B9aY_xzb.js`）；`npm run test` 5/5 通过；
+  `npm run test:e2e` 2/2 通过（`subpath.spec.ts` + `smoke.spec.ts`）。
+- 分支 `fix/pages-base-path` 已从 main（`f8d6d05`）创建；修复文件经连接器逐个推送后开 PR，
+  标题写清是修 Pages 子路径黑屏；制作人已授权：CI 绿了直接合并（merge commit），
+  合并后等部署跑完再对 live URL 实截桌面 + 手机竖屏两张图验收。
+- **后续待决策（本次未动）**：竖屏手机上 320×180 画布整数缩放后只有 scale 1、画面很小；
+  是否允许小屏非整数适配或建议横屏，由制作人定。
