@@ -8,6 +8,13 @@ import {
   type WinReward,
 } from '../game/battle';
 import { PALETTE } from '../game/pawnshop';
+import { addPixelText } from '../game/pixelFont';
+import {
+  applyDayResult,
+  createNewGame,
+  saveGame,
+  type SaveData,
+} from '../game/save';
 import { createRngFromUrl } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
@@ -19,6 +26,7 @@ export interface ResultSceneData {
   playerHp: number;
   round: number;
   maxRounds: number;
+  save?: SaveData;
 }
 
 const CARDS: readonly CardDef[] = cardsJson as CardDef[];
@@ -31,7 +39,9 @@ const RESULT_BALANCE: BattleBalanceConfig = {
   winRewardMoney: balanceJson.winRewardMoney,
 };
 
-export const RESULT_RETURN_BUTTON = { x: 160, y: 148, width: 108, height: 26 } as const;
+// 保留 (160, 148) 在“返回标题”命中区内，兼容 P2 既有 E2E 测试
+export const RESULT_NEXT_DAY_BUTTON = { x: 88, y: 148, width: 116, height: 24 } as const;
+export const RESULT_RETURN_BUTTON = { x: 222, y: 148, width: 136, height: 24 } as const;
 
 export class ResultScene extends Phaser.Scene {
   private handleWindowResize?: () => void;
@@ -61,6 +71,17 @@ export class ResultScene extends Phaser.Scene {
       loseReason = `${maxRounds} 回合未分胜负`;
     }
 
+    // 胜负结算后立即自动存档（A1 时机）
+    const currentSave: SaveData = data?.save
+      ? { ...data.save, deck: [...data.save.deck] }
+      : { ...createNewGame(), deck: [...deck] };
+
+    const nextSave = applyDayResult(currentSave, {
+      outcome: result === 'win' ? 'win' : 'lose',
+      reward,
+    });
+    saveGame(nextSave);
+
     // 测试钩子（仅供 E2E 自动化测试断言用，非正式功能）
     window.__BATTLE_DEBUG__ = {
       getState: () => ({
@@ -71,7 +92,7 @@ export class ResultScene extends Phaser.Scene {
         renqing: 0,
         demonHp: result === 'win' ? 0 : 1,
         hand: [],
-        deckCount: deck.length,
+        deckCount: nextSave.deck.length,
         discardCount: 0,
         result,
         demonId,
@@ -80,6 +101,9 @@ export class ResultScene extends Phaser.Scene {
         isAnimating: false,
         reward,
         loseReason,
+        day: currentSave.day,
+        shopLevel: nextSave.shopLevel,
+        savedData: nextSave,
       }),
     };
 
@@ -93,105 +117,103 @@ export class ResultScene extends Phaser.Scene {
       .setStrokeStyle(1, result === 'win' ? PALETTE.brass.num : PALETTE.mistBlue.num);
 
     // 标题条
-    this.add.rectangle(centerX, 28, BASE_WIDTH - 30, 24, PALETTE.nightBlack.num);
-    this.add
-      .text(centerX, 28, result === 'win' ? '赢了！' : '心魔还在……', {
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: result === 'win' ? PALETTE.lampYellow.hex : PALETTE.vermilion.hex,
-        resolution: 1,
-      })
-      .setOrigin(0.5);
+    this.add.rectangle(centerX, 26, BASE_WIDTH - 30, 22, PALETTE.nightBlack.num);
+    addPixelText(this, centerX, 26, result === 'win' ? '赢了！' : '心魔还在……', {
+      color: result === 'win' ? PALETTE.lampYellow.hex : PALETTE.vermilion.hex,
+      origin: 0.5,
+    });
+
+    // 天数与当铺等级
+    addPixelText(this, centerX, 46, `第 ${currentSave.day} 天 · 当铺 Lv.${nextSave.shopLevel}`, {
+      color: PALETTE.silverBlue.hex,
+      origin: 0.5,
+    });
 
     if (result === 'win' && reward) {
-      this.add
-        .text(centerX, 56, `击败心魔「${demonName}」`, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.jade.hex,
-          resolution: 1,
-        })
-        .setOrigin(0.5);
+      addPixelText(this, centerX, 66, `击败心魔「${demonName}」`, {
+        color: PALETTE.jade.hex,
+        origin: 0.5,
+      });
 
       const moneyLine = reward.allOwnedBonus
         ? `得钱：+${reward.money}（全牌已有加赠）`
         : `得钱：+${reward.money}`;
-      this.add
-        .text(centerX, 78, moneyLine, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.lampYellow.hex,
-          resolution: 1,
-        })
-        .setOrigin(0.5);
+      addPixelText(this, centerX, 86, moneyLine, {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      });
 
       if (reward.cardName) {
-        this.add
-          .text(centerX, 98, `得牌：${reward.cardName}`, {
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            color: PALETTE.paperWhite.hex,
-            resolution: 1,
-          })
-          .setOrigin(0.5);
+        addPixelText(this, centerX, 104, `得牌：${reward.cardName}`, {
+          color: PALETTE.paperWhite.hex,
+          origin: 0.5,
+        });
       }
 
-      this.add
-        .text(centerX, 118, `赎当券 ×${reward.redeemTicket}`, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.brass.hex,
-          resolution: 1,
-        })
-        .setOrigin(0.5);
+      addPixelText(this, centerX, 122, `赎当券 ×${reward.redeemTicket}`, {
+        color: PALETTE.brass.hex,
+        origin: 0.5,
+      });
     } else {
-      this.add
-        .text(centerX, 68, `心魔「${demonName}」未能平息`, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.silverBlue.hex,
-          resolution: 1,
-        })
-        .setOrigin(0.5);
+      addPixelText(this, centerX, 74, `心魔「${demonName}」未能平息`, {
+        color: PALETTE.silverBlue.hex,
+        origin: 0.5,
+      });
 
-      this.add
-        .text(centerX, 94, `失败原因：${loseReason ?? ''}`, {
-          fontFamily: 'monospace',
-          fontSize: '12px',
-          color: PALETTE.vermilion.hex,
-          resolution: 1,
-        })
-        .setOrigin(0.5);
+      addPixelText(this, centerX, 98, `失败原因：${loseReason ?? ''}`, {
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+      });
     }
 
-    // 返回标题按钮
+    // “下一天”按钮（带更新后存档进入下一天 PawnshopScene）
+    this.createResultButton(
+      RESULT_NEXT_DAY_BUTTON.x,
+      RESULT_NEXT_DAY_BUTTON.y,
+      RESULT_NEXT_DAY_BUTTON.width,
+      RESULT_NEXT_DAY_BUTTON.height,
+      '下一天',
+      () => {
+        this.scene.start('PawnshopScene', { save: nextSave });
+      },
+    );
+
+    // “返回标题”按钮
+    this.createResultButton(
+      RESULT_RETURN_BUTTON.x,
+      RESULT_RETURN_BUTTON.y,
+      RESULT_RETURN_BUTTON.width,
+      RESULT_RETURN_BUTTON.height,
+      '返回标题',
+      () => {
+        this.scene.start('TitleScene');
+      },
+    );
+
+    this.syncInputBounds();
+  }
+
+  private createResultButton(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    label: string,
+    onClick: () => void,
+  ): void {
     const btn = this.add
-      .rectangle(
-        RESULT_RETURN_BUTTON.x,
-        RESULT_RETURN_BUTTON.y,
-        RESULT_RETURN_BUTTON.width,
-        RESULT_RETURN_BUTTON.height,
-        PALETTE.nightBlack.num,
-      )
+      .rectangle(x, y, width, height, PALETTE.nightBlack.num)
       .setStrokeStyle(1, PALETTE.brass.num)
       .setInteractive({ useHandCursor: true });
 
-    this.add
-      .text(RESULT_RETURN_BUTTON.x, RESULT_RETURN_BUTTON.y, '返回标题', {
-        fontFamily: 'monospace',
-        fontSize: '12px',
-        color: PALETTE.paperWhite.hex,
-        resolution: 1,
-      })
-      .setOrigin(0.5);
+    addPixelText(this, x, y, label, {
+      color: PALETTE.paperWhite.hex,
+      origin: 0.5,
+    });
 
     btn.on('pointerover', () => btn.setFillStyle(PALETTE.nightBlue.num));
     btn.on('pointerout', () => btn.setFillStyle(PALETTE.nightBlack.num));
-    btn.on('pointerdown', () => {
-      this.scene.start('TitleScene');
-    });
-
-    this.syncInputBounds();
+    btn.on('pointerdown', onClick);
   }
 
   private syncInputBounds(): void {
