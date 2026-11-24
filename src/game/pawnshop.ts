@@ -78,6 +78,8 @@ export interface PawnshopDebugSnapshot {
   maxRenqing?: number;
   itemsOrder?: string[];
   hasSave?: boolean;
+  /** 当前当客每档报价是否买得起（仅 negotiating 阶段由场景钩子提供）。 */
+  tierAffordability?: Record<OfferTier, boolean>;
 }
 
 /**
@@ -144,6 +146,35 @@ export function quotePrice(
   balance: BalanceConfig = BALANCE,
 ): number {
   return Math.round(trueValue * balance.tiers[tier].priceMultiplier);
+}
+
+/**
+ * 钱不能变负数规则（2026-11-24，制作人定）：报价 ≤ 当前钱数才可买，
+ * 边界为价格刚好等于钱数时可买、价格 = 钱数 + 1 时不可买。
+ */
+export function isTierAffordable(money: number, price: number): boolean {
+  return price <= money;
+}
+
+export function canAffordTier(
+  money: number,
+  trueValue: number,
+  tier: OfferTier,
+  balance: BalanceConfig = BALANCE,
+): boolean {
+  return isTierAffordable(money, quotePrice(trueValue, tier, balance));
+}
+
+export function getTierAffordability(
+  money: number,
+  trueValue: number,
+  balance: BalanceConfig = BALANCE,
+): Record<OfferTier, boolean> {
+  return {
+    low: canAffordTier(money, trueValue, 'low', balance),
+    fair: canAffordTier(money, trueValue, 'fair', balance),
+    high: canAffordTier(money, trueValue, 'high', balance),
+  };
 }
 
 /**
@@ -246,6 +277,19 @@ export function settle(
 
   const tierConfig = balance.tiers[tier];
   const price = quotePrice(currentItem.trueValue, tier, balance);
+
+  // 钱不能变负数：成交价高于当前钱数时不成交、不扣钱、不改状态
+  //（界面层已置灰禁用，此处为纯逻辑层兜底；被拒报价不受影响）。
+  if (accepted && price > state.money) {
+    return {
+      ...state,
+      deck: [...state.deck],
+      log: [...state.log],
+      items: state.items.map((item) => ({ ...item })),
+      lastOutcome: state.lastOutcome ? { ...state.lastOutcome } : null,
+    };
+  }
+
   const reputationDelta = accepted
     ? tierConfig.reputationOnAccept
     : tierConfig.reputationOnReject;

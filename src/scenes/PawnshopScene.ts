@@ -3,10 +3,12 @@ import { ITEM_PIXEL_ART } from '../data/pixelart';
 import {
   advanceCustomer,
   BALANCE,
+  canAffordTier,
   createInitialState,
   DAILY_CUSTOMER_COUNT,
   deriveDaySeed,
   formatSignedDelta,
+  getTierAffordability,
   ITEMS,
   PALETTE,
   parseHexColor,
@@ -80,14 +82,22 @@ export class PawnshopScene extends Phaser.Scene {
 
     // 测试钩子（仅供 E2E 自动化测试断言用，非正式功能）
     window.__PAWNSHOP_DEBUG__ = {
-      getState: () => ({
-        ...toDebugSnapshot(this.state),
-        day: this.state.day,
-        shopLevel: this.save.shopLevel,
-        redeemTickets: this.save.redeemTickets,
-        maxRenqing: maxRenqingForLevel(this.save.shopLevel),
-        itemsOrder: this.state.items.map((item) => item.id),
-      }),
+      getState: () => {
+        const currentItem = this.state.items[this.state.customerIndex];
+        const tierAffordability =
+          this.state.phase === 'negotiating' && currentItem
+            ? getTierAffordability(this.state.money, currentItem.trueValue)
+            : undefined;
+        return {
+          ...toDebugSnapshot(this.state),
+          day: this.state.day,
+          shopLevel: this.save.shopLevel,
+          redeemTickets: this.save.redeemTickets,
+          maxRenqing: maxRenqingForLevel(this.save.shopLevel),
+          itemsOrder: this.state.items.map((item) => item.id),
+          ...(tierAffordability ? { tierAffordability } : {}),
+        };
+      },
     };
 
     this.drawDaytimeBackdrop();
@@ -236,6 +246,7 @@ export class PawnshopScene extends Phaser.Scene {
       const x = buttonXs[index];
       const tierConfig = BALANCE.tiers[tier];
       const price = quotePrice(item.trueValue, tier);
+      const affordable = canAffordTier(this.state.money, item.trueValue, tier);
 
       this.addActionButton(
         x,
@@ -245,6 +256,7 @@ export class PawnshopScene extends Phaser.Scene {
         tierConfig.label,
         `${price}元`,
         () => this.handleOffer(tier),
+        !affordable,
       );
     });
   }
@@ -474,21 +486,31 @@ export class PawnshopScene extends Phaser.Scene {
     topText: string,
     bottomText: string | null,
     onClick: () => void,
+    disabled = false,
   ): void {
-    const bg = this.add
-      .rectangle(x, y, width, height, PALETTE.candle.num)
-      .setStrokeStyle(1, PALETTE.ink.num)
-      .setInteractive({ useHandCursor: true });
+    // 买不起的档位：置灰禁用——银蓝底（16 色板内），与可点的烛光底明显区分，
+    // 不设 interactive、无 hover 变色、不可点击。
+    if (disabled) {
+      const bg = this.add
+        .rectangle(x, y, width, height, PALETTE.silverBlue.num)
+        .setStrokeStyle(1, PALETTE.ink.num);
+      this.contentLayer.add(bg);
+    } else {
+      const bg = this.add
+        .rectangle(x, y, width, height, PALETTE.candle.num)
+        .setStrokeStyle(1, PALETTE.ink.num)
+        .setInteractive({ useHandCursor: true });
 
-    bg.on('pointerover', () => {
-      bg.setFillStyle(PALETTE.lampYellow.num);
-    });
-    bg.on('pointerout', () => {
-      bg.setFillStyle(PALETTE.candle.num);
-    });
-    bg.on('pointerdown', onClick);
+      bg.on('pointerover', () => {
+        bg.setFillStyle(PALETTE.lampYellow.num);
+      });
+      bg.on('pointerout', () => {
+        bg.setFillStyle(PALETTE.candle.num);
+      });
+      bg.on('pointerdown', onClick);
 
-    this.contentLayer.add(bg);
+      this.contentLayer.add(bg);
+    }
 
     if (bottomText === null) {
       this.contentLayer.add(
@@ -517,6 +539,13 @@ export class PawnshopScene extends Phaser.Scene {
 
   private handleOffer(tier: OfferTier): void {
     if (this.state.phase !== 'negotiating') {
+      return;
+    }
+
+    // 钱不能变负数：买不起的档位直接 return，且必须在 resolveOffer 之前，
+    // 否则会消耗 RNG、固定种子下的接受序列会漂移。
+    const item = this.state.items[this.state.customerIndex];
+    if (!item || !canAffordTier(this.state.money, item.trueValue, tier)) {
       return;
     }
 

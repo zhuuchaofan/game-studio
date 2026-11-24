@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   advanceCustomer,
   BALANCE,
+  canAffordTier,
   createInitialState,
+  getTierAffordability,
+  isTierAffordable,
   ITEMS,
   quotePrice,
   resolveOffer,
@@ -135,5 +138,87 @@ describe('settle & advanceCustomer', () => {
       expect(rejected.deck).toEqual([]);
       expect(rejected.lastOutcome?.accepted).toBe(false);
     }
+  });
+});
+
+describe('affordability: money must never go negative', () => {
+  it('isTierAffordable uses price <= money (equal buys, money + 1 does not)', () => {
+    expect(isTierAffordable(60, 60)).toBe(true);
+    expect(isTierAffordable(60, 61)).toBe(false);
+    expect(isTierAffordable(60, 0)).toBe(true);
+    expect(isTierAffordable(0, 0)).toBe(true);
+    expect(isTierAffordable(0, 10)).toBe(false);
+  });
+
+  it('canAffordTier prices each tier via quotePrice against current money', () => {
+    // Watch trueValue 40: low 20 / fair 40 / high 60
+    const watch = ITEMS[0];
+    expect(canAffordTier(60, watch.trueValue, 'high')).toBe(true);
+    expect(canAffordTier(59, watch.trueValue, 'high')).toBe(false);
+    expect(canAffordTier(59, watch.trueValue, 'fair')).toBe(true);
+    expect(canAffordTier(20, watch.trueValue, 'low')).toBe(true);
+    expect(canAffordTier(19, watch.trueValue, 'low')).toBe(false);
+
+    // Bicycle trueValue 80: high 120 needs 120
+    const bicycle = ITEMS[3];
+    expect(canAffordTier(120, bicycle.trueValue, 'high')).toBe(true);
+    expect(canAffordTier(119, bicycle.trueValue, 'high')).toBe(false);
+  });
+
+  it('getTierAffordability reports every tier for the current customer', () => {
+    // Erhu trueValue 50: low 25 / fair 50 / high 75
+    const erhu = ITEMS[4];
+    expect(getTierAffordability(25, erhu.trueValue)).toEqual({
+      low: true,
+      fair: false,
+      high: false,
+    });
+    expect(getTierAffordability(50, erhu.trueValue)).toEqual({
+      low: true,
+      fair: true,
+      high: false,
+    });
+    expect(getTierAffordability(0, erhu.trueValue)).toEqual({
+      low: false,
+      fair: false,
+      high: false,
+    });
+    expect(getTierAffordability(200, erhu.trueValue)).toEqual({
+      low: true,
+      fair: true,
+      high: true,
+    });
+  });
+
+  it('settle refuses an accepted offer priced above current money (no negative money)', () => {
+    // Ring trueValue 60, high 90, but only 20 money on hand
+    const state = createInitialState({ items: [ITEMS[1]], money: 20 });
+    const next = settle(state, 'high', true);
+
+    expect(next.phase).toBe('negotiating');
+    expect(next.money).toBe(20);
+    expect(next.money).toBeGreaterThanOrEqual(0);
+    expect(next.deck).toEqual([]);
+    expect(next.log).toEqual([]);
+    expect(next.lastOutcome).toBeNull();
+  });
+
+  it('settle still accepts an offer priced exactly at current money (money hits 0, not below)', () => {
+    // Ring trueValue 60, low 30, exactly 30 money on hand
+    const state = createInitialState({ items: [ITEMS[1]], money: 30 });
+    const next = settle(state, 'low', true);
+
+    expect(next.phase).toBe('feedback');
+    expect(next.money).toBe(0);
+    expect(next.deck).toEqual(['守诺']);
+  });
+
+  it('settle leaves money untouched for a rejected offer even when the price is unaffordable', () => {
+    const state = createInitialState({ items: [ITEMS[1]], money: 20 });
+    const next = settle(state, 'high', false);
+
+    expect(next.phase).toBe('feedback');
+    expect(next.money).toBe(20);
+    expect(next.deck).toEqual([]);
   });
 });
