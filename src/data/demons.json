@@ -18,5 +18,25 @@
       { "round": 2, "damage": 2 },
       { "round": 3, "damage": 8, "skill": "远行" }
     ]
+  },
+  {
+    "id": "c",
+    "name": "房租",
+    "hp": 22,
+    "actions": [
+      { "round": 1, "damage": 3 },
+      { "round": 2, "damage": 4 },
+      { "round": 3, "damage": 5 }
+    ]
+  },
+  {
+    "id": "d",
+    "name": "学费",
+    "hp": 16,
+    "actions": [
+      { "round": 1, "damage": 1 },
+      { "round": 2, "damage": 2 },
+      { "round": 3, "damage": 10, "skill": "开学" }
+    ]
   }
 ]

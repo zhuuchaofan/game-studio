@@ -102,13 +102,13 @@ test('accepts all three tiers (low/fair/high) with fixed seed=7 and verifies GDD
 
   await page.screenshot({ path: 'test-results/pawnshop-desktop-day.png' });
 
-  // Day 1 with seed=7 shuffles items deterministically to: ring (60) -> watch (40) -> old_book (20)
-  // Customer 1: Ring (trueValue 60) -> low (50% = 30), seed=7 roll 1 (~0.0117 < 0.3) => ACCEPT
+  // Day 1 with seed=7 shuffles 6-item pool deterministically and takes top 3: erhu (50) -> watch (40) -> old_book (20)
+  // Customer 1: Erhu (trueValue 50) -> low (50% = 25), seed=7 roll 1 (~0.0117 < 0.3) => ACCEPT
   await clickLogical(page, canvas, BUTTONS.tierLow);
   const afterFirst = await waitForPhase(page, 'feedback');
-  expect(afterFirst.money).toBe(170);
+  expect(afterFirst.money).toBe(175);
   expect(afterFirst.reputation).toBe(-1);
-  expect(afterFirst.deck).toEqual(['守诺']);
+  expect(afterFirst.deck).toEqual(['余音']);
 
   await clickLogical(page, canvas, BUTTONS.nextOrSummary);
   const customer2 = await waitForPhase(page, 'negotiating');
@@ -117,9 +117,9 @@ test('accepts all three tiers (low/fair/high) with fixed seed=7 and verifies GDD
   // Customer 2: Watch (trueValue 40) -> fair (100% = 40), seed=7 roll 2 (~0.062 < 0.8) => ACCEPT
   await clickLogical(page, canvas, BUTTONS.tierFair);
   const afterSecond = await waitForPhase(page, 'feedback');
-  expect(afterSecond.money).toBe(130);
+  expect(afterSecond.money).toBe(135);
   expect(afterSecond.reputation).toBe(-1);
-  expect(afterSecond.deck).toEqual(['守诺', '倒转']);
+  expect(afterSecond.deck).toEqual(['余音', '倒转']);
 
   await clickLogical(page, canvas, BUTTONS.nextOrSummary);
   const customer3 = await waitForPhase(page, 'negotiating');
@@ -128,17 +128,17 @@ test('accepts all three tiers (low/fair/high) with fixed seed=7 and verifies GDD
   // Customer 3: Old book (trueValue 20) -> high (150% = 30), acceptRate 1.0 => ACCEPT
   await clickLogical(page, canvas, BUTTONS.tierHigh);
   const afterThird = await waitForPhase(page, 'feedback');
-  expect(afterThird.money).toBe(100);
+  expect(afterThird.money).toBe(105);
   expect(afterThird.reputation).toBe(0);
-  expect(afterThird.deck).toEqual(['守诺', '倒转', '旧书']);
+  expect(afterThird.deck).toEqual(['余音', '倒转', '旧书']);
 
   // Advance to Day End Summary
   await clickLogical(page, canvas, BUTTONS.nextOrSummary);
   const summaryState = await waitForPhase(page, 'summary');
   expect(summaryState.customerIndex).toBe(3);
-  expect(summaryState.money).toBe(100);
+  expect(summaryState.money).toBe(105);
   expect(summaryState.reputation).toBe(0);
-  expect(summaryState.deck).toEqual(['守诺', '倒转', '旧书']);
+  expect(summaryState.deck).toEqual(['余音', '倒转', '旧书']);
   expect(summaryState.log).toHaveLength(3);
 
   await page.screenshot({ path: 'test-results/pawnshop-desktop-summary.png' });

@@ -150,3 +150,23 @@
 - **#6 第 1 次**：构建成功、artifact 已上传，但部署步取不到 artifact 元数据（报错 `No artifacts named github-pages were found`）。
 - **第 2 次 Re-run failed jobs**：重跑又上传了一个同名 artifact，运行里出现 2 个 `github-pages` 成品，`deploy-pages@v4` 要求恰好 1 个，报 `Artifact count is 2` 而失败。
 - **结论**：重跑修不好，必须触发一次全新的部署运行；本次提交即为触发全新部署的提交。
+
+## 2026-11-24 — P4 内容扩充（feature/p4-content-expansion）
+- **范围**：按 `proto-tasks/05-p4-content-expansion.md` 在不改核心玩法、技术架构、美术方向及 `src/data/balance.json` 的前提下完成内容扩充：
+  - **旧物池扩充（3 → 6 种，`src/data/items.json`）**：保留既有 3 件旧物不动，追加 `bicycle`（永久自行车，真值 80，牌「飞驰」2 费，`#4E7A5A` 玉绿）、`erhu`（二胡，真值 50，牌「余音」1 费，`#8A5A33` 铜棕）、`stamp_album`（邮票册，真值 30，牌「集邮」1 费，`#4E739E` 雾蓝）。
+  - **新牌扩充（20 → 23 张，`src/data/cards.json`）**：仅复用已有效果类型（`damage` / `renqing` / `draw`），追加 `gallop`（飞驰，2 费，伤害 6）、`echo`（余音，1 费，伤害 3 + 人情 1）、`stamp_collecting`（集邮，1 费，抽牌 1 + 人情 1）。
+  - **新心魔与 4 天轮换（2 → 4 种，`src/data/demons.json` + `src/game/save.ts`）**：保留心魔 A/B 不动，追加 `c`（房租，22 血，R1–R3 依次 3/4/5 伤）与 `d`（学费，16 血，R1–R2 依次 1/2 伤、R3 技能「开学」10 伤）；`demonIdForDay` 类型扩展为 `DemonId = 'a' | 'b' | 'c' | 'd'`，按 `(day - 1) % 4` 循环 A→B→C→D；`CardBattleScene` URL 参数 `?demon=` 同步支持 `a|b|c|d`。
+  - **每天当客仍为 3 位（`src/game/pawnshop.ts` + `src/scenes/PawnshopScene.ts`）**：洗牌算法 `shuffleItems` 与按天种子 `deriveDaySeed` 不动，6 个旧物洗牌后取前 3 个（`DAILY_CUSTOMER_COUNT = 3`），固定种子可复现。
+  - **手绘 32×32 像素插画与字形补齐（`src/data/pixelart.ts` + `src/data/pixel-font.json`）**：为 3 个新旧物与 2 个新心魔各手绘一张 32×32 像素画（严格 16 色调色板、单图 ≤ 12 色、1 像素描边，零 AI 生图），并登记入 `CARD_PIXEL_ART` / `ITEM_PIXEL_ART` / `DEMON_PIXEL_ART`；重跑 `scripts/generate-pixel-font.py`（临时 TTF 放 `/tmp` 用完即删，未入库）补齐 30 个新增汉字（423 → 453 字形，96.5 KB）。
+  - **文档更新**：新建 `proto-tasks/05-p4-content-expansion.md`；`docs/GAME_DESIGN.md` 文末增补第 10 节 P4 增补内容（v1.0 定稿核心一字未改）；同步更新本进度记录与 `docs/DECISIONS.md`。
+- **分支名**：`feature/p4-content-expansion`（改动留工作区待协调员验收，未提交/未推送/未建 PR）。
+- **验证证据**：
+  - `npm run build` 退出码 0（`tsc --noEmit` + `vite build`，`dist/index.html` 0.70 kB，JS 1,371.20 kB ≤ 2 MB 预算）；
+  - `npx tsc --noEmit` 退出码 0；
+  - `npx vitest run` 9/9 文件、63/63 单测全部通过；
+  - `npm run test:e2e`（Playwright，localhost）14/14 全部通过（含新增 P4 用例验证新旧物出现与第 3/4/5 天 C→D→A 轮换，以及桌面/竖屏与新插画截图核查），无失败请求、无 `pageerror`；
+  - **蒙特卡洛模拟结果（`TEST_DECK` 10 张，贪心策略，每种心魔 1000 局，种子 1～1000，`balance.json` 未改）**：
+    - 心魔 A「药费」（20 血）：胜率 **91.3%**（913/1000），平均结束回合 **2.99**，胜局均血 **24.05**（血归零 0，超时 87）；
+    - 心魔 B「车票」（18 血）：胜率 **97.3%**（973/1000），平均结束回合 **2.76**，胜局均血 **26.50**（血归零 0，超时 27）；
+    - 心魔 C「房租」（22 血）：胜率 **82.1%**（821/1000），平均结束回合 **3.00**，胜局均血 **23.00**（血归零 0，超时 179）；
+    - 心魔 D「学费」（16 血）：胜率 **99.3%**（993/1000），平均结束回合 **2.42**，胜局均血 **28.17**（血归零 0，超时 7）。

@@ -12,7 +12,7 @@ import {
   validatePixelRows,
 } from '../../src/game/pixelart';
 
-describe('Pixel art validation (20 cards + 3 items + 2 demons)', () => {
+describe('Pixel art validation (23 cards + 6 items + 4 demons)', () => {
   it('validates helper functions and rejects malformed sprites', () => {
     expect(parsePaletteChar('.')).toBe(-1);
     expect(parsePaletteChar('0')).toBe(0);
@@ -40,9 +40,9 @@ describe('Pixel art validation (20 cards + 3 items + 2 demons)', () => {
     expect(tooManyColors.colorCount).toBe(16);
   });
 
-  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 20 cards in cards.json', () => {
-    expect(cardsJson).toHaveLength(20);
-    expect(Object.keys(CARD_PIXEL_ART)).toHaveLength(20);
+  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 23 cards in cards.json', () => {
+    expect(cardsJson).toHaveLength(23);
+    expect(Object.keys(CARD_PIXEL_ART)).toHaveLength(23);
 
     for (const card of cardsJson) {
       const sprite = CARD_PIXEL_ART[card.id];
@@ -56,9 +56,9 @@ describe('Pixel art validation (20 cards + 3 items + 2 demons)', () => {
     }
   });
 
-  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 3 pawnshop items in items.json', () => {
-    expect(itemsJson).toHaveLength(3);
-    expect(Object.keys(ITEM_PIXEL_ART)).toHaveLength(3);
+  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 6 pawnshop items in items.json', () => {
+    expect(itemsJson).toHaveLength(6);
+    expect(Object.keys(ITEM_PIXEL_ART)).toHaveLength(6);
 
     for (const item of itemsJson) {
       const sprite = ITEM_PIXEL_ART[item.id];
@@ -71,9 +71,9 @@ describe('Pixel art validation (20 cards + 3 items + 2 demons)', () => {
     }
   });
 
-  it('defines valid 32x32 16-color (<=12 colors) pixel art for both demons in demons.json', () => {
-    expect(demonsJson).toHaveLength(2);
-    expect(Object.keys(DEMON_PIXEL_ART)).toHaveLength(2);
+  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 4 demons in demons.json', () => {
+    expect(demonsJson).toHaveLength(4);
+    expect(Object.keys(DEMON_PIXEL_ART)).toHaveLength(4);
 
     for (const demon of demonsJson) {
       const sprite = DEMON_PIXEL_ART[demon.id];

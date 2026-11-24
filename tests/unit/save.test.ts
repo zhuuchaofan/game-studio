@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import balanceJson from '../../src/data/balance.json';
 import {
   createInitialState,
+  DAILY_CUSTOMER_COUNT,
   deriveDaySeed,
   ITEMS,
   shuffleItems,
@@ -199,27 +200,48 @@ describe('Renqing scaling, demon rotation & day customer shuffle', () => {
     expect(maxRenqingForLevel(99)).toBe(6);
   });
 
-  it('demonIdForDay selects Demon A on Day 1 and Demon B from Day 2 onward', () => {
+  it('demonIdForDay cycles A -> B -> C -> D across days 1..8 and onward', () => {
     expect(demonIdForDay(1)).toBe('a');
     expect(demonIdForDay(2)).toBe('b');
-    expect(demonIdForDay(3)).toBe('b');
-    expect(demonIdForDay(4)).toBe('b');
+    expect(demonIdForDay(3)).toBe('c');
+    expect(demonIdForDay(4)).toBe('d');
+    expect(demonIdForDay(5)).toBe('a');
+    expect(demonIdForDay(6)).toBe('b');
+    expect(demonIdForDay(7)).toBe('c');
+    expect(demonIdForDay(8)).toBe('d');
   });
 
-  it('shuffleItems is deterministic for a fixed seed + day and preserves all items without mutating input', () => {
+  it('shuffleItems is deterministic for a fixed seed + day, preserves all 6 items, and slices to 3 daily customers', () => {
+    expect(ITEMS).toHaveLength(6);
+    expect(DAILY_CUSTOMER_COUNT).toBe(3);
+
     const order1 = shuffleItems(ITEMS, mulberry32(deriveDaySeed(7, 1)));
     const order2 = shuffleItems(ITEMS, mulberry32(deriveDaySeed(7, 1)));
     expect(order1).toEqual(order2);
     expect(order1.map((i) => i.id).sort()).toEqual(ITEMS.map((i) => i.id).sort());
     expect(order1).not.toBe(ITEMS);
 
-    // Different days can produce different permutations deterministically
-    const seen = new Set<string>();
+    const daily1 = order1.slice(0, DAILY_CUSTOMER_COUNT);
+    expect(daily1).toHaveLength(3);
+    expect(new Set(daily1.map((i) => i.id)).size).toBe(3);
+
+    // Different days can produce different 3-item daily lineups and surface all 6 items across days
+    const seenOrders = new Set<string>();
+    const seenIds = new Set<string>();
     for (let day = 1; day <= 10; day += 1) {
-      const dayOrder = shuffleItems(ITEMS, mulberry32(deriveDaySeed(7, day)));
-      seen.add(dayOrder.map((i) => i.id).join(','));
+      const dayDaily = shuffleItems(ITEMS, mulberry32(deriveDaySeed(7, day))).slice(
+        0,
+        DAILY_CUSTOMER_COUNT,
+      );
+      seenOrders.add(dayDaily.map((i) => i.id).join(','));
+      for (const item of dayDaily) {
+        seenIds.add(item.id);
+      }
     }
-    expect(seen.size).toBeGreaterThan(1);
+    expect(seenOrders.size).toBeGreaterThan(1);
+    expect(seenIds.has('bicycle')).toBe(true);
+    expect(seenIds.has('erhu')).toBe(true);
+    expect(seenIds.has('stamp_album')).toBe(true);
   });
 
   it('createInitialState initializes PawnshopState from optional SaveData fields', () => {
