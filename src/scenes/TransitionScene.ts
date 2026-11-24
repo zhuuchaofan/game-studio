@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { audio } from '../game/audio';
 import { PALETTE } from '../game/pawnshop';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
@@ -69,6 +70,7 @@ export class TransitionScene extends Phaser.Scene {
     this.currentFrame = 0;
     this.isActiveTransition = true;
     this.bands = [];
+    audio.stopBgm();
 
     window.__TRANSITION_DEBUG__ = {
       getState: () => ({

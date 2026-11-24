@@ -2,6 +2,8 @@ import balanceJson from '../data/balance.json';
 import type { WinReward } from './battle';
 
 export const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
+export const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
+export const AUDIO_STORAGE_KEY = 'pawnshop-cards-audio-v1';
 export const SAVE_VERSION = 1 as const;
 
 export interface SaveData {
@@ -12,6 +14,8 @@ export interface SaveData {
   deck: string[];
   shopLevel: number;
   redeemTickets: number;
+  /** Optional backward-compatible tutorial completion flag (defaults to incomplete when omitted). */
+  tutorialCompleted?: boolean;
 }
 
 export interface SaveBalanceConfig {
@@ -80,6 +84,9 @@ function isValidSaveData(raw: unknown): raw is SaveData {
   if (!Array.isArray(obj.deck) || !obj.deck.every((entry) => typeof entry === 'string')) {
     return false;
   }
+  if (obj.tutorialCompleted !== undefined && typeof obj.tutorialCompleted !== 'boolean') {
+    return false;
+  }
   return true;
 }
 
@@ -116,7 +123,7 @@ export function loadSave(storage?: StorageLike | null): SaveData | null {
     if (!isValidSaveData(parsed)) {
       return null;
     }
-    return {
+    const loaded: SaveData = {
       version: SAVE_VERSION,
       day: Math.floor(parsed.day),
       money: parsed.money,
@@ -125,6 +132,10 @@ export function loadSave(storage?: StorageLike | null): SaveData | null {
       shopLevel: Math.floor(parsed.shopLevel),
       redeemTickets: Math.floor(parsed.redeemTickets),
     };
+    if (typeof parsed.tutorialCompleted === 'boolean') {
+      loaded.tutorialCompleted = parsed.tutorialCompleted;
+    }
+    return loaded;
   } catch {
     return null;
   }
@@ -149,9 +160,106 @@ export function saveGame(data: SaveData, storage?: StorageLike | null): void {
       shopLevel: data.shopLevel,
       redeemTickets: data.redeemTickets,
     };
+    if (typeof data.tutorialCompleted === 'boolean') {
+      normalized.tutorialCompleted = data.tutorialCompleted;
+    }
     store.setItem(SAVE_STORAGE_KEY, JSON.stringify(normalized));
   } catch {
     // Ignore storage quota/access failures without crashing the game
+  }
+}
+
+/**
+ * Reads whether the Day 1 tutorial has been completed or skipped.
+ * Checks the dedicated tutorial key first and falls back to optional SaveData.tutorialCompleted.
+ * Defaults to false when absent or unreadable.
+ */
+export function loadTutorialDone(storage?: StorageLike | null): boolean {
+  const store = storage === undefined ? getDefaultStorage() : storage;
+  if (!store) {
+    return false;
+  }
+
+  try {
+    const raw = store.getItem(TUTORIAL_STORAGE_KEY);
+    if (raw === '1' || raw === 'true') {
+      return true;
+    }
+    if (raw === '0' || raw === 'false') {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  const existing = loadSave(store);
+  return existing?.tutorialCompleted === true;
+}
+
+/**
+ * Persists the tutorial completion flag in storage without altering existing SaveData shape.
+ */
+export function saveTutorialDone(done: boolean, storage?: StorageLike | null): void {
+  const store = storage === undefined ? getDefaultStorage() : storage;
+  if (!store) {
+    return;
+  }
+
+  try {
+    if (done) {
+      store.setItem(TUTORIAL_STORAGE_KEY, '1');
+    } else {
+      store.removeItem(TUTORIAL_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage quota/access failures
+  }
+}
+
+/**
+ * Clears the persisted tutorial completion mark.
+ */
+export function clearTutorialDone(storage?: StorageLike | null): void {
+  saveTutorialDone(false, storage);
+}
+
+/**
+ * Reads persisted audio mute state from storage. Defaults to false (sound ON).
+ */
+export function loadAudioMuted(storage?: StorageLike | null): boolean {
+  const store = storage === undefined ? getDefaultStorage() : storage;
+  if (!store) {
+    return false;
+  }
+
+  try {
+    const raw = store.getItem(AUDIO_STORAGE_KEY);
+    if (raw === '1' || raw === 'true' || raw === 'muted') {
+      return true;
+    }
+    if (raw === '0' || raw === 'false' || raw === 'on') {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Persists audio mute state into storage without altering SaveData shape.
+ */
+export function saveAudioMuted(muted: boolean, storage?: StorageLike | null): void {
+  const store = storage === undefined ? getDefaultStorage() : storage;
+  if (!store) {
+    return;
+  }
+
+  try {
+    store.setItem(AUDIO_STORAGE_KEY, muted ? '1' : '0');
+  } catch {
+    // Ignore storage quota/access failures
   }
 }
 
@@ -177,6 +285,11 @@ export function clearSave(storage?: StorageLike | null): void {
  * - Lose: only day +1 (deck/money/reputation/shopLevel/redeemTickets unchanged)
  */
 export function applyDayResult(save: SaveData, result: DayResultInput): SaveData {
+  const baseTutorial =
+    typeof save.tutorialCompleted === 'boolean'
+      ? { tutorialCompleted: save.tutorialCompleted }
+      : {};
+
   if (result.outcome === 'win') {
     const reward = result.reward ?? null;
     const nextDeck = reward?.cardName ? [...save.deck, reward.cardName] : [...save.deck];
@@ -188,6 +301,7 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
       deck: nextDeck,
       shopLevel: save.shopLevel + 1,
       redeemTickets: save.redeemTickets + (reward?.redeemTicket ?? 0),
+      ...baseTutorial,
     };
   }
 
@@ -199,6 +313,7 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
     deck: [...save.deck],
     shopLevel: save.shopLevel,
     redeemTickets: save.redeemTickets,
+    ...baseTutorial,
   };
 }
 

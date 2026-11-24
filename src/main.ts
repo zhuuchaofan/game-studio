@@ -1,11 +1,20 @@
 import Phaser from 'phaser';
+import { audio, installAudioDebugHook } from './game/audio';
 import { BootScene } from './scenes/BootScene';
 import { CardBattleScene } from './scenes/CardBattleScene';
 import { PawnshopScene } from './scenes/PawnshopScene';
 import { ResultScene } from './scenes/ResultScene';
 import { TitleScene } from './scenes/TitleScene';
 import { TransitionScene } from './scenes/TransitionScene';
-import { BASE_HEIGHT, BASE_WIDTH, calculateScaledDimensions } from './utils/scale';
+import {
+  BASE_HEIGHT,
+  BASE_WIDTH,
+  calculateScaledDimensions,
+  isPortraitViewport,
+} from './utils/scale';
+
+audio.installGestureUnlock();
+installAudioDebugHook(audio);
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -24,7 +33,17 @@ const config: Phaser.Types.Core.GameConfig = {
 
 const game = new Phaser.Game(config);
 
+function syncPortraitHint(): void {
+  const hint = document.getElementById('portrait-hint');
+  if (!hint) {
+    return;
+  }
+  hint.hidden = !isPortraitViewport(window.innerWidth, window.innerHeight);
+}
+
 function applyIntegerCanvasScale(): void {
+  syncPortraitHint();
+
   const canvas = game.canvas;
   if (!canvas) {
     return;
@@ -35,5 +54,7 @@ function applyIntegerCanvasScale(): void {
   canvas.style.height = `${height}px`;
 }
 
+syncPortraitHint();
 game.events.once(Phaser.Core.Events.READY, applyIntegerCanvasScale);
 window.addEventListener('resize', applyIntegerCanvasScale);
+window.addEventListener('orientationchange', applyIntegerCanvasScale);

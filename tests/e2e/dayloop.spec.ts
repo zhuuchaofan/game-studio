@@ -80,7 +80,7 @@ const BUTTONS = {
 } as const;
 
 const DAMAGE_PRIORITY = ['秤砣', '钢笔', '相机', '弹珠'] as const;
-const UTILITY_PRIORITY = ['算盘', '旧书'] as const;
+const UTILITY_PRIORITY = ['算盘', '旧书', '蒲扇'] as const;
 const CARD_COSTS: Record<string, number> = {
   倒转: 2,
   守诺: 1,
@@ -562,13 +562,13 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   expect(day3Summary.log.some((entry) => entry.includes('二胡'))).toBe(true);
   expect(day3Summary.deck).toEqual(['倒转', '守诺', '旧书', '倒转']);
 
-  // Night 3 -> Demon C (房租, HP 22)
+  // Night 3 -> Demon C (房租, HP 26)
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   const night3 = await waitForBattleReady(page, 'play');
   expect(night3.day).toBe(3);
   expect(night3.demonId).toBe('c');
   expect(night3.demonName).toBe('房租');
-  expect(night3.demonHp).toBe(22);
+  expect(night3.demonHp).toBe(26);
   await page.screenshot({ path: 'test-results/p4-night3-demon-c.png' });
 
   // End 3 turns to advance cleanly to Day 4
@@ -587,7 +587,7 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   expect(night3Result.savedData!.day).toBe(4);
   expect(night3Result.savedData!.money).toBe(180);
 
-  // Day 4 Pawnshop -> Night 4 -> Demon D (学费, HP 16, Round 3 skill "开学" 10 dmg)
+  // Day 4 Pawnshop -> Night 4 -> Demon D (学费, HP 20, Round 3 skill "开学" 10 dmg)
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
   const day4Start = await waitForPawnshopPhase(page, 'negotiating');
   expect(day4Start.day).toBe(4);
@@ -607,7 +607,7 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   expect(night4.day).toBe(4);
   expect(night4.demonId).toBe('d');
   expect(night4.demonName).toBe('学费');
-  expect(night4.demonHp).toBe(16);
+  expect(night4.demonHp).toBe(20);
   await page.screenshot({ path: 'test-results/p4-night4-demon-d.png' });
 
   // End 3 turns to advance cleanly to Day 5
@@ -646,7 +646,7 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   expect(night5.day).toBe(5);
   expect(night5.demonId).toBe('a');
   expect(night5.demonName).toBe('药费');
-  expect(night5.demonHp).toBe(20);
+  expect(night5.demonHp).toBe(24);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);

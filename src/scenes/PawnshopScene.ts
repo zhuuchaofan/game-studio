@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { ITEM_PIXEL_ART } from '../data/pixelart';
+import { audio, installAudioDebugHook } from '../game/audio';
 import {
   advanceCustomer,
   BALANCE,
@@ -30,14 +31,27 @@ import { addPixelText } from '../game/pixelFont';
 import {
   createNewGame,
   demonIdForDay,
+  loadTutorialDone,
   maxRenqingForLevel,
+  saveTutorialDone,
   type SaveData,
 } from '../game/save';
+import {
+  advanceTutorialStep,
+  cloneTutorialState,
+  createTutorialState,
+  getTutorialCopy,
+  skipTutorial,
+  syncTutorialForPawnshop,
+  type TutorialState,
+} from '../game/tutorial';
+import { createTutorialBubble } from '../game/tutorialBubble';
 import { createRngFromUrl, mulberry32, type RngFn } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
 export interface PawnshopSceneData {
   save?: SaveData;
+  forceTutorial?: boolean;
 }
 
 const HUD_HEIGHT = 22;
@@ -53,8 +67,10 @@ const SKIP_BUTTON_HEIGHT = 18;
 export class PawnshopScene extends Phaser.Scene {
   private save!: SaveData;
   private state!: PawnshopState;
+  private tutorial!: TutorialState;
   private rng!: RngFn;
   private contentLayer!: Phaser.GameObjects.Container;
+  private tutorialBubble?: Phaser.GameObjects.Container;
   private hudMoneyText!: Phaser.GameObjects.BitmapText;
   private hudRepText!: Phaser.GameObjects.BitmapText;
   private hudDeckText!: Phaser.GameObjects.BitmapText;
@@ -86,6 +102,13 @@ export class PawnshopScene extends Phaser.Scene {
       items: shuffledItems,
     });
 
+    this.tutorialBubble = undefined;
+    this.tutorial = createTutorialState({
+      day: this.state.day,
+      tutorialDone: loadTutorialDone(),
+      forceReplay: data?.forceTutorial,
+    });
+
     // 测试钩子（仅供 E2E 自动化测试断言用，非正式功能）
     window.__PAWNSHOP_DEBUG__ = {
       getState: () => {
@@ -104,6 +127,10 @@ export class PawnshopScene extends Phaser.Scene {
           itemsOrder: this.state.items.map((item) => item.id),
           canSkip: isNegotiating,
           ...(tierAffordability ? { tierAffordability } : {}),
+          tutorialActive: this.tutorial.active,
+          currentStep: this.tutorial.currentStep,
+          tutorialDone: this.tutorial.done || loadTutorialDone(),
+          tutorialCopy: getTutorialCopy(this.tutorial.currentStep),
         };
       },
     };
@@ -111,6 +138,9 @@ export class PawnshopScene extends Phaser.Scene {
     this.drawDaytimeBackdrop();
     this.createHud();
     this.contentLayer = this.add.container(0, 0);
+
+    installAudioDebugHook(audio);
+    audio.playBgm('day');
 
     this.renderCurrentPhase();
     this.syncInputBounds();
@@ -208,6 +238,32 @@ export class PawnshopScene extends Phaser.Scene {
     } else {
       this.renderSummary();
     }
+
+    this.tutorial = syncTutorialForPawnshop(this.tutorial, this.state.phase);
+    this.renderTutorialBubble();
+  }
+
+  private renderTutorialBubble(): void {
+    if (this.tutorialBubble) {
+      this.tutorialBubble.destroy();
+      this.tutorialBubble = undefined;
+    }
+
+    if (!this.tutorial.active || !this.tutorial.currentStep) {
+      return;
+    }
+
+    this.tutorialBubble = createTutorialBubble(this, this.tutorial.currentStep, {
+      onAdvance: () => {
+        this.tutorial = advanceTutorialStep(this.tutorial);
+        this.renderTutorialBubble();
+      },
+      onSkip: () => {
+        this.tutorial = skipTutorial(this.tutorial);
+        saveTutorialDone(true);
+        this.renderTutorialBubble();
+      },
+    });
   }
 
   private renderNegotiating(): void {
@@ -323,6 +379,8 @@ export class PawnshopScene extends Phaser.Scene {
     const centerX = Math.floor(BASE_WIDTH / 2);
 
     this.addActionButton(centerX, BUTTON_ROW_Y, 118, 28, nextLabel, null, () => {
+      audio.unlock();
+      audio.playSfx('button_click');
       this.state = advanceCustomer(this.state);
       this.renderCurrentPhase();
     });
@@ -454,6 +512,8 @@ export class PawnshopScene extends Phaser.Scene {
 
     // 进入夜里牌局按钮（经 6 帧拉灯转场）+ 返回标题按钮（保留 (160, 151) 在“返回标题”命中区内兼容既有 E2E）
     this.addActionButton(88, BUTTON_ROW_Y, 122, 26, '进入夜里牌局', null, () => {
+      audio.unlock();
+      audio.playSfx('button_click');
       const updatedSave: SaveData = {
         ...this.save,
         day: this.state.day,
@@ -469,11 +529,14 @@ export class PawnshopScene extends Phaser.Scene {
           demonId: demonIdForDay(updatedSave.day),
           maxRenqing: maxRenqingForLevel(updatedSave.shopLevel),
           save: updatedSave,
+          tutorial: cloneTutorialState(this.tutorial),
         },
       });
     });
 
     this.addActionButton(224, BUTTON_ROW_Y, 138, 26, '返回标题', null, () => {
+      audio.unlock();
+      audio.playSfx('button_click');
       this.scene.start('TitleScene');
     });
   }
@@ -568,6 +631,8 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
+    audio.unlock();
+    audio.playSfx('button_click');
     this.state = skipCustomer(this.state);
     this.renderCurrentPhase();
   }
@@ -584,9 +649,20 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
+    audio.unlock();
     const rate = BALANCE.tiers[tier].acceptRate;
     const accepted = resolveOffer(rate, this.rng);
     this.state = settle(this.state, tier, accepted);
+    if (accepted) {
+      audio.playSfx('deal_closed');
+      this.time.delayedCall(140, () => {
+        if (this.scene.isActive()) {
+          audio.playSfx('receive_card');
+        }
+      });
+    } else {
+      audio.playSfx('button_click');
+    }
     this.renderCurrentPhase();
   }
 

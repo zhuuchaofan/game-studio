@@ -283,7 +283,7 @@ test('beats Demon A (药费) with fixed seed=4 & deck=test, asserts HUD/state & 
   expect(startState.round).toBe(1);
   expect(startState.playerHp).toBe(30);
   expect(startState.renqing).toBe(3);
-  expect(startState.demonHp).toBe(20);
+  expect(startState.demonHp).toBe(24);
   expect(startState.hand).toHaveLength(5);
   expect(startState.deckCount).toBe(5);
   expect(startState.discardCount).toBe(0);
@@ -317,7 +317,7 @@ test('plays Demon B (车票) with fixed seed=2, verifies Round 3 "远行" warnin
   const r1 = await navigateThroughDayToBattle(page, canvas);
   expect(r1.demonId).toBe('b');
   expect(r1.demonName).toBe('车票');
-  expect(r1.demonHp).toBe(18);
+  expect(r1.demonHp).toBe(22);
   expect(r1.playerHp).toBe(30);
   expect(r1.intent.current).toEqual({ round: 1, damage: 2 });
   expect(r1.intent.upcomingSkill).toBeNull();
@@ -375,9 +375,9 @@ test('Rewind card (倒转) restores both playerHp and demonHp to previous round 
 
   let state = await navigateThroughDayToBattleLow(page, canvas);
   expect(state.playerHp).toBe(30);
-  expect(state.demonHp).toBe(20);
+  expect(state.demonHp).toBe(24);
 
-  // Round 1: deal damage to Demon A so demonHp < 20
+  // Round 1: deal damage to Demon A so demonHp < 24
   const dmgIdx = state.hand.findIndex((name) =>
     (DAMAGE_PRIORITY as readonly string[]).includes(name),
   );
@@ -387,12 +387,12 @@ test('Rewind card (倒转) restores both playerHp and demonHp to previous round 
   await expect
     .poll(async () => {
       const s = await getBattleState(page);
-      return !s.isAnimating && s.demonHp < 20;
+      return !s.isAnimating && s.demonHp < 24;
     })
     .toBe(true);
 
   const afterR1Dmg = await getBattleState(page);
-  expect(afterR1Dmg.demonHp).toBeLessThan(20);
+  expect(afterR1Dmg.demonHp).toBeLessThan(24);
 
   // End Round 1 -> Demon A deals 3 dmg (playerHp 30 -> 27)
   await clickLogical(page, canvas, BUTTONS.endTurn);
@@ -423,7 +423,7 @@ test('Rewind card (倒转) restores both playerHp and demonHp to previous round 
 
   // If still not in Round 2 hand, advance to Round 3 (snapshot target becomes Round 2 start)
   let expectedRewindPlayerHp = 30;
-  let expectedRewindDemonHp = 20;
+  let expectedRewindDemonHp = 24;
   if (!state.hand.includes('倒转')) {
     expectedRewindPlayerHp = state.playerHp;
     expectedRewindDemonHp = state.demonHp;

@@ -11,6 +11,7 @@ import {
   SPRITE_SIZE,
   validatePixelRows,
 } from '../../src/game/pixelart';
+import { TUTORIAL_SKIP_LABEL, TUTORIAL_STEPS } from '../../src/game/tutorial';
 
 describe('Pixel art validation (23 cards + 6 items + 4 demons)', () => {
   it('validates helper functions and rejects malformed sprites', () => {
@@ -109,6 +110,10 @@ describe('Pixel bitmap font JSON coverage', () => {
       '当铺纸牌',
       '开始',
       '继续',
+      '教程',
+      '音量:开',
+      '音量:关',
+      TUTORIAL_SKIP_LABEL,
       '下一天',
       '返回标题',
       '进入夜里牌局',
@@ -120,6 +125,11 @@ describe('Pixel bitmap font JSON coverage', () => {
       '没有牌可打',
       '白天未收到旧物纸牌',
       '第 1 天 · 当铺 Lv.1',
+      ...Object.values(TUTORIAL_STEPS).flatMap((step) => [
+        step.label,
+        step.continueLabel,
+        ...step.lines,
+      ]),
     ];
 
     collectStrings(cardsJson, allStrings);

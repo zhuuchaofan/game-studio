@@ -1,11 +1,14 @@
 import Phaser from 'phaser';
+import { audio, installAudioDebugHook } from '../game/audio';
 import { BALANCE, PALETTE } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
-import { createNewGame, loadSave, maxRenqingForLevel, saveGame } from '../game/save';
+import { createNewGame, loadSave, loadTutorialDone, maxRenqingForLevel, saveGame } from '../game/save';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
 export const TITLE_START_BUTTON = { x: 160, y: 122, width: 96, height: 24 } as const;
 export const TITLE_CONTINUE_BUTTON = { x: 160, y: 156, width: 96, height: 24 } as const;
+export const TITLE_VOLUME_BUTTON = { x: 54, y: 154, width: 60, height: 22 } as const;
+export const TITLE_TUTORIAL_BUTTON = { x: 266, y: 154, width: 60, height: 22 } as const;
 
 export class TitleScene extends Phaser.Scene {
   private handleWindowResize?: () => void;
@@ -18,6 +21,9 @@ export class TitleScene extends Phaser.Scene {
     const centerX = Math.floor(BASE_WIDTH / 2);
     const centerY = Math.floor(BASE_HEIGHT / 2);
     const existingSave = loadSave();
+
+    audio.stopBgm();
+    installAudioDebugHook(audio);
 
     // 测试钩子（仅供 E2E 自动化测试断言用，非正式功能）
     window.__PAWNSHOP_DEBUG__ = {
@@ -33,6 +39,9 @@ export class TitleScene extends Phaser.Scene {
         redeemTickets: existingSave?.redeemTickets ?? 0,
         maxRenqing: maxRenqingForLevel(existingSave?.shopLevel ?? 1),
         hasSave: existingSave !== null,
+        tutorialActive: false,
+        currentStep: null,
+        tutorialDone: loadTutorialDone(),
       }),
     };
 
@@ -98,7 +107,68 @@ export class TitleScene extends Phaser.Scene {
       );
     }
 
+    // 左下角常驻音量开关（开/关，16 色像素风，状态持久化至 localStorage）
+    this.createVolumeToggleButton();
+
+    // 右下角常驻“教程”入口：重看教程（重新进入第 1 天带引导）
+    this.createMenuButton(
+      TITLE_TUTORIAL_BUTTON.x,
+      TITLE_TUTORIAL_BUTTON.y,
+      TITLE_TUTORIAL_BUTTON.width,
+      TITLE_TUTORIAL_BUTTON.height,
+      '教程',
+      () => {
+        const fresh = createNewGame();
+        this.scene.start('PawnshopScene', { save: fresh, forceTutorial: true });
+      },
+      PALETTE.oldPaper.num,
+    );
+
     this.syncInputBounds();
+  }
+
+  private createVolumeToggleButton(): void {
+    const getFill = (muted: boolean): number =>
+      muted ? PALETTE.silverBlue.num : PALETTE.oldPaper.num;
+    const getHover = (muted: boolean): number =>
+      muted ? PALETTE.paperWhite.num : PALETTE.lampYellow.num;
+    const getLabel = (muted: boolean): string => (muted ? '音量:关' : '音量:开');
+
+    const btn = this.add
+      .rectangle(
+        TITLE_VOLUME_BUTTON.x,
+        TITLE_VOLUME_BUTTON.y,
+        TITLE_VOLUME_BUTTON.width,
+        TITLE_VOLUME_BUTTON.height,
+        getFill(audio.isMuted()),
+      )
+      .setStrokeStyle(1, PALETTE.ink.num)
+      .setInteractive({ useHandCursor: true });
+
+    const label = addPixelText(
+      this,
+      TITLE_VOLUME_BUTTON.x,
+      TITLE_VOLUME_BUTTON.y,
+      getLabel(audio.isMuted()),
+      {
+        size: 12,
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      },
+    );
+
+    btn.on('pointerover', () => {
+      btn.setFillStyle(getHover(audio.isMuted()));
+    });
+    btn.on('pointerout', () => {
+      btn.setFillStyle(getFill(audio.isMuted()));
+    });
+    btn.on('pointerdown', () => {
+      const nextMuted = audio.toggleMute();
+      label.setText(getLabel(nextMuted));
+      btn.setFillStyle(getFill(nextMuted));
+      audio.playSfx('button_click');
+    });
   }
 
   private createMenuButton(
@@ -108,9 +178,10 @@ export class TitleScene extends Phaser.Scene {
     height: number,
     label: string,
     onClick: () => void,
+    fillColor: number = PALETTE.candle.num,
   ): void {
     const btn = this.add
-      .rectangle(x, y, width, height, PALETTE.candle.num)
+      .rectangle(x, y, width, height, fillColor)
       .setStrokeStyle(1, PALETTE.ink.num)
       .setInteractive({ useHandCursor: true });
 
@@ -124,9 +195,13 @@ export class TitleScene extends Phaser.Scene {
       btn.setFillStyle(PALETTE.lampYellow.num);
     });
     btn.on('pointerout', () => {
-      btn.setFillStyle(PALETTE.candle.num);
+      btn.setFillStyle(fillColor);
     });
-    btn.on('pointerdown', onClick);
+    btn.on('pointerdown', () => {
+      audio.unlock();
+      audio.playSfx('button_click');
+      onClick();
+    });
   }
 
   private syncInputBounds(): void {

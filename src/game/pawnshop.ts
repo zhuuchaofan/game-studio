@@ -82,6 +82,11 @@ export interface PawnshopDebugSnapshot {
   tierAffordability?: Record<OfferTier, boolean>;
   /** 当前当客是否允许跳过（仅 negotiating 阶段为 true）。 */
   canSkip?: boolean;
+  /** 新手教程状态（供 E2E 测试断言用）。 */
+  tutorialActive?: boolean;
+  currentStep?: string | null;
+  tutorialDone?: boolean;
+  tutorialCopy?: string | null;
 }
 
 /**
