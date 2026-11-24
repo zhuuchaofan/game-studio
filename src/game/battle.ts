@@ -52,6 +52,7 @@ export interface BattleDebugSnapshot {
   playerHp: number;
   shield: number;
   renqing: number;
+  maxRenqing?: number;
   demonHp: number;
   hand: string[];
   deckCount: number;
@@ -63,6 +64,17 @@ export interface BattleDebugSnapshot {
   isAnimating?: boolean;
   reward?: WinReward | null;
   loseReason?: string | null;
+  day?: number;
+  shopLevel?: number;
+  savedData?: {
+    version: 1;
+    day: number;
+    money: number;
+    reputation: number;
+    deck: string[];
+    shopLevel: number;
+    redeemTickets: number;
+  } | null;
 }
 
 /**
@@ -354,6 +366,7 @@ export function toBattleDebugSnapshot(
     playerHp: state.playerHp,
     shield: state.shield,
     renqing: state.renqing,
+    maxRenqing: state.maxRenqing,
     demonHp: state.demonHp,
     hand: [...state.hand],
     deckCount: state.drawPile.length,
