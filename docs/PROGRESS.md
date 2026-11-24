@@ -108,7 +108,7 @@
 - **分支名**：`feature/p2-card-battle`
 - **验证证据**：
   - `npm run build` 退出码 0（`tsc --noEmit` + `vite build`，`dist/index.html` 0.70 kB，JS 1,236.20 kB）；
-  - `npm run test` 6/6 文件、43/43 单测全部通过（含 P1 原有 20 用例全绿）；
+  - `npm run test` 6/6 文件、44/44 单测全部通过（含 P1 原有 20 用例全绿；44 含铁皮青蛙跨回合集成用例，见补充修复）；
   - `npm run test:e2e` 10/10 全部通过（`battle.spec.ts` 5 + `pawnshop.spec.ts` 3 + `smoke.spec.ts` 1 + `subpath.spec.ts` 1），无失败请求、无 `pageerror`；
   - **蒙特卡洛模拟结论（10 张测试牌组，每种心魔 1000 局，种子 1～1000）**：
     - 心魔 A「药费」（20 血）：3 回合内胜率 **91.3%**（913/1000），平均结束回合 **2.99**，胜局平均剩余生命 **24.05**（被打倒 0 局，3 回合超时 87 局）；
@@ -119,4 +119,4 @@
   - 根因：原 `BattleState.demonActedThisRound` 仅在 `endTurn` 心魔行动瞬间为 `true`、进入下一回合即重置为 `false`，而玩家只能在 `play` 阶段出牌，导致该标志出牌时恒为 `false`，铁皮青蛙永远只打 3 伤、成为违背 GDD 验证清单的废牌。
   - 修复：删除 `demonActedThisRound`，改为持久标志 `demonHasActed`（初始 `false`，`endTurn` 心魔行动时置 `true` 且永不重置），同步更新 `src/game/battle.ts`、`src/game/effects.ts`、`src/game/montecarlo.ts`；更新 `tests/unit/effects.test.ts` 对应用例并在 `tests/unit/battle.test.ts` 新增跨回合状态机集成用例（R1 打 3 伤、R2/R3 打 6 伤）；`src/data/cards.json` 与定稿 `docs/GAME_DESIGN.md` 未改动，并在 `docs/DECISIONS.md` 补记语义澄清决策。
   - 复验：`npm run build`（exit 0，`dist/assets/index-BCzWRqKE.js` 1,236.16 kB）、`npm run test`（6/6 文件，44/44 通过）、`npm run test:e2e`（10/10 通过）全部绿灯。
-- **PR 状态**：PR 待建。
+- **PR 状态**：PR：https://github.com/zhuuchaofan/game-studio/pull/5，CI 两次运行（push 与 pull_request）`build-and-test` 全部 success；未合并，等制作人确认。
