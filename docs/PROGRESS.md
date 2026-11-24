@@ -188,4 +188,22 @@
   - `npx tsc --noEmit` 退出码 0；
   - `npx vitest run` 9/9 文件、69/69 单测全部通过（新增 6 用例）；
   - `npm run test:e2e`（Playwright，localhost）15/15 全部通过（`affordability.spec.ts` 1 + `battle.spec.ts` 5 + `dayloop.spec.ts` 4 + `pawnshop.spec.ts` 3 + `smoke.spec.ts` 1 + `subpath.spec.ts` 1），无失败请求、无 `pageerror`。
-- **PR 状态**：（待填：PR 链接与 CI 首轮结果）
+- **PR 状态**：PR #8 已合并（merge commit `badfd0b`）。
+
+## 2026-11-24 — 跳过当客根治三档全买不起死角（fix/skip-customer）
+- **根因查实**：
+  - 精确触发条件：`quotePrice(trueValue, tier)` 按 `low=0.5 / fair=1.0 / high=1.5` 单调递增，故三档全部不可买 **当且仅当** `money < quotePrice(currentItem.trueValue, 'low')`（只要钱 ≥ 最低档价，至少低价档可点并推进流程）。
+  - 界面无别的出口：`PawnshopScene.renderNegotiating()` 原仅绘制三档报价按钮，买不起的档位不设 `interactive` 且无回调；无快捷键、无跳过/退出按钮。
+  - `settle` 兜底不介入：界面禁用且 `handleOffer()` 在 `resolveOffer()` 前提前 `return`，不调用 `settle`；即便直接调用 `settle(state, tier, true)`，其 `price > state.money` 兜底也只返回原状态（不推进阶段与 `customerIndex`）。
+  - 实测复现（修复前）：`seed=4` 第 1 天（`watch -> bicycle -> ring`）高价收手表 60 + 高价收自行车 120 后剩 20，第 3 位婚戒三档 30/60/90 全不可点（`tierAffordability: {low: false, fair: false, high: false}`），点三档均停在 `phase: "negotiating", customerIndex: 2`。
+- **改动**：
+  - **纯逻辑（`src/game/pawnshop.ts`）**：新增 `hasAnyAffordableTier(money, trueValue, balance)` 与 `skipCustomer(state)`（仅 `negotiating` 阶段生效，不成交、钱/口碑/牌组不变、`lastOutcome` 置 `null`、日志追加 `<物品名>:跳过`、推进至下一位当客或 `summary`）；`PawnshopDebugSnapshot` 补 `canSkip?: boolean`。
+  - **界面与字形（`src/scenes/PawnshopScene.ts`、`src/data/pixel-font.json`）**：`renderNegotiating()` 当客卡片右下角（`(270, 107)`，`64×18`）增「跳过当客」8-bit 按钮（16 色板 + 1px 墨黑描边，常态旧纸底、三档全买不起时灯黄底高亮），新增 `handleSkip()`（不消耗 RNG），`getState()` 补 `canSkip`；用 `scripts/generate-pixel-font.py` 基于 Fusion Pixel 12px 补齐「跳」字形（477 字形，102.0 KB，TTF 未入库）。
+  - **文档**：更新 `docs/GAME_DESIGN.md` §11.3（补跳过规则，v1.0 核心不动）、`docs/DECISIONS.md` 与本文件，新建 `proto-tasks/07-skip-customer.md`。
+  - **测试**：`tests/unit/pawnshop.test.ts` 新增 4 个单测用例，`tests/unit/pixelart.test.ts` 字形覆盖加入 `'跳过当客'`；新增 `tests/e2e/skip-customer.spec.ts`（2 用例：复现 `seed=4` 第 1 天死角与第 4 天中途跳过），原有全流程断言不受影响。
+- **分支名**：`fix/skip-customer`
+- **验证证据**：
+  - `npm run build` 退出码 0（`tsc --noEmit` + `vite build`，JS 1,378.39 kB）；
+  - `npm run test` 9/9 文件、73/73 单测全部通过；
+  - `npm run test:e2e` 17/17 全部通过（含新增 `skip-customer.spec.ts` 2 用例），无失败请求、无 `pageerror`。
+- **PR 状态**：（建 PR 后由汇报提供链接与 CI 状态）

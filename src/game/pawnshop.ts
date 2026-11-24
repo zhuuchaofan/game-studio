@@ -80,6 +80,8 @@ export interface PawnshopDebugSnapshot {
   hasSave?: boolean;
   /** 当前当客每档报价是否买得起（仅 negotiating 阶段由场景钩子提供）。 */
   tierAffordability?: Record<OfferTier, boolean>;
+  /** 当前当客是否允许跳过（仅 negotiating 阶段为 true）。 */
+  canSkip?: boolean;
 }
 
 /**
@@ -175,6 +177,14 @@ export function getTierAffordability(
     fair: canAffordTier(money, trueValue, 'fair', balance),
     high: canAffordTier(money, trueValue, 'high', balance),
   };
+}
+
+export function hasAnyAffordableTier(
+  money: number,
+  trueValue: number,
+  balance: BalanceConfig = BALANCE,
+): boolean {
+  return TIER_ORDER.some((tier) => canAffordTier(money, trueValue, tier, balance));
 }
 
 /**
@@ -320,6 +330,38 @@ export function settle(
       reputationDelta,
       message,
     },
+  };
+}
+
+/**
+ * Skips the current customer during negotiating: no deal, money/reputation/deck unchanged,
+ * records a skip log entry, and advances to the next customer (or end-of-day summary).
+ */
+export function skipCustomer(state: PawnshopState): PawnshopState {
+  const currentItem = state.items[state.customerIndex];
+  if (state.phase !== 'negotiating' || !currentItem) {
+    return {
+      ...state,
+      deck: [...state.deck],
+      log: [...state.log],
+      items: state.items.map((item) => ({ ...item })),
+      lastOutcome: state.lastOutcome ? { ...state.lastOutcome } : null,
+    };
+  }
+
+  const nextIndex = state.customerIndex + 1;
+  const isFinished = nextIndex >= state.items.length;
+
+  return {
+    day: state.day,
+    phase: isFinished ? 'summary' : 'negotiating',
+    customerIndex: nextIndex,
+    money: state.money,
+    reputation: state.reputation,
+    deck: [...state.deck],
+    log: [...state.log, `${currentItem.name}:跳过`],
+    items: state.items.map((item) => ({ ...item })),
+    lastOutcome: null,
   };
 }
 

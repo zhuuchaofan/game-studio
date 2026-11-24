@@ -4,14 +4,19 @@ import {
   BALANCE,
   canAffordTier,
   createInitialState,
+  deriveDaySeed,
   getTierAffordability,
+  hasAnyAffordableTier,
   isTierAffordable,
   ITEMS,
   quotePrice,
   resolveOffer,
   settle,
+  shuffleItems,
+  skipCustomer,
   toDebugSnapshot,
 } from '../../src/game/pawnshop';
+import { mulberry32 } from '../../src/utils/rng';
 
 describe('quotePrice', () => {
   it('computes 50% / 100% / 150% quotes from item trueValue in items.json', () => {
@@ -220,5 +225,77 @@ describe('affordability: money must never go negative', () => {
     expect(next.phase).toBe('feedback');
     expect(next.money).toBe(20);
     expect(next.deck).toEqual([]);
+  });
+});
+
+describe('skipCustomer & hasAnyAffordableTier', () => {
+  it('hasAnyAffordableTier is false if and only if money < low tier price', () => {
+    // Ring trueValue 60: low 30 / fair 60 / high 90
+    const ring = ITEMS[1];
+    expect(hasAnyAffordableTier(30, ring.trueValue)).toBe(true);
+    expect(hasAnyAffordableTier(29, ring.trueValue)).toBe(false);
+    expect(hasAnyAffordableTier(20, ring.trueValue)).toBe(false);
+    expect(hasAnyAffordableTier(0, ring.trueValue)).toBe(false);
+
+    // Bicycle trueValue 80: low 40 / fair 80 / high 120
+    const bicycle = ITEMS[3];
+    expect(hasAnyAffordableTier(40, bicycle.trueValue)).toBe(true);
+    expect(hasAnyAffordableTier(35, bicycle.trueValue)).toBe(false);
+  });
+
+  it('skipCustomer does not mutate state, preserves money/reputation/deck, and advances to next customer', () => {
+    const initial = createInitialState({ money: 20, reputation: 2, deck: ['倒转', '飞驰'] });
+    const snapshotBefore = structuredClone(initial);
+
+    const next = skipCustomer(initial);
+
+    expect(initial).toEqual(snapshotBefore);
+    expect(next).not.toBe(initial);
+    expect(next.phase).toBe('negotiating');
+    expect(next.customerIndex).toBe(1);
+    expect(next.money).toBe(20);
+    expect(next.reputation).toBe(2);
+    expect(next.deck).toEqual(['倒转', '飞驰']);
+    expect(next.lastOutcome).toBeNull();
+    expect(next.log).toEqual(['旧手表:跳过']);
+  });
+
+  it('skipCustomer on the last customer transitions directly to summary with state preserved', () => {
+    // Reproduce seed=4 Day 1: watch (high 60) + bicycle (high 120) -> 20 money left on ring (low 30)
+    const day1Items = shuffleItems(ITEMS, mulberry32(deriveDaySeed(4, 1))).slice(0, 3);
+    expect(day1Items.map((it) => it.id)).toEqual(['watch', 'bicycle', 'ring']);
+
+    let state = createInitialState({ day: 1, items: day1Items });
+    state = advanceCustomer(settle(state, 'high', true)); // 200 -> 140
+    state = advanceCustomer(settle(state, 'high', true)); // 140 -> 20
+
+    expect(state.phase).toBe('negotiating');
+    expect(state.customerIndex).toBe(2);
+    expect(state.money).toBe(20);
+    expect(hasAnyAffordableTier(state.money, day1Items[2].trueValue)).toBe(false);
+
+    const afterSkip = skipCustomer(state);
+    expect(afterSkip.phase).toBe('summary');
+    expect(afterSkip.customerIndex).toBe(3);
+    expect(afterSkip.money).toBe(20);
+    expect(afterSkip.reputation).toBe(2);
+    expect(afterSkip.deck).toEqual(['倒转', '飞驰']);
+    expect(afterSkip.lastOutcome).toBeNull();
+    expect(afterSkip.log).toHaveLength(3);
+    expect(afterSkip.log[2]).toBe('婚戒:跳过');
+  });
+
+  it('skipCustomer is a safe immutable no-op outside negotiating phase', () => {
+    const negotiating = createInitialState();
+    const feedback = settle(negotiating, 'high', true);
+    const afterFeedbackSkip = skipCustomer(feedback);
+    expect(afterFeedbackSkip).toEqual(feedback);
+    expect(afterFeedbackSkip).not.toBe(feedback);
+
+    const summary = skipCustomer(skipCustomer(skipCustomer(negotiating)));
+    expect(summary.phase).toBe('summary');
+    const afterSummarySkip = skipCustomer(summary);
+    expect(afterSummarySkip).toEqual(summary);
+    expect(afterSummarySkip).not.toBe(summary);
   });
 });
