@@ -52,6 +52,7 @@ const HAND_Y = 144;
 
 const BUTTONS = {
   titleStart: { x: 160, y: 128 },
+  tierLow: { x: 58, y: 151 },
   tierHigh: { x: 262, y: 151 },
   nextOrSummary: { x: 160, y: 151 },
   enterNightBattle: { x: 88, y: 151 },
@@ -196,6 +197,28 @@ async function navigateThroughDayToBattle(page: Page, canvas: Locator): Promise<
   return waitForBattleReady(page, 'play');
 }
 
+// 钱不能变负数规则下的进夜里兜底路线：每位当客点低价档（被拒不扣钱、照常推进）。
+// 仅用于夜里用 ?deck=test 的用例（白天牌组不进牌局）；seed=4 第 1 天高价总额 270、seed=1 高达 285，
+// 均超过开局 200，高价路线会在第 3 位当客三档全不可点而卡死。用真实白天牌组的用例仍走高价路线。
+async function navigateThroughDayToBattleLow(
+  page: Page,
+  canvas: Locator,
+): Promise<BattleDebugState> {
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, BUTTONS.titleStart);
+
+  for (let i = 0; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, BUTTONS.tierLow);
+    await waitForPawnshopPhase(page, 'feedback');
+    await clickLogical(page, canvas, BUTTONS.nextOrSummary);
+  }
+
+  await waitForPawnshopPhase(page, 'summary');
+  await clickLogical(page, canvas, BUTTONS.enterNightBattle);
+  return waitForBattleReady(page, 'play');
+}
+
 async function playGreedyUntilResult(page: Page, canvas: Locator): Promise<BattleDebugState> {
   let state = await waitForBattleReady(page);
   let safety = 0;
@@ -268,7 +291,7 @@ test('beats Demon A (药费) with fixed seed=4 & deck=test, asserts HUD/state & 
   const canvas = page.locator('#game-container canvas');
   await expect(canvas).toBeVisible();
 
-  const startState = await navigateThroughDayToBattle(page, canvas);
+  const startState = await navigateThroughDayToBattleLow(page, canvas);
   expect(startState.demonId).toBe('a');
   expect(startState.demonName).toBe('药费');
   expect(startState.round).toBe(1);
@@ -364,7 +387,7 @@ test('Rewind card (倒转) restores both playerHp and demonHp to previous round 
   const canvas = page.locator('#game-container canvas');
   await expect(canvas).toBeVisible();
 
-  let state = await navigateThroughDayToBattle(page, canvas);
+  let state = await navigateThroughDayToBattleLow(page, canvas);
   expect(state.playerHp).toBe(30);
   expect(state.demonHp).toBe(20);
 
@@ -509,7 +532,7 @@ test('renders CardBattleScene and ResultScene cleanly on mobile portrait 390x844
   const canvas = page.locator('#game-container canvas');
   await expect(canvas).toBeVisible();
 
-  const startState = await navigateThroughDayToBattle(page, canvas);
+  const startState = await navigateThroughDayToBattleLow(page, canvas);
   expect(startState.phase).toBe('play');
   await page.screenshot({ path: 'test-results/battle-mobile-play.png' });
 

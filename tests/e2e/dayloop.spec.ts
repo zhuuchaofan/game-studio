@@ -23,6 +23,7 @@ interface PawnshopDebugState {
   maxRenqing?: number;
   itemsOrder?: string[];
   hasSave?: boolean;
+  tierAffordability?: { low: boolean; fair: boolean; high: boolean };
 }
 
 interface TransitionDebugState {
@@ -70,6 +71,7 @@ const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 const BUTTONS = {
   titleStart: { x: 160, y: 122 },
   titleContinue: { x: 160, y: 156 },
+  tierLow: { x: 58, y: 151 },
   tierHigh: { x: 262, y: 151 },
   nextOrSummary: { x: 160, y: 151 },
   enterNightBattle: { x: 88, y: 151 },
@@ -209,6 +211,18 @@ async function completeDayPawnshopHigh(page: Page, canvas: Locator): Promise<Paw
   return waitForPawnshopPhase(page, 'summary');
 }
 
+// 钱不能变负数规则下使用的兜底路线：每位当客都点最便宜的低价档。
+// 低价接受率 0.3，被拒也不扣钱、流程照常推进，因此只要低价 ≤ 当前钱数就一定能走完当天。
+async function completeDayPawnshopLow(page: Page, canvas: Locator): Promise<PawnshopDebugState> {
+  for (let i = 0; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, BUTTONS.tierLow);
+    await waitForPawnshopPhase(page, 'feedback');
+    await clickLogical(page, canvas, BUTTONS.nextOrSummary);
+  }
+  return waitForPawnshopPhase(page, 'summary');
+}
+
 async function playGreedyUntilResult(page: Page, canvas: Locator): Promise<BattleDebugState> {
   let state = await waitForBattleReady(page);
   let safety = 0;
@@ -277,7 +291,7 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.goto('/?seed=4&deck=test');
+  await page.goto('/?seed=2&deck=test');
   await page.evaluate((key) => localStorage.removeItem(key), SAVE_STORAGE_KEY);
   await page.reload();
 
@@ -289,21 +303,24 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   expect(titleNoSave.hasSave).toBe(false);
   await page.screenshot({ path: 'test-results/dayloop-desktop-title-nosave.png' });
 
-  // Click Start -> Day 1 PawnshopScene with deterministic seed=4 day=1 top-3 order: watch -> bicycle -> ring
+  // Click Start -> Day 1 PawnshopScene with deterministic seed=2 day=1 top-3 order: old_book -> erhu -> stamp_album
+  // （原 seed=4 第 1 天高价总额 270 > 开局 200，按新规则第 3 位当客三档全不可点、流程卡死，故改用 seed=2；
+  // 死角原样见本文件末尾 P4 用例注释与 proto-tasks/06-no-negative-money.md）
   await clickLogical(page, canvas, BUTTONS.titleStart);
   const day1Start = await waitForPawnshopPhase(page, 'negotiating');
   expect(day1Start.day).toBe(1);
   expect(day1Start.money).toBe(200);
   expect(day1Start.shopLevel).toBe(1);
   expect(day1Start.maxRenqing).toBe(3);
-  expect(day1Start.itemsOrder).toEqual(['watch', 'bicycle', 'ring']);
+  expect(day1Start.itemsOrder).toEqual(['old_book', 'erhu', 'stamp_album']);
   await page.screenshot({ path: 'test-results/dayloop-desktop-day1.png' });
 
-  // Buy all 3 items at High tier (60 + 120 + 90 = 270 -> money -70, rep +3, deck 3 cards)
+  // Buy all 3 items at High tier (30 + 75 + 45 = 150 -> money 50, rep +3, deck 3 cards; money never negative)
   const day1Summary = await completeDayPawnshopHigh(page, canvas);
-  expect(day1Summary.money).toBe(-70);
+  expect(day1Summary.money).toBe(50);
+  expect(day1Summary.money).toBeGreaterThanOrEqual(0);
   expect(day1Summary.reputation).toBe(3);
-  expect(day1Summary.deck).toEqual(['倒转', '飞驰', '守诺']);
+  expect(day1Summary.deck).toEqual(['旧书', '余音', '集邮']);
 
   // Enter night battle -> must pass through 6-frame lamp-pull TransitionScene
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
@@ -348,22 +365,23 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   expect(winResult.savedData!.version).toBe(1);
   expect(winResult.savedData!.day).toBe(2);
   expect(winResult.savedData!.shopLevel).toBe(2);
-  expect(winResult.savedData!.money).toBe(-50); // -70 + 20 winRewardMoney
+  expect(winResult.savedData!.money).toBe(70); // 50 + 20 winRewardMoney
+  expect(winResult.savedData!.money).toBeGreaterThanOrEqual(0);
   expect(winResult.savedData!.redeemTickets).toBe(1);
   expect(winResult.savedData!.deck).toHaveLength(4);
   expect(winResult.savedData!.deck[3]).toBe(winResult.reward!.cardName);
   await page.screenshot({ path: 'test-results/dayloop-desktop-result.png' });
 
-  // Click "下一天" -> Day 2 PawnshopScene (day=2, money=-50, shopLevel=2, maxRenqing=4, Day 2 shuffle top-3)
+  // Click "下一天" -> Day 2 PawnshopScene (day=2, money=70, shopLevel=2, maxRenqing=4, Day 2 shuffle top-3)
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2.day).toBe(2);
-  expect(day2.money).toBe(-50);
+  expect(day2.money).toBe(70);
   expect(day2.reputation).toBe(3);
   expect(day2.shopLevel).toBe(2);
   expect(day2.maxRenqing).toBe(4);
   expect(day2.deck).toEqual(winResult.savedData!.deck);
-  expect(day2.itemsOrder).toEqual(['watch', 'bicycle', 'old_book']);
+  expect(day2.itemsOrder).toEqual(['erhu', 'watch', 'stamp_album']);
   await page.screenshot({ path: 'test-results/dayloop-desktop-day2.png' });
 
   // Verify localStorage save round-trip after full page reload -> TitleScene shows Continue
@@ -379,13 +397,24 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   await clickLogical(page, canvas, BUTTONS.titleContinue);
   const restoredDay2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(restoredDay2.day).toBe(2);
-  expect(restoredDay2.money).toBe(-50);
+  expect(restoredDay2.money).toBe(70);
   expect(restoredDay2.shopLevel).toBe(2);
   expect(restoredDay2.maxRenqing).toBe(4);
   expect(restoredDay2.deck).toEqual(winResult.savedData!.deck);
+  // 首位当客二胡（真值 50）：低 25 / 平 50 买得起、高 75 买不起
+  expect(restoredDay2.tierAffordability).toEqual({ low: true, fair: true, high: false });
+
+  // Day 2 pawnshop via Low tier: 钱 70 时三档低价 25/20/15 全程可点；
+  // seed=2 确定性 RNG（每场景 fresh）：二胡低价拒（roll 0.7343 ≥ 0.3）、手表低价拒（0.3250 ≥ 0.3）、
+  // 邮票册低价收（0.2853 < 0.3，-15）-> money 55，rep 3 - 1 = 2，牌组 +1 张集邮
+  const day2Summary = await completeDayPawnshopLow(page, canvas);
+  expect(day2Summary.money).toBe(55);
+  expect(day2Summary.money).toBeGreaterThanOrEqual(0);
+  expect(day2Summary.reputation).toBe(2);
+  expect(day2Summary.deck).toHaveLength(5);
+  expect(day2Summary.deck[4]).toBe('集邮');
 
   // Proceed into Night 2 -> verifies Demon B rotation and maxRenqing = 4 (Lv.2)!
-  await completeDayPawnshopHigh(page, canvas);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   const night2 = await waitForBattleReady(page, 'play');
   expect(night2.demonId).toBe('b');
@@ -411,8 +440,10 @@ test('lose flow advances day +1 while keeping deck, money, shopLevel, and redeem
 
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleStart);
+  // seed=7 第 1 天高价 75 + 60 + 30 = 165，逐步 75 ≤ 200、60 ≤ 125、30 ≤ 65，全程可买，新规则下不受影响
   const day1Summary = await completeDayPawnshopHigh(page, canvas);
   expect(day1Summary.money).toBe(35);
+  expect(day1Summary.money).toBeGreaterThanOrEqual(0);
   expect(day1Summary.deck).toEqual(['余音', '倒转', '旧书']);
 
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
@@ -463,7 +494,7 @@ test('renders pixel font, 32x32 pixel art, and day loop cleanly on mobile portra
   const { pageErrors, failedRequests } = trackErrors(page);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/?seed=4&deck=test');
+  await page.goto('/?seed=2&deck=test');
   await page.evaluate((key) => localStorage.removeItem(key), SAVE_STORAGE_KEY);
   await page.reload();
 
@@ -477,6 +508,7 @@ test('renders pixel font, 32x32 pixel art, and day loop cleanly on mobile portra
   await waitForPawnshopPhase(page, 'negotiating');
   await page.screenshot({ path: 'test-results/dayloop-mobile-day1.png' });
 
+  // seed=2 第 1 天高价 30 + 75 + 45 = 150 -> money 50（原 seed=4 高价 270 会在第 3 位当客卡死，见主流程注释）
   await completeDayPawnshopHigh(page, canvas);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   await waitForBattleReady(page, 'play');
@@ -532,9 +564,17 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   expect(day3Start.itemsOrder).toContain('erhu');
   await page.screenshot({ path: 'test-results/p4-day3-erhu.png' });
 
-  const day3Summary = await completeDayPawnshopHigh(page, canvas);
+  // 钱不能变负数规则下不用高价路线：seed=4 第 3 天高价 75 + 90 + 60 = 225 > 200，
+  // 前两档高价收下后只剩 35，第 3 位当客手表低价 20 是唯一可点档且确定性 RNG 首抽 0.9236 拒收；
+  // 到第 4 天（手表/自行车/二胡）第 2 位自行车低价 40 > 35，三档全不可点、流程卡死（无跳过按钮）。
+  // 故第 3/4/5 天改走低价路线；每场景 RNG 都是 fresh mulberry32(4)，三抽固定为拒（0.9236）/ 拒（0.3330）/ 收（0.2217）。
+  // Day 3（erhu, ring, watch）：低价拒、拒、收（手表 -20）-> money 180，rep 2 - 1 = 1，牌组 +倒转
+  const day3Summary = await completeDayPawnshopLow(page, canvas);
+  expect(day3Summary.money).toBe(180);
+  expect(day3Summary.money).toBeGreaterThanOrEqual(0);
+  expect(day3Summary.reputation).toBe(1);
   expect(day3Summary.log.some((entry) => entry.includes('二胡'))).toBe(true);
-  expect(day3Summary.deck).toContain('余音');
+  expect(day3Summary.deck).toEqual(['倒转', '守诺', '旧书', '倒转']);
 
   // Night 3 -> Demon C (房租, HP 22)
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
@@ -559,13 +599,22 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   }
   const night3Result = await waitForBattleReady(page, 'result_scene');
   expect(night3Result.savedData!.day).toBe(4);
+  expect(night3Result.savedData!.money).toBe(180);
 
   // Day 4 Pawnshop -> Night 4 -> Demon D (学费, HP 16, Round 3 skill "开学" 10 dmg)
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
   const day4Start = await waitForPawnshopPhase(page, 'negotiating');
   expect(day4Start.day).toBe(4);
+  expect(day4Start.money).toBe(180);
+  expect(day4Start.reputation).toBe(1);
   expect(day4Start.itemsOrder).toHaveLength(3);
-  await completeDayPawnshopHigh(page, canvas);
+  expect(day4Start.itemsOrder).toEqual(['watch', 'bicycle', 'erhu']);
+  // Day 4 低价路线（手表/自行车/二胡）：低价拒、拒、收（二胡 -25）-> money 155，rep 1 - 1 = 0，牌组 +余音
+  const day4Summary = await completeDayPawnshopLow(page, canvas);
+  expect(day4Summary.money).toBe(155);
+  expect(day4Summary.money).toBeGreaterThanOrEqual(0);
+  expect(day4Summary.reputation).toBe(0);
+  expect(day4Summary.deck).toEqual(['倒转', '守诺', '旧书', '倒转', '余音']);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
 
   const night4 = await waitForBattleReady(page, 'play');
@@ -589,13 +638,22 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   }
   const night4Result = await waitForBattleReady(page, 'result_scene');
   expect(night4Result.savedData!.day).toBe(5);
+  expect(night4Result.savedData!.money).toBe(155);
 
   // Day 5 Pawnshop -> Night 5 -> loops back to Demon A (药费)
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
   const day5Start = await waitForPawnshopPhase(page, 'negotiating');
   expect(day5Start.day).toBe(5);
+  expect(day5Start.money).toBe(155);
+  expect(day5Start.reputation).toBe(0);
   expect(day5Start.itemsOrder).toHaveLength(3);
-  await completeDayPawnshopHigh(page, canvas);
+  expect(day5Start.itemsOrder).toEqual(['erhu', 'ring', 'old_book']);
+  // Day 5 低价路线（二胡/婚戒/旧书）：低价拒、拒、收（旧书 -10）-> money 145，rep 0 - 1 = -1，牌组 +旧书
+  const day5Summary = await completeDayPawnshopLow(page, canvas);
+  expect(day5Summary.money).toBe(145);
+  expect(day5Summary.money).toBeGreaterThanOrEqual(0);
+  expect(day5Summary.reputation).toBe(-1);
+  expect(day5Summary.deck).toEqual(['倒转', '守诺', '旧书', '倒转', '余音', '旧书']);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
 
   const night5 = await waitForBattleReady(page, 'play');

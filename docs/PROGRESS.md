@@ -174,3 +174,18 @@
 - **CI 修复（PR #7 首轮 CI 失败后）**：两轮 CI 均因 E2E 阶段等待超时失败（`waitForPawnshopPhase` 默认 5s、`waitForBattleReady` 10s），非数值/逻辑错误——本地构建+单测+E2E 两次全绿，CI 日志中失败均为阶段滞后超时（两轮失败点不同、且有 5 个用例首轮失败重试后通过，属 CI runner 慢的环境抖动）。修复：`playwright.config.ts` 加 `timeout: 90000`（单测默认 30s 不够多日流程用例）与 `expect.timeout: 15000`（覆盖全部 `expect.poll` 等待），不改游戏代码与测试逻辑。
 - **CI 修复续（超时加长后仍失败）**：两轮新 CI 仍失败，且失败用例在两次运行间互换（一次 P4 用例、一次全流程用例），均为阶段等待超时、本地全绿——定性为 CI runner 并行负载抖动而非逻辑 bug。追加修复：`playwright.config.ts` 在 CI 时 `workers: 1`（串行跑 E2E，避免并行 Chromium 软渲染抢 CPU 拖垮游戏循环）；本地以 `CI=true` 验证：13 passed + 1 flaky（重试后通过），0 failed。
 - **CI 故障调查（2026-11-24，制作人定方向“查 runner 环境”）**：6 次运行全败在 E2E（构建与单测都过）。日志核对：失败全是阶段等待超时（`waitForPawnshopPhase` / `waitForBattleReady`，15s 内阶段未变，如 `Expected: "feedback"` / `Expected: "negotiating" Received: "feedback"`），无数值断言失败；冒烟与 subpath 每次都过；同一提交两次运行结果不同（4 败 vs 11 败）。关键证据：6 次运行日志均写明 worker 数——2 workers 时每轮 1–2 败（只败长流程用例），1 worker（串行提交 8e985fa）后每轮 8–11 败，连 1 秒的收当用例也在 15s 超时；串行假设被证伪。另查：阶段切换本身是点击处理函数内同步完成的（`handleOffer`/`advanceCustomer` 直接改 phase 再渲染，无 tween/定时器依赖），点击靠 Phaser 游戏循环（rAF）处理，故超时即游戏循环在 runner 上间歇性停转；本地 `CI=true` 同配置多次全绿，无法复现，属 runner 环境问题而非游戏逻辑 bug。修复：只回滚串行提交，删 `workers: 1`、恢复 Playwright 默认（runner 4 核 → 2 workers），保留 `timeout: 90000` / `expect.timeout: 15000`。另记：`waitForBattleReady` 的 10s 超时是写死的，不受 `expect.timeout` 覆盖（首轮 dayloop:275 即败于此），如仍红可作后续调整点；串行提交 8e985fa 建议随回滚废弃，不保留。
+
+## 2026-11-24 — 钱不能变负数规则（fix/no-negative-money）
+- **范围**：按 `proto-tasks/06-no-negative-money.md` 与制作人 21:12 定的规则实现“钱不能变负数”，不改核心玩法、技术架构、美术方向与 `src/data/balance.json`：
+  - **纯逻辑（`src/game/pawnshop.ts`）**：新增 `isTierAffordable(money, price)`（价格 ≤ 钱数）、`canAffordTier(money, trueValue, tier)`（经 `quotePrice` 算价）、`getTierAffordability(money, trueValue)`（三档一次返回）；`settle` 在纯逻辑层兜底——接受成交且报价高于钱数时不成交、不扣钱、不改状态（被拒报价不受影响）。
+  - **界面（`src/scenes/PawnshopScene.ts`）**：`renderNegotiating()` 每档报价与当前钱比较，买不起的档位按钮置灰禁用（银蓝底、16 色板内，与可点的烛光底明显区分，无 hover 变色，不设 interactive）；`addActionButton` 增加可选 `disabled` 参数，其他调用点不变；`handleOffer` 开头先判 affordability、买不起直接 return，且在 `resolveOffer` 之前（不消耗 RNG）；调试钩子 `getState()` 增加 `tierAffordability`（仅 negotiating 阶段）。
+  - **文档**：新建 `proto-tasks/06-no-negative-money.md`；`docs/GAME_DESIGN.md` 文末增补第 11 节（v1.0 定稿核心一字未改），§11.3 原样记录已知缺口；同步更新本进度记录与 `docs/DECISIONS.md`。
+  - **测试改写**：`tests/unit/pawnshop.test.ts` 新增 affordability 单测 6 用例（边界、逐档、`settle` 兜底、刚好够买到 0、被拒不受影响）；新增 `tests/e2e/affordability.spec.ts`（localStorage 预置第 1 天 25 元存档，seed=7 首位二胡低 25 / 平 50 / 高 75：断言 `tierAffordability` 为 `{low: true, fair: false, high: false}`、点高/平档无反应且不消耗 RNG——随后点低价档按首抽 0.0117 接受、钱 25 → 0；钱为 0 时三档全 false、点低价档同样无反应）；`tests/e2e/dayloop.spec.ts` 主流程与竖屏用例由 seed=4 改 seed=2（第 1 天高价 150 → 钱 50，胜局存档 70，第 2 天低价后 55、口碑 2、牌组 5 张），P4 第 3/4/5 天改走低价路线（钱 180 / 155 / 145），seed=7 负局用例保持原样；`tests/e2e/battle.spec.ts` 另有 3 处经第 1 天高价进夜里的用例撞同一死角（seed=4 高价 270、seed=1 高价 285），改走低价进夜里（新增 `navigateThroughDayToBattleLow`，夜里均用 `?deck=test`），seed=2 与 seed=7（真实白天牌组）用例保持原样；全流程原 -70 / -50 负数断言全部改为非负断言与新流程具体值。
+  - **已知缺口（死角，原样记录，需制作人定）**：某位当客三档报价全部高于当前钱数时，该当客无任何可点档位、且无“跳过当客 / 不成交”按钮，流程会卡住。实测：seed=4 第 1 天高价收下手表 60 + 自行车 120 后剩 20，第 3 位婚戒三档 30 / 60 / 90 全不可点；seed=4 第 3 天高价收下二胡 75 + 婚戒 90 后剩 35，第 4 天第 2 位自行车低价 40 起三档全不可点。本次测试改道绕开，未自行加跳过按钮。
+- **分支名**：`fix/no-negative-money`
+- **验证证据**：
+  - `npm run build` 退出码 0（`tsc --noEmit` + `vite build`，JS 1,371.94 kB）；
+  - `npx tsc --noEmit` 退出码 0；
+  - `npx vitest run` 9/9 文件、69/69 单测全部通过（新增 6 用例）；
+  - `npm run test:e2e`（Playwright，localhost）15/15 全部通过（`affordability.spec.ts` 1 + `battle.spec.ts` 5 + `dayloop.spec.ts` 4 + `pawnshop.spec.ts` 3 + `smoke.spec.ts` 1 + `subpath.spec.ts` 1），无失败请求、无 `pageerror`。
+- **PR 状态**：（待填：PR 链接与 CI 首轮结果）
