@@ -1,0 +1,29 @@
+[
+  {
+    "id": "watch",
+    "name": "旧手表",
+    "trueValue": 40,
+    "story": "当掉手表换药费的父亲，想把时间倒回去",
+    "cardName": "倒转",
+    "cardCost": 2,
+    "color": "#C9973F"
+  },
+  {
+    "id": "ring",
+    "name": "婚戒",
+    "trueValue": 60,
+    "story": "当掉婚戒换车票的新娘，说“等我回来赎它”",
+    "cardName": "守诺",
+    "cardCost": 1,
+    "color": "#8FA8C8"
+  },
+  {
+    "id": "old_book",
+    "name": "旧书",
+    "trueValue": 20,
+    "story": "当掉一整箱旧书换一顿饭的穷学生",
+    "cardName": "旧书",
+    "cardCost": 1,
+    "color": "#5A3A22"
+  }
+]
