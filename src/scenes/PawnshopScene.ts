@@ -397,8 +397,15 @@ export class PawnshopScene extends Phaser.Scene {
       });
     }
 
-    // 返回标题按钮
-    this.addActionButton(centerX, BUTTON_ROW_Y, 108, 26, '返回标题', null, () => {
+    // 进入夜里牌局按钮 + 返回标题按钮（保留 (160, 151) 在“返回标题”命中区内以兼容既有 E2E）
+    this.addActionButton(88, BUTTON_ROW_Y, 122, 26, '进入夜里牌局', null, () => {
+      this.scene.start('CardBattleScene', {
+        deck: [...this.state.deck],
+        demonId: 'a',
+      });
+    });
+
+    this.addActionButton(224, BUTTON_ROW_Y, 138, 26, '返回标题', null, () => {
       this.scene.start('TitleScene');
     });
   }

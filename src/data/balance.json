@@ -5,6 +5,9 @@
   "startingHp": 30,
   "startingRenqing": 3,
   "maxRenqing": 3,
+  "drawFirst": 5,
+  "drawPerRound": 2,
+  "winRewardMoney": 20,
   "tiers": {
     "low": {
       "label": "低价",

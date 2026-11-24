@@ -1,0 +1,48 @@
+import { describe, expect, it } from 'vitest';
+import balanceJson from '../../src/data/balance.json';
+import cardsJson from '../../src/data/cards.json';
+import demonsJson from '../../src/data/demons.json';
+import type { BattleBalanceConfig, CardDef, DemonDef } from '../../src/game/battle';
+import { runMonteCarlo, TEST_DECK } from '../../src/game/montecarlo';
+
+const CARDS = cardsJson as CardDef[];
+const DEMONS = demonsJson as DemonDef[];
+const BALANCE: BattleBalanceConfig = {
+  startingHp: balanceJson.startingHp,
+  startingRenqing: balanceJson.startingRenqing,
+  maxRenqing: balanceJson.maxRenqing,
+  drawFirst: balanceJson.drawFirst,
+  drawPerRound: balanceJson.drawPerRound,
+  winRewardMoney: balanceJson.winRewardMoney,
+};
+
+describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
+  it('simulates 1000 seeded runs vs Demon A (药费) and Demon B (车票) and verifies both are killable within 3 rounds', () => {
+    const statsA = runMonteCarlo(CARDS, DEMONS, BALANCE, TEST_DECK, 'a', 1000);
+    const statsB = runMonteCarlo(CARDS, DEMONS, BALANCE, TEST_DECK, 'b', 1000);
+
+    // Output summary for balance observation & reporting
+    console.info(
+      `[MonteCarlo] Demon A (${statsA.demonName}, HP 20): winRate=${(statsA.winRate * 100).toFixed(1)}% (${statsA.wins}/${statsA.runs}), avgEndRound=${statsA.avgEndRound.toFixed(2)}, avgWinHp=${statsA.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsA.lossesHp}, lossesTimeout=${statsA.lossesTimeout}`,
+    );
+    console.info(
+      `[MonteCarlo] Demon B (${statsB.demonName}, HP 18): winRate=${(statsB.winRate * 100).toFixed(1)}% (${statsB.wins}/${statsB.runs}), avgEndRound=${statsB.avgEndRound.toFixed(2)}, avgWinHp=${statsB.avgWinRemainingHp.toFixed(2)}, lossesHp=${statsB.lossesHp}, lossesTimeout=${statsB.lossesTimeout}`,
+    );
+
+    for (const stats of [statsA, statsB]) {
+      expect(stats.runs).toBe(1000);
+      expect(stats.wins + stats.lossesHp + stats.lossesTimeout).toBe(1000);
+      expect(stats.winRate).toBeGreaterThan(0);
+      expect(stats.winRate).toBeLessThanOrEqual(1);
+      expect(stats.avgEndRound).toBeGreaterThanOrEqual(1);
+      expect(stats.avgEndRound).toBeLessThanOrEqual(3);
+      expect(stats.avgWinRemainingHp).toBeGreaterThan(0);
+      expect(stats.avgWinRemainingHp).toBeLessThanOrEqual(BALANCE.startingHp);
+    }
+
+    expect(statsA.demonId).toBe('a');
+    expect(statsA.demonName).toBe('药费');
+    expect(statsB.demonId).toBe('b');
+    expect(statsB.demonName).toBe('车票');
+  });
+});

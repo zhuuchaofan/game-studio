@@ -98,3 +98,25 @@
   - E2E 截图已保存在 `test-results/`（桌面标题/收当/结算 + 手机竖屏标题/收当）并人工核查渲染清晰无错位；
   - `grep -nE '40|60|20' src/scenes/*.ts` 0 命中，场景代码无写死游戏数值。
 - **PR 状态**：PR：https://github.com/zhuuchaofan/game-studio/pull/4，CI 两次运行（push 与 pull_request）`build-and-test` 全部 success；未合并，等制作人确认。
+
+## 2026-11-24 — P2 夜里牌局核心（feature/p2-card-battle）
+- **范围**：按 `proto-tasks/03-p2-card-battle.md` 与定稿 GDD v1.0 实现夜里牌局核心闭环：
+  - 数值配置：新增 `src/data/cards.json`（GDD 20 张原型牌全量，字段 `{ id, name, item, cost, effects, story, color }`，覆盖 12 种声明式效果 `type`）与 `src/data/demons.json`（心魔 A「药费」20 血每回 3 伤；心魔 B「车票」18 血 R1–R2 各 2 伤、R3「远行」8 伤）；补充 `src/data/balance.json`（`drawFirst: 5`、`drawPerRound: 2`、`winRewardMoney: 20`，沿用 P1 已有字段）。
+  - 纯逻辑层：新增 `src/game/effects.ts`（`EffectRunner` 按 `type` 不可变分发）、`src/game/battle.ts`（显式状态机枚举 `draw → play → demonAct → roundEnd → result`、`createBattle` / `canPlayCard` / `playCard` / `endTurn` / `getIntent` / `resolveWinReward`）、`src/game/montecarlo.ts`（固定 10 张测试牌组 + 贪心策略，支持种子 1～1000 蒙特卡洛模拟）。
+  - 场景与入口：新增 `src/scenes/CardBattleScene.ts`（夜里冷色 16 色程序化像素画 + 暖色台灯光晕、HUD 常驻、48×64 手牌、出牌飞行与 1 帧旧纸色残影、击败 8×8 碎裂散开、支持 `?demon=a|b` 与 `?deck=test` 及空牌组提示“没有牌可打”、挂载 `window.__BATTLE_DEBUG__`）与 `src/scenes/ResultScene.ts`（胜负结算、种子随机得新牌、全 20 张已有改加钱 +20、赎当券 ×1 占位、返回标题）；更新 `src/scenes/PawnshopScene.ts`（结算屏“返回标题”旁增“进入夜里牌局”按钮）与 `src/main.ts`（注册两新场景）。
+  - 测试：新增单元测试 `tests/unit/effects.test.ts`（13 用例）、`tests/unit/battle.test.ts`（9 用例）、`tests/unit/montecarlo.test.ts`（1 用例，各 1000 局）与 E2E 测试 `tests/e2e/battle.spec.ts`（5 用例，含 A/B 对局、倒转专项、P1→P2→结算→标题全流程及桌面/手机竖屏截图）。
+- **分支名**：`feature/p2-card-battle`
+- **验证证据**：
+  - `npm run build` 退出码 0（`tsc --noEmit` + `vite build`，`dist/index.html` 0.70 kB，JS 1,236.20 kB）；
+  - `npm run test` 6/6 文件、44/44 单测全部通过（含 P1 原有 20 用例全绿；44 含铁皮青蛙跨回合集成用例，见补充修复）；
+  - `npm run test:e2e` 10/10 全部通过（`battle.spec.ts` 5 + `pawnshop.spec.ts` 3 + `smoke.spec.ts` 1 + `subpath.spec.ts` 1），无失败请求、无 `pageerror`；
+  - **蒙特卡洛模拟结论（10 张测试牌组，每种心魔 1000 局，种子 1～1000）**：
+    - 心魔 A「药费」（20 血）：3 回合内胜率 **91.3%**（913/1000），平均结束回合 **2.99**，胜局平均剩余生命 **24.05**（被打倒 0 局，3 回合超时 87 局）；
+    - 心魔 B「车票」（18 血）：3 回合内胜率 **97.3%**（973/1000），平均结束回合 **2.76**，胜局平均剩余生命 **26.50**（被打倒 0 局，3 回合超时 27 局）；
+    - 结论：A、B 均可在 3 回合内击杀；30 开局生命下两心魔 3 回合总伤（9 / 12）不足以击杀玩家，全部败局均来自 3 回合超时，后续调平衡只需改 JSON。
+  - E2E 截图已保存在 `test-results/`（桌面牌局 A/B 预警/胜负结算 + 手机竖屏牌局/结算）并人工核查渲染清晰、无重叠、无错位。
+- **补充修复（铁皮青蛙 `damage_conditional` 条件分支无法触发）**：
+  - 根因：原 `BattleState.demonActedThisRound` 仅在 `endTurn` 心魔行动瞬间为 `true`、进入下一回合即重置为 `false`，而玩家只能在 `play` 阶段出牌，导致该标志出牌时恒为 `false`，铁皮青蛙永远只打 3 伤、成为违背 GDD 验证清单的废牌。
+  - 修复：删除 `demonActedThisRound`，改为持久标志 `demonHasActed`（初始 `false`，`endTurn` 心魔行动时置 `true` 且永不重置），同步更新 `src/game/battle.ts`、`src/game/effects.ts`、`src/game/montecarlo.ts`；更新 `tests/unit/effects.test.ts` 对应用例并在 `tests/unit/battle.test.ts` 新增跨回合状态机集成用例（R1 打 3 伤、R2/R3 打 6 伤）；`src/data/cards.json` 与定稿 `docs/GAME_DESIGN.md` 未改动，并在 `docs/DECISIONS.md` 补记语义澄清决策。
+  - 复验：`npm run build`（exit 0，`dist/assets/index-BCzWRqKE.js` 1,236.16 kB）、`npm run test`（6/6 文件，44/44 通过）、`npm run test:e2e`（10/10 通过）全部绿灯。
+- **PR 状态**：PR：https://github.com/zhuuchaofan/game-studio/pull/5，CI 两次运行（push 与 pull_request）`build-and-test` 全部 success；未合并，等制作人确认。
