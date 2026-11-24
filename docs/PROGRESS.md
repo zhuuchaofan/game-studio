@@ -36,13 +36,11 @@
 - **新阻塞**：`.github/workflows/ci.yml` 推送失败：`PUT /contents/.github/workflows/ci.yml: 403 Resource not accessible by integration`。这是 GitHub 的已知规则：通过 API 创建 workflow 文件需要 workflow 权限/范围，本次安装的 App 未授予该权限。同理 `deploy-pages.yml` 也无法经此路径推送。
 - **后果**：CI 工作流与 Pages 部署工作流目前不在仓库里，CI 与部署两项记为“阻塞、未验证”。需要制作人处理（二选一）：① 在 GitHub 上调整 Muse App 安装权限，授予 workflow 相关权限后由我重推；② 制作人在网页上手动创建 `.github/workflows/ci.yml` 与 `deploy-pages.yml` 两个文件（内容与本地 `repo/.github/workflows/` 完全一致）。
 
-## （待填写）PR
-- PR 编号与链接：
-- CI 结果（附证据）：
-
-## （待填写）部署
-- GitHub Pages 部署方式与结果（附链接）：
-- 若未部署：原因与需要的制作人动作：
+## PR #1（已创建，未合并）
+- PR：https://github.com/zhuuchaofan/game-studio/pull/1（`feature/m0-scaffold` → `main`），2026-11-24 创建。
+- **未合并，原因**：CI 工作流文件不在仓库里，没有 CI 运行，无法验证“CI 变绿”；按红线不合。
+- **CI 状态**：阻塞、未验证。`.github/workflows/ci.yml` 推送 403（见上节）。
+- **部署状态**：阻塞、未验证。`.github/workflows/deploy-pages.yml` 同样 403；且 GitHub Pages 需在仓库 Settings → Pages 启用（Source 选 GitHub Actions），该设置为网页操作，连接器无法代办。另注意：私有仓库的 Pages 可用性取决于账号套餐，若套餐不支持，部署会继续失败，届时以失败原文为准。
 
 ## 文档草稿
 - `docs/GAME_DESIGN.md`、`docs/ARCHITECTURE.md`、`docs/ART_STYLE.md`、`docs/PROGRESS.md`（本文件）、`docs/DECISIONS.md` 草稿已随本次推送上 `feature/m0-scaffold` 分支，待制作人评审后定稿。
