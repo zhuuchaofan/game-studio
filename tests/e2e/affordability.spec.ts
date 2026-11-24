@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { clickLogical } from './helpers';
 
 interface SaveSnapshot {
   version: 1;
@@ -26,8 +27,6 @@ interface PawnshopDebugState {
   tierAffordability?: { low: boolean; fair: boolean; high: boolean };
 }
 
-const LOGICAL_WIDTH = 320;
-const LOGICAL_HEIGHT = 180;
 const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 
 const BUTTONS = {
@@ -37,18 +36,6 @@ const BUTTONS = {
   tierHigh: { x: 262, y: 151 },
   nextOrSummary: { x: 160, y: 151 },
 } as const;
-
-async function clickLogical(
-  page: Page,
-  canvas: Locator,
-  point: { x: number; y: number },
-): Promise<void> {
-  const box = await canvas.boundingBox();
-  expect(box).not.toBeNull();
-  const clientX = box!.x + (point.x / LOGICAL_WIDTH) * box!.width;
-  const clientY = box!.y + (point.y / LOGICAL_HEIGHT) * box!.height;
-  await page.mouse.click(clientX, clientY);
-}
 
 async function getPawnshopState(page: Page): Promise<PawnshopDebugState> {
   return page.evaluate(() => {

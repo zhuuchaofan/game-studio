@@ -3,10 +3,12 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
-  // Do NOT force workers: 1 on CI (reverted 2026-11-24): serial made CI
-  // strictly worse — 2 workers: 1-2 E2E failures per run; 1 worker:
-  // 8-11 failures, including 1s pawnshop tests timing out at 15s.
-  // Keep Playwright's default (2 workers on the 4-core runner).
+  // Keep Playwright's default worker count (2 workers on the 4-core CI runner).
+  // Historical note: workers: 1 previously hit 8-11 failures/run (vs 1-2 with
+  // 2 workers) because lower IPC latency let consecutive clicks outpace Phaser's
+  // requestAnimationFrame InputPlugin.preUpdate() flush of `_pendingInsertion`.
+  // That race is now eliminated in tests/e2e/helpers.ts (clickLogical waits 2
+  // rAF ticks before clicking), while 2 workers keeps CI wall-clock time low.
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: 'list',
