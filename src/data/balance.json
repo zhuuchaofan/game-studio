@@ -1,0 +1,31 @@
+{
+  "_note": "P1 占位数值（开局钱 200 等），待制作人评审后调整；调数值只改本 JSON。",
+  "startingMoney": 200,
+  "startingReputation": 0,
+  "startingHp": 30,
+  "startingRenqing": 3,
+  "maxRenqing": 3,
+  "tiers": {
+    "low": {
+      "label": "低价",
+      "priceMultiplier": 0.5,
+      "acceptRate": 0.3,
+      "reputationOnAccept": -1,
+      "reputationOnReject": 0
+    },
+    "fair": {
+      "label": "平价",
+      "priceMultiplier": 1.0,
+      "acceptRate": 0.8,
+      "reputationOnAccept": 0,
+      "reputationOnReject": 0
+    },
+    "high": {
+      "label": "高价",
+      "priceMultiplier": 1.5,
+      "acceptRate": 1.0,
+      "reputationOnAccept": 1,
+      "reputationOnReject": 0
+    }
+  }
+}
