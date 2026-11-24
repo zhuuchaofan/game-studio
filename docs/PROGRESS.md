@@ -97,4 +97,4 @@
   - `npm run test:e2e` 5/5 全部通过（`pawnshop.spec.ts` 3 + `smoke.spec.ts` 1 + `subpath.spec.ts` 1），无失败请求、无 `pageerror`；
   - E2E 截图已保存在 `test-results/`（桌面标题/收当/结算 + 手机竖屏标题/收当）并人工核查渲染清晰无错位；
   - `grep -nE '40|60|20' src/scenes/*.ts` 0 命中，场景代码无写死游戏数值。
-- **PR 状态**：PR 待建。
+- **PR 状态**：PR：https://github.com/zhuuchaofan/game-studio/pull/4，CI 两次运行（push 与 pull_request）`build-and-test` 全部 success；未合并，等制作人确认。
