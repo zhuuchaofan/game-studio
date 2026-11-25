@@ -12,7 +12,7 @@ interface SaveSnapshot {
 }
 
 interface PawnshopDebugState {
-  phase: 'title' | 'redemption' | 'negotiating' | 'feedback' | 'summary';
+  phase: 'title' | 'pact' | 'trim_deck' | 'redemption' | 'negotiating' | 'feedback' | 'side_quest' | 'summary';
   customerIndex: number;
   money: number;
   reputation: number;
@@ -41,6 +41,8 @@ const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 const BUTTONS = {
   titleStart: { x: 160, y: 122 },
   titleContinue: { x: 160, y: 156 },
+  pactSteady: { x: 262, y: 106 },
+  trimSkip: { x: 160, y: 158 },
   redeemReject: { x: 224, y: 151 },
   tierLow: { x: 58, y: 151 },
   tierFair: { x: 160, y: 151 },
@@ -226,7 +228,11 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
 
-  // Day 4 save has 1 redeemTicket -> reject pre-day redemption to keep 35 money & deck unchanged
+  // Day 4 starts with P9 Pact -> pick 稳扎稳打 (+1 rep, money stays 35) -> skip free trim -> reject redemption
+  await waitForPawnshopPhase(page, 'pact');
+  await clickLogical(page, canvas, BUTTONS.pactSteady);
+  await waitForPawnshopPhase(page, 'trim_deck');
+  await clickLogical(page, canvas, BUTTONS.trimSkip);
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
 
@@ -235,6 +241,7 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   expect(c1.day).toBe(4);
   expect(c1.customerIndex).toBe(0);
   expect(c1.money).toBe(35);
+  expect(c1.reputation).toBe(5);
   expect(c1.itemsOrder).toEqual(['watch', 'bicycle', 'erhu']);
   expect(c1.tierAffordability).toEqual({ low: true, fair: false, high: false });
   expect(c1.canSkip).toBe(true);
@@ -247,7 +254,7 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   const c2 = await getPawnshopState(page);
   expect(c2.phase).toBe('negotiating');
   expect(c2.money).toBe(35);
-  expect(c2.reputation).toBe(4);
+  expect(c2.reputation).toBe(5);
   expect(c2.deck).toEqual(['倒转', '守诺', '旧书', '余音', '守诺']);
   // Bicycle low 40 > 35 -> all 3 tiers unaffordable!
   expect(c2.tierAffordability).toEqual({ low: false, fair: false, high: false });
@@ -261,7 +268,7 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   const c3 = await getPawnshopState(page);
   expect(c3.phase).toBe('negotiating');
   expect(c3.money).toBe(35);
-  expect(c3.reputation).toBe(4);
+  expect(c3.reputation).toBe(5);
   expect(c3.deck).toEqual(['倒转', '守诺', '旧书', '余音', '守诺']);
   expect(c3.tierAffordability).toEqual({ low: true, fair: false, high: false });
   expect(c3.canSkip).toBe(true);
@@ -271,7 +278,7 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   const summary = await waitForPawnshopPhase(page, 'summary');
   expect(summary.customerIndex).toBe(3);
   expect(summary.money).toBe(35);
-  expect(summary.reputation).toBe(4);
+  expect(summary.reputation).toBe(5);
   expect(summary.deck).toEqual(['倒转', '守诺', '旧书', '余音', '守诺']);
   expect(summary.log.slice(-3)).toEqual(['旧手表:跳过', '永久自行车:跳过', '二胡:跳过']);
 

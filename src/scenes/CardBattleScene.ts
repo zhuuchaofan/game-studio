@@ -22,10 +22,11 @@ import {
   type DemonDef,
 } from '../game/battle';
 import { TEST_DECK } from '../game/montecarlo';
-import { PALETTE, parseHexColor } from '../game/pawnshop';
+import { PALETTE, parseHexColor, wrapCjkText } from '../game/pawnshop';
 import { pixelRowsToTexture } from '../game/pixelart';
 import { addPixelText } from '../game/pixelFont';
 import { loadTutorialDone, maxRenqingForLevel, saveTutorialDone, type SaveData } from '../game/save';
+import { cloneChapterState } from '../game/chapters';
 import {
   advanceTutorialStep,
   cloneTutorialState,
@@ -43,10 +44,13 @@ import type { ResultSceneData } from './ResultScene';
 export interface CardBattleSceneData {
   deck?: string[];
   demonId?: string;
+  demonHpBonus?: number;
   maxRenqing?: number;
   save?: SaveData;
   tutorial?: TutorialState;
 }
+
+export const BATTLE_DETAIL_TOGGLE_BUTTON = { x: 13, y: 88, width: 16, height: 12 } as const;
 
 interface HandSlotView {
   slotIndex: number;
@@ -139,6 +143,7 @@ export class CardBattleScene extends Phaser.Scene {
   private isEmptyDeck = false;
   private feedbackMessage = '';
   private inspectedCardName: string | null = null;
+  private detailMode: 'effect' | 'story' = 'effect';
 
   private handSlots: HandSlotView[] = [];
   private playQueue: number[] = [];
@@ -167,6 +172,7 @@ export class CardBattleScene extends Phaser.Scene {
     this.isEmptyDeck = false;
     this.feedbackMessage = '';
     this.inspectedCardName = null;
+    this.detailMode = 'effect';
     this.handSlots = [];
     this.playQueue = [];
     this.inFlightSlotIndex = null;
@@ -174,7 +180,13 @@ export class CardBattleScene extends Phaser.Scene {
     this.introBanner = undefined;
     this.introBannerTimer = undefined;
     this.tutorialBubble = undefined;
-    this.save = data?.save ? { ...data.save, deck: [...data.save.deck] } : undefined;
+    this.save = data?.save
+      ? {
+          ...data.save,
+          deck: [...data.save.deck],
+          chapter: cloneChapterState(data.save.chapter),
+        }
+      : undefined;
     this.tutorial = data?.tutorial
       ? cloneTutorialState(data.tutorial)
       : createTutorialState({ day: this.save?.day ?? 1, tutorialDone: true });
@@ -183,7 +195,7 @@ export class CardBattleScene extends Phaser.Scene {
     const demonParam = params.get('demon');
     const deckParam = params.get('deck');
     const resolvedDemonId =
-      demonParam === 'a' || demonParam === 'b' || demonParam === 'c' || demonParam === 'd'
+      demonParam && DEMONS.some((d) => d.id === demonParam)
         ? demonParam
         : (data?.demonId ?? 'a');
     const resolvedDeck =
@@ -218,12 +230,22 @@ export class CardBattleScene extends Phaser.Scene {
     }
 
     const { rng } = createRngFromUrl();
-    this.state = createBattle(resolvedDeck, resolvedDemonId, rng, CARDS, DEMONS, battleBalance);
+    this.state = createBattle(
+      resolvedDeck,
+      resolvedDemonId,
+      rng,
+      CARDS,
+      DEMONS,
+      battleBalance,
+      undefined,
+      { demonHpBonus: data?.demonHpBonus ?? 0 },
+    );
     this.tutorial = syncTutorialForBattle(this.tutorial, 'play');
 
     window.__BATTLE_DEBUG__ = {
       getState: () => ({
         ...toBattleDebugSnapshot(this.state, this.isAnimating || this.playQueue.length > 0),
+        detailMode: this.detailMode,
         queuedCount: this.playQueue.length,
         day: this.save?.day ?? 1,
         shopLevel: this.save?.shopLevel ?? 1,
@@ -442,13 +464,26 @@ export class CardBattleScene extends Phaser.Scene {
       Math.round(barW * (this.state.demonMaxHp > 0 ? this.state.demonHp / this.state.demonMaxHp : 0)),
     );
 
+    const demonTitle = this.state.isBoss ? this.state.demonName : `心魔:${this.state.demonName}`;
+    const hpLabel =
+      this.state.demonShield > 0
+        ? `血${this.state.demonHp}/${this.state.demonMaxHp} 盾${this.state.demonShield}`
+        : `血${this.state.demonHp}/${this.state.demonMaxHp}`;
+
     this.demonLayer.add([
-      this.add.rectangle(DEMON_X, DEMON_Y, 40, 40, PALETTE.nightBlack.num).setStrokeStyle(1, PALETTE.nightBlue.num),
+      this.add
+        .rectangle(DEMON_X, DEMON_Y, 40, 40, PALETTE.nightBlack.num)
+        .setStrokeStyle(1, this.state.isBoss ? PALETTE.vermilion.num : PALETTE.nightBlue.num),
       this.add.image(DEMON_X, DEMON_Y, demonTexKey).setOrigin(0.5),
-      this.add.rectangle(186, 44, 166, 42, PALETTE.nightBlack.num).setStrokeStyle(1, PALETTE.nightBlue.num),
-      addPixelText(this, 108, 25, `心魔:${this.state.demonName}`, { color: PALETTE.paperWhite.hex, origin: [0, 0] }),
-      addPixelText(this, 264, 25, `血${this.state.demonHp}/${this.state.demonMaxHp}`, {
-        color: PALETTE.lampYellow.hex,
+      this.add
+        .rectangle(186, 44, 166, 42, PALETTE.nightBlack.num)
+        .setStrokeStyle(1, this.state.isBoss ? PALETTE.vermilion.num : PALETTE.nightBlue.num),
+      addPixelText(this, 108, 25, demonTitle, {
+        color: this.state.isBoss ? PALETTE.vermilion.hex : PALETTE.paperWhite.hex,
+        origin: [0, 0],
+      }),
+      addPixelText(this, 264, 25, hpLabel, {
+        color: this.state.demonShield > 0 ? PALETTE.silverBlue.hex : PALETTE.lampYellow.hex,
         origin: [1, 0],
       }),
       this.add.rectangle(186, 39, barW, 3, PALETTE.deepBlue.num),
@@ -460,12 +495,27 @@ export class CardBattleScene extends Phaser.Scene {
 
     const intent = getIntent(this.state);
     if (intent.current) {
-      const label = intent.current.skill
-        ? `意图:${intent.current.skill}${intent.current.damage}伤`
-        : `意图:攻${intent.current.damage}伤`;
+      let label: string;
+      let labelColor: string;
+      if (this.state.bossCharging) {
+        label = `蓄力:${this.state.bossChargeSkill ?? '封门'}+${this.state.demonShield}盾`;
+        labelColor = PALETTE.vermilion.hex;
+      } else if (
+        this.state.bossChargeInterrupted &&
+        this.state.round === this.state.bossChargeRound
+      ) {
+        label = '封门已打断!';
+        labelColor = PALETTE.jade.hex;
+      } else if (intent.current.skill) {
+        label = `意图:${intent.current.skill}${intent.current.damage}伤`;
+        labelColor = this.state.bossChargeInterrupted ? PALETTE.jade.hex : PALETTE.vermilion.hex;
+      } else {
+        label = `意图:攻${intent.current.damage}伤`;
+        labelColor = PALETTE.mistBlue.hex;
+      }
       this.demonLayer.add(
         addPixelText(this, 108, 45, label, {
-          color: intent.current.skill ? PALETTE.vermilion.hex : PALETTE.mistBlue.hex,
+          color: labelColor,
           origin: [0, 0],
         }),
       );
@@ -476,7 +526,12 @@ export class CardBattleScene extends Phaser.Scene {
       const nextLabel = nextIntent.skill ? `下回:${nextIntent.skill}${nextIntent.damage}` : `下回:攻${nextIntent.damage}`;
       this.demonLayer.add(
         addPixelText(this, 264, 45, nextLabel, {
-          color: nextIntent.skill ? PALETTE.vermilion.hex : PALETTE.mistBlue.hex,
+          color:
+            this.state.bossChargeInterrupted && nextIntent.round === 3
+              ? PALETTE.jade.hex
+              : nextIntent.skill
+                ? PALETTE.vermilion.hex
+                : PALETTE.mistBlue.hex,
           origin: [1, 0],
         }),
       );
@@ -491,6 +546,21 @@ export class CardBattleScene extends Phaser.Scene {
     }
   }
 
+  private formatSingleLineCardEffect(card: CardDef): string {
+    if (card.id === 'rewind') {
+      return `${card.name}:${formatEffectDescription(card)}`;
+    }
+    if (card.id === 'tin_frog') {
+      return `${card.name}(${card.cost}费):造成3伤，敌行动后改6伤`;
+    }
+    return `${card.name}(${card.cost}费):${formatEffectDescription(card)}`;
+  }
+
+  /**
+   * P9 方案 C：中部双行详情条合并瘦身为单行详情条（y=81..95），净腾出 y=66..79 徽章带；
+   * 左侧 [故]/[效] 像素钮原地切换故事与效果，故事/效果/费用均不丢失不溢出，
+   * 保留 P8 在 y=95 与 feedbackText (y=97..109) 之间的 >=2px 清晰间隙。
+   */
   private renderCardDetailPanel(): void {
     this.detailLayer.removeAll(true);
     let cardName = this.inspectedCardName;
@@ -499,20 +569,116 @@ export class CardBattleScene extends Phaser.Scene {
       this.inspectedCardName = cardName;
     }
     const card = cardName ? this.state.cardsByName.get(cardName) : undefined;
+    const cx = Math.floor(BASE_WIDTH / 2);
+
+    // y=66..79 腾出徽章带：普通战留空（预留传家宝条），Boss R2 蓄力/打断时展示蓄力进度与返还提示
+    if (this.detailMode === 'effect') {
+      if (this.state.bossCharging) {
+        this.detailLayer.add([
+          this.add
+            .rectangle(cx, 73, BASE_WIDTH - 8, 13, PALETTE.nightBlack.num)
+            .setStrokeStyle(1, PALETTE.vermilion.num),
+          addPixelText(
+            this,
+            cx,
+            73,
+            `蓄力「${this.state.bossChargeSkill ?? '封门'}」打断:${this.state.bossChargeDamage}/${this.state.bossChargeThreshold} (返+${this.state.bossChargeRefundRenqing}情)`,
+            {
+              color: PALETTE.lampYellow.hex,
+              origin: 0.5,
+            },
+          ),
+        ]);
+      } else if (
+        this.state.bossChargeInterrupted &&
+        this.state.round === this.state.bossChargeRound
+      ) {
+        this.detailLayer.add([
+          this.add
+            .rectangle(cx, 73, BASE_WIDTH - 8, 13, PALETTE.nightBlack.num)
+            .setStrokeStyle(1, PALETTE.jade.num),
+          addPixelText(
+            this,
+            cx,
+            73,
+            `已打断「${this.state.bossChargeSkill ?? '封门'}」！返还+${this.state.bossChargeRefundRenqing}人情，下回仅${this.state.bossInterruptedNextDamage ?? 3}伤`,
+            {
+              color: PALETTE.jade.hex,
+              origin: 0.5,
+            },
+          ),
+        ]);
+      }
+    }
+
     if (!card) {
       return;
     }
 
-    const cx = Math.floor(BASE_WIDTH / 2);
-    this.detailLayer.add([
-      this.add.rectangle(cx, 73, BASE_WIDTH - 8, 14, PALETTE.nightBlack.num).setStrokeStyle(1, PALETTE.nightBlue.num),
-      addPixelText(this, 8, 73, card.story, { color: PALETTE.candle.hex, origin: [0, 0.5] }),
-      this.add.rectangle(126, 88, 244, 14, PALETTE.nightBlack.num).setStrokeStyle(1, PALETTE.brass.num),
-      addPixelText(this, 8, 88, `${card.name}:${formatEffectDescription(card)}`, {
-        color: PALETTE.lampYellow.hex,
-        origin: [0, 0.5],
-      }),
-    ]);
+    const isStory = this.detailMode === 'story';
+
+    if (isStory) {
+      // 故事模式：点击 [故] 展开完整折行故事（y=67..95，严格不侵占 y=97..109 反馈行与手牌区）
+      this.detailLayer.add([
+        this.add
+          .rectangle(126, 81, 244, 28, PALETTE.nightBlack.num)
+          .setStrokeStyle(1, PALETTE.brass.num),
+        addPixelText(
+          this,
+          24,
+          69,
+          wrapCjkText(`${card.name}(${card.cost}费)：${card.story}`, 18),
+          {
+            color: PALETTE.candle.hex,
+            origin: [0, 0],
+            lineSpacing: 1,
+          },
+        ),
+      ]);
+    } else {
+      // 默认单行详情条（y=81..95）：腾空 y=66..79，展示名称/费用/完整效果
+      this.detailLayer.add([
+        this.add
+          .rectangle(126, 88, 244, 14, PALETTE.nightBlack.num)
+          .setStrokeStyle(1, PALETTE.brass.num),
+        addPixelText(this, 24, 88, this.formatSingleLineCardEffect(card), {
+          color: PALETTE.lampYellow.hex,
+          origin: [0, 0.5],
+        }),
+      ]);
+    }
+
+    // 左侧切换小钮 [故] / [效]
+    const toggleBtn = this.add
+      .rectangle(
+        BATTLE_DETAIL_TOGGLE_BUTTON.x,
+        BATTLE_DETAIL_TOGGLE_BUTTON.y,
+        BATTLE_DETAIL_TOGGLE_BUTTON.width,
+        BATTLE_DETAIL_TOGGLE_BUTTON.height,
+        isStory ? PALETTE.brass.num : PALETTE.deepBlue.num,
+      )
+      .setStrokeStyle(1, PALETTE.brass.num)
+      .setInteractive({ useHandCursor: true });
+
+    const toggleLabel = addPixelText(
+      this,
+      BATTLE_DETAIL_TOGGLE_BUTTON.x,
+      BATTLE_DETAIL_TOGGLE_BUTTON.y,
+      isStory ? '效' : '故',
+      {
+        color: isStory ? PALETTE.ink.hex : PALETTE.candle.hex,
+        origin: 0.5,
+      },
+    );
+
+    toggleBtn.on('pointerdown', () => {
+      audio.unlock();
+      audio.playSfx('button_click');
+      this.detailMode = this.detailMode === 'effect' ? 'story' : 'effect';
+      this.renderCardDetailPanel();
+    });
+
+    this.detailLayer.add([toggleBtn, toggleLabel]);
   }
 
   private renderHand(): void {
@@ -847,6 +1013,20 @@ export class CardBattleScene extends Phaser.Scene {
           if (ev.amount > 0) {
             this.spawnFloatText(120, 26, `人情+${ev.amount}`, PALETTE.lampYellow.hex);
           }
+          break;
+        case 'BOSS_CHARGE_STARTED':
+          audio.playSfx('shield_block');
+          this.flashRect(DEMON_X, DEMON_Y, 40, 40, PALETTE.brass.num, 150);
+          this.spawnFloatText(DEMON_X, DEMON_Y - 12, `蓄力+${ev.shieldGained}盾`, PALETTE.lampYellow.hex);
+          this.feedbackMessage = `蓄力「${ev.skill}」获${ev.shieldGained}盾！累伤${ev.threshold}打断`;
+          break;
+        case 'BOSS_CHARGE_INTERRUPTED':
+          audio.playSfx('demon_defeated');
+          this.flashRect(DEMON_X, DEMON_Y, 40, 40, PALETTE.lampYellow.num, 180);
+          this.cameras.main.shake(120, 0.012);
+          this.spawnFloatText(DEMON_X, DEMON_Y - 4, `打断${ev.skill}!`, PALETTE.lampYellow.hex);
+          this.spawnFloatText(142, 36, `人情+${ev.refundRenqing}`, PALETTE.jade.hex);
+          this.feedbackMessage = `打断「${ev.skill}」！返还+${ev.refundRenqing}人情，下回仅${ev.reducedNextDamage}伤`;
           break;
         case 'DEMON_ACT':
           if (ev.reflected) {

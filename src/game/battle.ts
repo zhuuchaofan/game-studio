@@ -17,11 +17,13 @@ import {
   type CardEffect,
   type CardEffectType,
   type DemonAction,
+  type DemonChargeConfig,
   type DemonDef,
   type EffectContext,
   type PendingChoice,
   type RoundSnapshot,
 } from './effects';
+import type { ChapterSaveState } from './chapters';
 import type { HookRegistry } from './hooks';
 
 export type {
@@ -35,6 +37,7 @@ export type {
   CardEffect,
   CardEffectType,
   DemonAction,
+  DemonChargeConfig,
   DemonDef,
   EffectContext,
   PendingChoice,
@@ -58,16 +61,26 @@ export interface WinReward {
 export interface BattleDebugSnapshot {
   phase: BattlePhase | 'empty_deck' | 'result_scene';
   round: number;
+  maxRounds?: number;
   playerHp: number;
   shield: number;
   renqing: number;
   maxRenqing?: number;
   demonHp: number;
+  demonMaxHp?: number;
+  demonShield?: number;
+  isBoss?: boolean;
+  bossCharging?: boolean;
+  bossChargeDamage?: number;
+  bossChargeThreshold?: number;
+  bossChargeInterrupted?: boolean;
+  detailMode?: 'effect' | 'story';
   hand: string[];
   deckCount: number;
   discardCount: number;
   pendingChoice?: PendingChoice | null;
   result: BattleResult | 'empty_deck';
+  resultView?: 'normal' | 'diary' | 'ending' | 'chapter_failed';
   demonId: string;
   demonName: string;
   demonIntroLine?: string;
@@ -80,7 +93,7 @@ export interface BattleDebugSnapshot {
   day?: number;
   shopLevel?: number;
   savedData?: {
-    version: 1 | 2;
+    version: 1 | 2 | 3;
     day: number;
     money: number;
     reputation: number;
@@ -88,6 +101,7 @@ export interface BattleDebugSnapshot {
     shopLevel: number;
     redeemTickets: number;
     tutorialCompleted?: boolean;
+    chapter?: ChapterSaveState;
   } | null;
   /** 新手教程状态（供 E2E 测试断言用）。 */
   tutorialActive?: boolean;
@@ -121,6 +135,39 @@ export function buildCardMap(cards: readonly CardDef[]): Map<string, CardDef> {
   return map;
 }
 
+export interface CreateBattleOptions {
+  demonHpBonus?: number;
+}
+
+function activateRoundChargeIfAny(state: BattleState, events: BattleEvent[]): void {
+  const action = state.demonActions.find((a) => a.round === state.round);
+  if (!action?.charge) {
+    return;
+  }
+  const shieldGain = action.shield ?? 0;
+  const skill = action.skill ?? '封门';
+  state.demonShield = shieldGain;
+  state.bossCharging = true;
+  state.bossChargeSkill = skill;
+  state.bossChargeDamage = 0;
+  state.bossChargeThreshold = action.charge.threshold;
+  state.bossChargeRefundRenqing = action.charge.refundRenqing;
+  state.bossChargeInterrupted = false;
+  state.bossInterruptedNextDamage = action.charge.interruptedNextDamage;
+  state.bossChargeRound = state.round;
+  state.log.push(
+    `R${state.round}:蓄力「${skill}」获${shieldGain}盾(累计>=${action.charge.threshold}伤打断)`,
+  );
+  events.push({
+    type: 'BOSS_CHARGE_STARTED',
+    round: state.round,
+    skill,
+    shieldGained: shieldGain,
+    threshold: action.charge.threshold,
+    refundRenqing: action.charge.refundRenqing,
+  });
+}
+
 /**
  * Initializes a new card battle state machine (draw -> play).
  * Does not read JSON directly: `cards`, `demons`, and `balance` are injected.
@@ -133,6 +180,7 @@ export function createBattle(
   demons: readonly DemonDef[],
   balance: BattleBalanceConfig,
   hooks?: HookRegistry,
+  options?: CreateBattleOptions,
 ): BattleState {
   const demon = demons.find((d) => d.id === demonId) ?? demons[0];
   if (!demon) {
@@ -142,6 +190,7 @@ export function createBattle(
   const cardsByName = buildCardMap(cards);
   const shuffledDeck = shuffleArray(deckCardNames, rng);
   const maxRounds = demon.actions.length;
+  const effectiveDemonHp = Math.max(1, demon.hp + (options?.demonHpBonus ?? 0));
 
   const initialDrawPhase: BattleState = {
     phase: 'draw',
@@ -155,19 +204,32 @@ export function createBattle(
     nextRoundRenqingBonus: 0,
     demonId: demon.id,
     demonName: demon.name,
+    isBoss: Boolean(demon.isBoss),
     demonIntroLine: demon.introLine ?? '',
     demonVictoryLine: demon.victoryLine ?? '',
-    demonHp: demon.hp,
-    demonMaxHp: demon.hp,
-    demonActions: demon.actions.map((a) => ({ ...a })),
+    demonHp: effectiveDemonHp,
+    demonMaxHp: effectiveDemonHp,
+    demonShield: 0,
+    demonActions: demon.actions.map((a) => ({
+      ...a,
+      ...(a.charge ? { charge: { ...a.charge } } : {}),
+    })),
     demonHasActed: false,
+    bossCharging: false,
+    bossChargeSkill: null,
+    bossChargeDamage: 0,
+    bossChargeThreshold: 0,
+    bossChargeRefundRenqing: 0,
+    bossChargeInterrupted: false,
+    bossInterruptedNextDamage: null,
+    bossChargeRound: null,
     hand: [],
     drawPile: shuffledDeck,
     discardPile: [],
     illuminateNextDraw: false,
     reflectNextDamage: false,
     revealedNextIntent: false,
-    roundSnapshots: [{ playerHp: balance.startingHp, demonHp: demon.hp }],
+    roundSnapshots: [{ playerHp: balance.startingHp, demonHp: effectiveDemonHp }],
     pendingChoice: null,
     result: 'ongoing',
     log: [],
@@ -185,6 +247,8 @@ export function createBattle(
     ...state,
     phase: 'play',
   };
+
+  activateRoundChargeIfAny(state, []);
 
   if (hooks) {
     state = hooks.emit('battleStart', state, { round: state.round }).state;
@@ -519,9 +583,11 @@ export function endTurn(state: BattleState): BattleActionResult {
     return { state: current, events };
   }
 
-  // 3. Advance to next round: reset shield, refill renqing (+ next bonus), save snapshot, draw
+  // 3. Advance to next round: reset shields/charging, refill renqing (+ next bonus), save snapshot, draw
   current.round += 1;
   current.shield = 0;
+  current.demonShield = 0;
+  current.bossCharging = false;
   current.renqing = current.maxRenqing + current.nextRoundRenqingBonus;
   current.nextRoundRenqingBonus = 0;
   current.roundSnapshots.push({
@@ -538,6 +604,8 @@ export function endTurn(state: BattleState): BattleActionResult {
   events.push(...drawRes.events);
   current.phase = 'play';
   events.push({ type: 'TURN_STARTED', round: current.round, renqing: current.renqing });
+
+  activateRoundChargeIfAny(current, events);
 
   if (current.hooks) {
     const turnStartHook = current.hooks.emit('turnStart', current, { round: current.round });
@@ -604,11 +672,19 @@ export function toBattleDebugSnapshot(
   return {
     phase: state.phase,
     round: state.round,
+    maxRounds: state.maxRounds,
     playerHp: state.playerHp,
     shield: state.shield,
     renqing: state.renqing,
     maxRenqing: state.maxRenqing,
     demonHp: state.demonHp,
+    demonMaxHp: state.demonMaxHp,
+    demonShield: state.demonShield,
+    isBoss: state.isBoss,
+    bossCharging: state.bossCharging,
+    bossChargeDamage: state.bossChargeDamage,
+    bossChargeThreshold: state.bossChargeThreshold,
+    bossChargeInterrupted: state.bossChargeInterrupted,
     hand: [...state.hand],
     deckCount: state.drawPile.length,
     discardCount: state.discardPile.length,

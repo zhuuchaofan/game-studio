@@ -2,7 +2,20 @@ import Phaser from 'phaser';
 import cardsJson from '../data/cards.json';
 import { ITEM_PIXEL_ART } from '../data/pixelart';
 import { audio, installAudioDebugHook } from '../game/audio';
-import { buildCardMap, formatEffectDescription, type CardDef } from '../game/battle';
+import { buildCardMap, formatEffectDescription, formatEffectShort, type CardDef } from '../game/battle';
+import {
+  cloneChapterState,
+  deriveSideQuestSeed,
+  getChapterConfig,
+  getNightDemonHpBonus,
+  getRedemptionMultiplier,
+  getSkipCustomerReputationDelta,
+  isBossDay,
+  pickSideQuestItem,
+  removeCardAtIndex,
+  selectDemonForChapterDay,
+  type PactId,
+} from '../game/chapters';
 import {
   advanceCustomer,
   BALANCE,
@@ -38,8 +51,8 @@ import {
 import { pixelRowsToTexture } from '../game/pixelart';
 import { addPixelText } from '../game/pixelFont';
 import {
+  applyPactToSave,
   createNewGame,
-  demonIdForDay,
   loadPawnPrices,
   loadTutorialDone,
   maxRenqingForLevel,
@@ -68,6 +81,23 @@ export interface PawnshopSceneData {
 
 export const REDEMPTION_ACCEPT_BUTTON = { x: 96, y: 151, width: 124, height: 32 } as const;
 export const REDEMPTION_REJECT_BUTTON = { x: 224, y: 151, width: 124, height: 32 } as const;
+export const PAWNSHOP_CALENDAR_BUTTON = { x: 298, y: 11, width: 36, height: 16 } as const;
+export const PACT_OPTION_BUTTONS = [
+  { id: 'high_margin' as PactId, x: 58, y: 106, width: 92, height: 116 },
+  { id: 'credit_stock' as PactId, x: 160, y: 106, width: 92, height: 116 },
+  { id: 'steady_shop' as PactId, x: 262, y: 106, width: 92, height: 116 },
+] as const;
+export const TRIM_CARD_SLOTS = [
+  { x: 64, y: 74, width: 84, height: 34 },
+  { x: 160, y: 74, width: 84, height: 34 },
+  { x: 256, y: 74, width: 84, height: 34 },
+  { x: 64, y: 116, width: 84, height: 34 },
+  { x: 160, y: 116, width: 84, height: 34 },
+  { x: 256, y: 116, width: 84, height: 34 },
+] as const;
+export const TRIM_SKIP_BUTTON = { x: 160, y: 158, width: 92, height: 22 } as const;
+export const SIDE_QUEST_ACCEPT_BUTTON = { x: 96, y: 151, width: 124, height: 32 } as const;
+export const SIDE_QUEST_REJECT_BUTTON = { x: 224, y: 151, width: 124, height: 32 } as const;
 
 const CARDS_BY_NAME = buildCardMap(cardsJson as CardDef[]);
 
@@ -90,7 +120,10 @@ export class PawnshopScene extends Phaser.Scene {
   private save!: SaveData;
   private state!: PawnshopState;
   private tutorial!: TutorialState;
+  private seed = 1;
   private rng!: RngFn;
+  private trimPage = 0;
+  private pendingSideQuestItem: PawnItem | null = null;
   private contentLayer!: Phaser.GameObjects.Container;
   private tutorialBubble?: Phaser.GameObjects.Container;
   private toastContainer?: Phaser.GameObjects.Container;
@@ -109,26 +142,49 @@ export class PawnshopScene extends Phaser.Scene {
 
   create(data?: PawnshopSceneData): void {
     this.save = data?.save
-      ? { ...data.save, deck: [...data.save.deck] }
+      ? {
+          ...data.save,
+          deck: [...data.save.deck],
+          chapter: cloneChapterState(data.save.chapter),
+        }
       : createNewGame();
 
     const { seed, rng } = createRngFromUrl();
+    this.seed = seed;
     this.rng = rng;
+    this.trimPage = 0;
+    this.pendingSideQuestItem = null;
 
     // 每天开始时按 ?seed= + 天数洗牌当客池并取前 3 位（第 1 天保底含 1 件伤害牌旧物，P6 B2）
     const shuffleRng = mulberry32(deriveDaySeed(seed, this.save.day));
     const dailyItems = pickDailyItems(ITEMS, this.save.day, shuffleRng, DAILY_CUSTOMER_COUNT);
 
-    // 每天当客上门前检查赎当事件（P6 C4：有 ≥1 赎当券且牌库至少 1 张旧物牌，每天最多 1 次）
+    // 每天当客上门前检查赎当事件（P6 C4 + P9 契约倍率）
     const pawnPrices = loadPawnPrices();
-    const redeemRng = mulberry32(deriveRedemptionSeed(seed, this.save.day));
-    const redemptionOffer = createRedemptionOffer(
-      this.save.deck,
-      this.save.redeemTickets,
-      pawnPrices,
-      redeemRng,
-      ITEMS,
+    const needsDay4Pact =
+      this.save.chapter.dayInChapter === 4 && this.save.chapter.pactChoice === null;
+    const needsDay4Trim =
+      this.save.chapter.dayInChapter === 4 &&
+      !needsDay4Pact &&
+      !this.save.chapter.day4TrimDone &&
+      this.save.deck.length > 0;
+
+    const redeemMultiplier = getRedemptionMultiplier(
+      this.save.chapter.pactChoice,
+      this.save.chapter.currentChapter,
     );
+    const redeemRng = mulberry32(deriveRedemptionSeed(seed, this.save.day));
+    const redemptionOffer =
+      needsDay4Pact || needsDay4Trim
+        ? null
+        : createRedemptionOffer(
+            this.save.deck,
+            this.save.redeemTickets,
+            pawnPrices,
+            redeemRng,
+            ITEMS,
+            redeemMultiplier,
+          );
 
     this.state = createInitialState({
       day: this.save.day,
@@ -141,6 +197,12 @@ export class PawnshopScene extends Phaser.Scene {
       redemptionOffer,
     });
 
+    if (needsDay4Pact) {
+      this.state = { ...this.state, phase: 'pact' };
+    } else if (needsDay4Trim) {
+      this.state = { ...this.state, phase: 'trim_deck' };
+    }
+
     this.tutorialBubble = undefined;
     this.toastContainer = undefined;
     this.toastTimer = undefined;
@@ -151,6 +213,28 @@ export class PawnshopScene extends Phaser.Scene {
       forceReplay: data?.forceTutorial,
     });
 
+    this.installDebugHook();
+
+    this.drawDaytimeBackdrop();
+    this.createHud();
+    this.contentLayer = this.add.container(0, 0);
+
+    installAudioDebugHook(audio);
+    audio.playBgm('day');
+
+    this.events.on(Phaser.Scenes.Events.RESUME, () => {
+      this.installDebugHook();
+      installAudioDebugHook(audio);
+      if (this.scene.isActive()) {
+        this.scale.refresh();
+      }
+    });
+
+    this.renderCurrentPhase();
+    this.syncInputBounds();
+  }
+
+  private installDebugHook(): void {
     // 测试钩子（仅供 E2E 自动化测试断言用，非正式功能）
     window.__PAWNSHOP_DEBUG__ = {
       getState: () => {
@@ -181,6 +265,11 @@ export class PawnshopScene extends Phaser.Scene {
                 payout: this.state.redemptionOffer.payout,
               }
             : null;
+        const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
+        const day3Rumor =
+          this.state.phase === 'summary' && this.save.chapter.dayInChapter === 3
+            ? chapterCfg.day3Rumor
+            : null;
         return {
           ...toDebugSnapshot(this.state),
           day: this.state.day,
@@ -200,19 +289,14 @@ export class PawnshopScene extends Phaser.Scene {
           currentStep: this.tutorial.currentStep,
           tutorialDone: this.tutorial.done || loadTutorialDone(),
           tutorialCopy: getTutorialCopy(this.tutorial.currentStep),
+          chapter: cloneChapterState(this.save.chapter),
+          pactChoice: this.save.chapter.pactChoice,
+          sideQuestChoice: this.save.chapter.sideQuestChoice,
+          day3Rumor,
+          sideQuestItemId: this.pendingSideQuestItem?.id ?? null,
         };
       },
     };
-
-    this.drawDaytimeBackdrop();
-    this.createHud();
-    this.contentLayer = this.add.container(0, 0);
-
-    installAudioDebugHook(audio);
-    audio.playBgm('day');
-
-    this.renderCurrentPhase();
-    this.syncInputBounds();
   }
 
   private drawDaytimeBackdrop(): void {
@@ -253,32 +337,72 @@ export class PawnshopScene extends Phaser.Scene {
     this.add.rectangle(centerX, HUD_HEIGHT - 1, BASE_WIDTH, 1, PALETTE.brass.num);
     this.add.rectangle(centerX, HUD_HEIGHT, BASE_WIDTH, 1, PALETTE.ink.num);
 
-    addPixelText(this, 6, hudY, '钱:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudMoneyText = addPixelText(this, 24, hudY, '', {
+    addPixelText(this, 4, hudY, '钱:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudMoneyText = addPixelText(this, 22, hudY, '', {
       color: PALETTE.lampYellow.hex,
       origin: [0, 0.5],
     });
 
-    addPixelText(this, 60, hudY, '口碑:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudRepText = addPixelText(this, 90, hudY, '', {
+    addPixelText(this, 50, hudY, '口碑:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudRepText = addPixelText(this, 80, hudY, '', {
       color: PALETTE.brass.hex,
       origin: [0, 0.5],
     });
 
-    addPixelText(this, 114, hudY, '牌:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudDeckText = addPixelText(this, 132, hudY, '', {
+    addPixelText(this, 102, hudY, '牌:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudDeckText = addPixelText(this, 120, hudY, '', {
       color: PALETTE.lampYellow.hex,
       origin: [0, 0.5],
     });
 
-    this.hudProgressText = addPixelText(this, 258, hudY, '', {
+    this.hudProgressText = addPixelText(this, 140, hudY, '', {
       color: PALETTE.oldPaper.hex,
+      origin: [0, 0.5],
+    });
+
+    this.hudDayText = addPixelText(this, 276, hudY, '', {
+      color: PALETTE.paperWhite.hex,
       origin: [1, 0.5],
     });
 
-    this.hudDayText = addPixelText(this, BASE_WIDTH - 6, hudY, '', {
-      color: PALETTE.paperWhite.hex,
-      origin: [1, 0.5],
+    // P9 顶部 HUD「台历」按钮（打开独立全屏台历屏，返回状态不丢）
+    const calBtn = this.add
+      .rectangle(
+        PAWNSHOP_CALENDAR_BUTTON.x,
+        PAWNSHOP_CALENDAR_BUTTON.y,
+        PAWNSHOP_CALENDAR_BUTTON.width,
+        PAWNSHOP_CALENDAR_BUTTON.height,
+        PALETTE.oldPaper.num,
+      )
+      .setStrokeStyle(1, PALETTE.ink.num)
+      .setInteractive({ useHandCursor: true });
+
+    addPixelText(this, PAWNSHOP_CALENDAR_BUTTON.x, PAWNSHOP_CALENDAR_BUTTON.y, '台历', {
+      color: PALETTE.ink.hex,
+      origin: 0.5,
+    });
+
+    calBtn.on('pointerover', () => calBtn.setFillStyle(PALETTE.lampYellow.num));
+    calBtn.on('pointerout', () => calBtn.setFillStyle(PALETTE.oldPaper.num));
+    calBtn.on('pointerdown', () => {
+      audio.unlock();
+      audio.playSfx('button_click');
+      const liveSave: SaveData = {
+        ...this.save,
+        day: this.state.day,
+        money: this.state.money,
+        reputation: this.state.reputation,
+        deck: [...this.state.deck],
+        redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
+        chapter: cloneChapterState(this.save.chapter),
+      };
+      this.scene.pause('PawnshopScene');
+      this.scene.launch('CalendarMapScene', {
+        returnTo: 'PawnshopScene',
+        save: liveSave,
+        seed: this.seed,
+      });
+      this.scene.bringToTop('CalendarMapScene');
     });
   }
 
@@ -288,8 +412,14 @@ export class PawnshopScene extends Phaser.Scene {
     this.hudDeckText.setText(`${this.state.deck.length}`);
     this.hudDayText.setText(`第${this.state.day}天`);
 
-    if (this.state.phase === 'redemption') {
+    if (this.state.phase === 'pact') {
+      this.hudProgressText.setText('掌柜契约');
+    } else if (this.state.phase === 'trim_deck') {
+      this.hudProgressText.setText('整理柜台');
+    } else if (this.state.phase === 'redemption') {
       this.hudProgressText.setText('旧客赎当');
+    } else if (this.state.phase === 'side_quest') {
+      this.hudProgressText.setText('偏巷暗当');
     } else if (this.state.phase === 'summary') {
       this.hudProgressText.setText('白天结束');
     } else {
@@ -303,12 +433,18 @@ export class PawnshopScene extends Phaser.Scene {
     this.contentLayer.removeAll(true);
     this.clearToast(false);
 
-    if (this.state.phase === 'redemption') {
+    if (this.state.phase === 'pact') {
+      this.renderPact();
+    } else if (this.state.phase === 'trim_deck') {
+      this.renderTrimDeck();
+    } else if (this.state.phase === 'redemption') {
       this.renderRedemption();
     } else if (this.state.phase === 'negotiating') {
       this.renderNegotiating();
     } else if (this.state.phase === 'feedback') {
       this.renderFeedback();
+    } else if (this.state.phase === 'side_quest') {
+      this.renderSideQuest();
     } else {
       this.renderSummary();
     }
@@ -379,6 +515,439 @@ export class PawnshopScene extends Phaser.Scene {
     if (resetRecord) {
       this.lastToast = null;
     }
+  }
+
+  private enterPostDay4Events(): void {
+    const pawnPrices = this.state.pawnPrices ?? loadPawnPrices();
+    const redeemMultiplier = getRedemptionMultiplier(
+      this.save.chapter.pactChoice,
+      this.save.chapter.currentChapter,
+    );
+    const redeemRng = mulberry32(deriveRedemptionSeed(this.seed, this.save.day));
+    const redemptionOffer = createRedemptionOffer(
+      this.state.deck,
+      this.state.redeemTickets ?? this.save.redeemTickets,
+      pawnPrices,
+      redeemRng,
+      ITEMS,
+      redeemMultiplier,
+    );
+
+    this.state = {
+      ...this.state,
+      phase: redemptionOffer ? 'redemption' : 'negotiating',
+      redemptionOffer,
+    };
+    this.renderCurrentPhase();
+  }
+
+  private renderPact(): void {
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
+
+    this.contentLayer.add(
+      this.add
+        .rectangle(centerX, 34, BASE_WIDTH - 16, 18, PALETTE.deepWood.num)
+        .setStrokeStyle(1, PALETTE.brass.num),
+    );
+    this.contentLayer.add(
+      addPixelText(this, centerX, 34, '第4天集市 · 掌柜契约(三选一)', {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      }),
+    );
+
+    const formatPactTwoLines = (text: string): string => {
+      if (text === '赎当倍率1.2变1.5') return '赎当倍率\n1.2变1.5';
+      if (text === '跳过当客口碑-1') return '跳过当客\n口碑-1';
+      if (text === '第7夜Boss血量+6') return '第7夜Boss\n血量+6';
+      if (text === '无额外代价') return '无额外\n代价';
+      return wrapCjkText(text, 6);
+    };
+
+    chapterCfg.day4Pacts.forEach((pact, idx) => {
+      const slot = PACT_OPTION_BUTTONS[idx];
+      if (!slot) {
+        return;
+      }
+
+      const bg = this.add
+        .rectangle(slot.x, slot.y, slot.width, slot.height, PALETTE.candle.num)
+        .setStrokeStyle(1, PALETTE.ink.num)
+        .setInteractive({ useHandCursor: true });
+
+      const header = this.add.rectangle(slot.x, slot.y - 49, slot.width - 2, 16, PALETTE.deepWood.num);
+      const title = addPixelText(this, slot.x, slot.y - 49, pact.name, {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      });
+
+      const benefitTitle = addPixelText(this, slot.x, slot.y - 33, '收益', {
+        color: PALETTE.jade.hex,
+        origin: 0.5,
+      });
+      const benefitBody = addPixelText(this, slot.x, slot.y - 14, formatPactTwoLines(pact.benefit), {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+        lineSpacing: 1,
+      });
+
+      const divider = this.add.rectangle(slot.x, slot.y + 1, slot.width - 12, 1, PALETTE.oldPaper.num);
+
+      const costTitle = addPixelText(this, slot.x, slot.y + 9, '代价', {
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+      });
+      const costBody = addPixelText(this, slot.x, slot.y + 27, formatPactTwoLines(pact.cost), {
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+        lineSpacing: 1,
+      });
+
+      const ctaBg = this.add
+        .rectangle(slot.x, slot.y + 50, slot.width - 10, 14, PALETTE.oldPaper.num)
+        .setStrokeStyle(1, PALETTE.ink.num);
+      const ctaText = addPixelText(this, slot.x, slot.y + 50, '选此契约', {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      });
+
+      bg.on('pointerover', () => {
+        bg.setFillStyle(PALETTE.paperWhite.num);
+        ctaBg.setFillStyle(PALETTE.lampYellow.num);
+      });
+      bg.on('pointerout', () => {
+        bg.setFillStyle(PALETTE.candle.num);
+        ctaBg.setFillStyle(PALETTE.oldPaper.num);
+      });
+      bg.on('pointerdown', () => this.handlePactChoice(pact.id));
+
+      this.contentLayer.add([
+        bg,
+        header,
+        title,
+        benefitTitle,
+        benefitBody,
+        divider,
+        costTitle,
+        costBody,
+        ctaBg,
+        ctaText,
+      ]);
+    });
+  }
+
+  private handlePactChoice(pactId: PactId): void {
+    if (this.state.phase !== 'pact') {
+      return;
+    }
+    audio.unlock();
+    audio.playSfx('deal_closed');
+
+    const updated = applyPactToSave(
+      {
+        ...this.save,
+        money: this.state.money,
+        reputation: this.state.reputation,
+        deck: [...this.state.deck],
+      },
+      pactId,
+    );
+    this.save = updated;
+    this.state = {
+      ...this.state,
+      money: updated.money,
+      reputation: updated.reputation,
+      deck: [...updated.deck],
+    };
+    saveGame(this.save);
+
+    if (this.state.deck.length > 0 && !this.save.chapter.day4TrimDone) {
+      this.trimPage = 0;
+      this.state = { ...this.state, phase: 'trim_deck' };
+      this.renderCurrentPhase();
+      return;
+    }
+
+    this.save.chapter.day4TrimDone = true;
+    saveGame(this.save);
+    this.enterPostDay4Events();
+  }
+
+  private renderTrimDeck(): void {
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const pageSize = TRIM_CARD_SLOTS.length;
+    const totalPages = Math.max(1, Math.ceil(this.state.deck.length / pageSize));
+    if (this.trimPage >= totalPages) {
+      this.trimPage = totalPages - 1;
+    }
+
+    this.contentLayer.add(
+      this.add
+        .rectangle(centerX, 34, BASE_WIDTH - 16, 18, PALETTE.deepWood.num)
+        .setStrokeStyle(1, PALETTE.brass.num),
+    );
+    this.contentLayer.add(
+      addPixelText(
+        this,
+        centerX,
+        34,
+        `整理柜台 · 免费删1张牌(${this.trimPage + 1}/${totalPages})`,
+        {
+          color: PALETTE.lampYellow.hex,
+          origin: 0.5,
+        },
+      ),
+    );
+
+    const startIdx = this.trimPage * pageSize;
+    const pageCards = this.state.deck.slice(startIdx, startIdx + pageSize);
+
+    pageCards.forEach((cardName, slotIdx) => {
+      const slot = TRIM_CARD_SLOTS[slotIdx];
+      const deckIdx = startIdx + slotIdx;
+      const cardDef = CARDS_BY_NAME.get(cardName);
+      const stripColor = cardDef?.color ? parseHexColor(cardDef.color) : PALETTE.brass.num;
+      const costStr = cardDef ? `${cardDef.cost}费` : '';
+      const shortEff = cardDef ? formatEffectShort(cardDef) : '';
+
+      const bg = this.add
+        .rectangle(slot.x, slot.y, slot.width, slot.height, PALETTE.paperWhite.num)
+        .setStrokeStyle(1, PALETTE.ink.num)
+        .setInteractive({ useHandCursor: true });
+      const strip = this.add.rectangle(slot.x, slot.y - 15, slot.width - 2, 3, stripColor);
+      const nameTxt = addPixelText(this, slot.x, slot.y - 4, `${cardName} ${costStr}`, {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      });
+      const effTxt = addPixelText(this, slot.x, slot.y + 9, shortEff, {
+        color: PALETTE.copperBrown.hex,
+        origin: 0.5,
+      });
+
+      bg.on('pointerover', () => {
+        bg.setFillStyle(PALETTE.candle.num);
+        bg.setStrokeStyle(1, PALETTE.vermilion.num);
+      });
+      bg.on('pointerout', () => {
+        bg.setFillStyle(PALETTE.paperWhite.num);
+        bg.setStrokeStyle(1, PALETTE.ink.num);
+      });
+      bg.on('pointerdown', () => this.handleTrimCard(deckIdx));
+
+      this.contentLayer.add([bg, strip, nameTxt, effTxt]);
+    });
+
+    if (totalPages > 1) {
+      this.addActionButton(
+        52,
+        TRIM_SKIP_BUTTON.y,
+        56,
+        22,
+        '上一页',
+        null,
+        () => {
+          audio.unlock();
+          audio.playSfx('button_click');
+          this.trimPage = (this.trimPage - 1 + totalPages) % totalPages;
+          this.renderCurrentPhase();
+        },
+        false,
+        PALETTE.oldPaper.num,
+      );
+      this.addActionButton(
+        268,
+        TRIM_SKIP_BUTTON.y,
+        56,
+        22,
+        '下一页',
+        null,
+        () => {
+          audio.unlock();
+          audio.playSfx('button_click');
+          this.trimPage = (this.trimPage + 1) % totalPages;
+          this.renderCurrentPhase();
+        },
+        false,
+        PALETTE.oldPaper.num,
+      );
+    }
+
+    this.addActionButton(
+      TRIM_SKIP_BUTTON.x,
+      TRIM_SKIP_BUTTON.y,
+      TRIM_SKIP_BUTTON.width,
+      TRIM_SKIP_BUTTON.height,
+      '暂不删牌',
+      null,
+      () => this.handleSkipTrim(),
+      false,
+      PALETTE.oldPaper.num,
+    );
+  }
+
+  private handleTrimCard(deckIndex: number): void {
+    if (this.state.phase !== 'trim_deck') {
+      return;
+    }
+    audio.unlock();
+    audio.playSfx('button_click');
+    const nextDeck = removeCardAtIndex(this.state.deck, deckIndex);
+    this.state = { ...this.state, deck: nextDeck };
+    this.save = {
+      ...this.save,
+      deck: [...nextDeck],
+      chapter: {
+        ...cloneChapterState(this.save.chapter),
+        day4TrimDone: true,
+      },
+    };
+    saveGame(this.save);
+    this.enterPostDay4Events();
+  }
+
+  private handleSkipTrim(): void {
+    if (this.state.phase !== 'trim_deck') {
+      return;
+    }
+    audio.unlock();
+    audio.playSfx('button_click');
+    this.save = {
+      ...this.save,
+      chapter: {
+        ...cloneChapterState(this.save.chapter),
+        day4TrimDone: true,
+      },
+    };
+    saveGame(this.save);
+    this.enterPostDay4Events();
+  }
+
+  private maybeTriggerDay6SideQuestOrSummary(): void {
+    if (
+      this.save.chapter.dayInChapter === 6 &&
+      !this.save.chapter.day6SideQuestDone &&
+      this.state.phase === 'summary'
+    ) {
+      const sqRng = mulberry32(
+        deriveSideQuestSeed(this.seed, this.save.chapter.currentChapter, this.save.chapter.dayInChapter),
+      );
+      const extraItem = pickSideQuestItem(this.state.deck, ITEMS, sqRng);
+      if (extraItem) {
+        this.pendingSideQuestItem = extraItem;
+        this.state = { ...this.state, phase: 'side_quest' };
+      }
+    }
+  }
+
+  private renderSideQuest(): void {
+    const item = this.pendingSideQuestItem;
+    if (!item) {
+      this.state = { ...this.state, phase: 'summary' };
+      this.renderCurrentPhase();
+      return;
+    }
+    const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
+
+    this.addTicketPanel(item, NEGOTIATING_PANEL_CENTER_Y, NEGOTIATING_PANEL_HEIGHT, 38, 56);
+
+    this.contentLayer.add(
+      addPixelText(this, 66, 28, `${chapterCfg.day6SideQuest.name}（可选支线）`, {
+        color: PALETTE.vermilion.hex,
+        origin: [0, 0],
+      }),
+    );
+
+    this.contentLayer.add(this.add.rectangle(185, 42, 238, 1, PALETTE.oldPaper.num));
+
+    this.contentLayer.add(
+      addPixelText(this, 66, 46, `旧物「${item.name}」牌:${item.cardName}(${item.cardCost}费)`, {
+        color: PALETTE.ink.hex,
+        origin: [0, 0],
+      }),
+    );
+
+    this.contentLayer.add(
+      addPixelText(this, 66, 62, '接受：多收1件未拥有旧物(三档报价)', {
+        color: PALETTE.jade.hex,
+        origin: [0, 0],
+      }),
+    );
+
+    this.contentLayer.add(
+      addPixelText(this, 66, 78, chapterCfg.day6SideQuest.costText, {
+        color: PALETTE.vermilion.hex,
+        origin: [0, 0],
+      }),
+    );
+
+    this.contentLayer.add(
+      addPixelText(this, 66, 98, '拒绝：无任何变化，直接结束白天', {
+        color: PALETTE.copperBrown.hex,
+        origin: [0, 0],
+      }),
+    );
+
+    this.addActionButton(
+      SIDE_QUEST_ACCEPT_BUTTON.x,
+      SIDE_QUEST_ACCEPT_BUTTON.y,
+      SIDE_QUEST_ACCEPT_BUTTON.width,
+      SIDE_QUEST_ACCEPT_BUTTON.height,
+      '接受暗当',
+      '多收1件/心魔+4血',
+      () => this.handleSideQuest(true),
+      false,
+      PALETTE.candle.num,
+      PALETTE.lampYellow.num,
+    );
+
+    this.addActionButton(
+      SIDE_QUEST_REJECT_BUTTON.x,
+      SIDE_QUEST_REJECT_BUTTON.y,
+      SIDE_QUEST_REJECT_BUTTON.width,
+      SIDE_QUEST_REJECT_BUTTON.height,
+      '拒绝暗当',
+      '无任何变化',
+      () => this.handleSideQuest(false),
+      false,
+      PALETTE.oldPaper.num,
+      PALETTE.lampYellow.num,
+    );
+  }
+
+  private handleSideQuest(accept: boolean): void {
+    if (this.state.phase !== 'side_quest') {
+      return;
+    }
+    audio.unlock();
+    audio.playSfx(accept ? 'deal_closed' : 'button_click');
+
+    this.save = {
+      ...this.save,
+      chapter: {
+        ...cloneChapterState(this.save.chapter),
+        sideQuestChoice: accept ? 'accepted' : 'rejected',
+        day6SideQuestDone: true,
+      },
+    };
+    saveGame(this.save);
+
+    if (accept && this.pendingSideQuestItem) {
+      const nextItems = [...this.state.items, { ...this.pendingSideQuestItem }];
+      this.state = {
+        ...this.state,
+        phase: 'negotiating',
+        items: nextItems,
+        customerIndex: nextItems.length - 1,
+      };
+      this.pendingSideQuestItem = null;
+      this.renderCurrentPhase();
+      return;
+    }
+
+    this.pendingSideQuestItem = null;
+    this.state = { ...this.state, phase: 'summary' };
+    this.renderCurrentPhase();
   }
 
   private renderRedemption(): void {
@@ -712,6 +1281,7 @@ export class PawnshopScene extends Phaser.Scene {
       audio.unlock();
       audio.playSfx('button_click');
       this.state = advanceCustomer(this.state);
+      this.maybeTriggerDay6SideQuestOrSummary();
       this.renderCurrentPhase();
     });
   }
@@ -777,15 +1347,19 @@ export class PawnshopScene extends Phaser.Scene {
       }),
     );
 
+    const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
+    const isDay3Rumor = this.save.chapter.dayInChapter === 3;
+
     if (this.state.deck.length === 0) {
       this.contentLayer.add(
-        addPixelText(this, centerX, 112, '今日未收到新牌', {
+        addPixelText(this, centerX, isDay3Rumor ? 105 : 112, '今日未收到新牌', {
           color: PALETTE.copperBrown.hex,
           origin: 0.5,
         }),
       );
     } else if (this.state.deck.length <= 3) {
       const slotXs = [72, centerX, BASE_WIDTH - 72];
+      const slotY = isDay3Rumor ? 105 : 112;
       this.state.deck.forEach((cardName, index) => {
         const x = slotXs[index] ?? centerX;
         const matchedItem = ITEMS.find((item) => item.cardName === cardName);
@@ -793,12 +1367,12 @@ export class PawnshopScene extends Phaser.Scene {
 
         this.contentLayer.add(
           this.add
-            .rectangle(x, 112, 82, 24, PALETTE.paperWhite.num)
+            .rectangle(x, slotY, 82, 22, PALETTE.paperWhite.num)
             .setStrokeStyle(1, PALETTE.ink.num),
         );
-        this.contentLayer.add(this.add.rectangle(x, 102, 80, 3, stripColor));
+        this.contentLayer.add(this.add.rectangle(x, slotY - 9, 80, 3, stripColor));
         this.contentLayer.add(
-          addPixelText(this, x, 114, cardName, {
+          addPixelText(this, x, slotY + 1, cardName, {
             color: PALETTE.ink.hex,
             origin: 0.5,
           }),
@@ -813,13 +1387,13 @@ export class PawnshopScene extends Phaser.Scene {
         const row = Math.floor(index / 3);
         const col = index % 3;
         const x = slotXs[col];
-        const y = row === 0 ? 104 : 124;
+        const y = isDay3Rumor ? (row === 0 ? 98 : 115) : row === 0 ? 104 : 124;
         const matchedItem = ITEMS.find((item) => item.cardName === cardName);
         const stripColor = matchedItem ? parseHexColor(matchedItem.color) : PALETTE.brass.num;
 
         this.contentLayer.add(
           this.add
-            .rectangle(x, y, 82, 16, PALETTE.paperWhite.num)
+            .rectangle(x, y, 82, 15, PALETTE.paperWhite.num)
             .setStrokeStyle(1, PALETTE.ink.num),
         );
         this.contentLayer.add(this.add.rectangle(x, y - 6, 80, 2, stripColor));
@@ -832,7 +1406,7 @@ export class PawnshopScene extends Phaser.Scene {
       });
       if (this.state.deck.length > maxSlots) {
         this.contentLayer.add(
-          addPixelText(this, slotXs[2], 125, `等${this.state.deck.length}张`, {
+          addPixelText(this, slotXs[2], isDay3Rumor ? 116 : 125, `等${this.state.deck.length}张`, {
             color: PALETTE.copperBrown.hex,
             origin: 0.5,
           }),
@@ -840,10 +1414,34 @@ export class PawnshopScene extends Phaser.Scene {
       }
     }
 
+    if (isDay3Rumor) {
+      this.contentLayer.add(
+        this.add
+          .rectangle(centerX, 130, cardWidth - 10, 14, PALETTE.deepWood.num)
+          .setStrokeStyle(1, PALETTE.brass.num),
+      );
+      this.contentLayer.add(
+        addPixelText(this, centerX, 130, chapterCfg.day3Rumor, {
+          color: PALETTE.lampYellow.hex,
+          origin: 0.5,
+        }),
+      );
+    }
+
     // 进入夜里牌局按钮（经 6 帧拉灯转场）+ 返回标题按钮（保留 (160, 151) 在“返回标题”命中区内兼容既有 E2E）
-    this.addActionButton(88, 151, 122, 26, '进入夜里牌局', null, () => {
+    const nightDemonId = selectDemonForChapterDay(
+      this.save.chapter.currentChapter,
+      this.save.chapter.dayInChapter,
+      this.seed,
+    );
+    const bossDay = isBossDay(this.save.chapter.currentChapter, this.save.chapter.dayInChapter);
+    const enterLabel = bossDay ? '迎战大心魔' : '进入夜里牌局';
+
+    this.addActionButton(88, 151, 122, 26, enterLabel, null, () => {
       audio.unlock();
       audio.playSfx('button_click');
+      const nextChapter = cloneChapterState(this.save.chapter);
+      nextChapter.bossBattleActive = bossDay;
       const updatedSave: SaveData = {
         ...this.save,
         day: this.state.day,
@@ -851,13 +1449,16 @@ export class PawnshopScene extends Phaser.Scene {
         reputation: this.state.reputation,
         deck: [...this.state.deck],
         redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
+        chapter: nextChapter,
       };
+      const demonHpBonus = getNightDemonHpBonus(nextChapter);
 
       this.scene.start('TransitionScene', {
         next: 'CardBattleScene',
         payload: {
           deck: [...this.state.deck],
-          demonId: demonIdForDay(updatedSave.day),
+          demonId: nightDemonId,
+          demonHpBonus,
           maxRenqing: maxRenqingForLevel(updatedSave.shopLevel),
           save: updatedSave,
           tutorial: cloneTutorialState(this.tutorial),
@@ -983,7 +1584,12 @@ export class PawnshopScene extends Phaser.Scene {
 
     audio.unlock();
     audio.playSfx('button_click');
-    this.state = skipCustomer(this.state);
+    const skipRepDelta = getSkipCustomerReputationDelta(
+      this.save.chapter.pactChoice,
+      this.save.chapter.currentChapter,
+    );
+    this.state = skipCustomer(this.state, { reputationDelta: skipRepDelta });
+    this.maybeTriggerDay6SideQuestOrSummary();
     this.renderCurrentPhase();
   }
 
@@ -1008,6 +1614,7 @@ export class PawnshopScene extends Phaser.Scene {
     const accepted = resolveOffer(rate, this.rng);
     this.state = settle(this.state, tier, accepted);
     if (accepted) {
+      this.save.chapter.pawnsCollected += 1;
       if (this.state.pawnPrices) {
         savePawnPrices(this.state.pawnPrices);
       }

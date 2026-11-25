@@ -311,3 +311,17 @@
 - **合并与部署**：2026-11-25 14:53 合并（merge `f919ccd`），部署运行 45563928848 成功；原 `https://zhuuchaofan.github.io/game-studio/` 仍返回 200，不受影响。
 - **关键教训**：仅仓库 CNAME 文件，GitHub 不自动注册自定义域名——合并部署后新域名 23 分钟始终不通（HTTP 404、HTTPS 000，Pages API 的 `cname` 字段一直为 `null`），须用 Pages API 显式 PUT（`build_type=workflow` + `cname=game.zhuchaofan.com`）注册后才生效；注册时 `https_enforced` 会被重置为 `false`，须再改回 `true`。
 - **验证**：2026-11-25 15:21 云端浏览器截图验收通过——HTTPS 200、标题与第 1 天正常渲染、口碑提示数值正确、无缺字；HTTP 301 跳转 HTTPS。
+
+## 2026-11-25 — P9 第 1 章闭环与老街台历屏（feature/p9-chapter-one）
+- **范围**：按 `proto-tasks/12-p9-chapter-one.md` 完成子项 1（7 天章节骨架 + 第 7 夜 Boss + 结局原型 + 存档 v3 + 校验/模拟护栏）与子项 2（独立全屏 7 天老街台历屏 + 牌局详情条方案 C 瘦身），严格遵守红线（未做传家宝/内容扩容/跨局设施/夜气词条，未动既有 4 心魔与 23 牌数值，未碰 `.github/workflows/`，所有代码/配置/文案/Boss 像素画 100% 独立原创）：
+  - **子项 1（章节骨架、契约、支线、Boss、结局、存档 v3、护栏）**：
+    - 新增 `src/data/chapters.json` 与 `src/game/chapters.ts`（第 1 章「立脚老街」7 天心魔池、第 3 天原创「老街风声」、第 4 天「掌柜契约」三选一与免费「整理柜台」、第 6 天可选支线「偏巷暗当」、周日休市原创 79 字《老掌柜的日记》，预留第 2/3 章字段）。
+    - `src/data/demons.json` 新增第 7 夜大心魔 Boss `boss_ch1`「老债主·催账单」（38 HP、4 回合：R1 攻 3、R2 蓄力封门获 4 盾且累伤 ≥10 打断返 +1 人情、R3 未打断 11 伤 / 打断 3 伤、R4 攻 6，数值一字未改），`src/data/pixelart.ts` 新增原创手绘 32×32 16 色像素画 `DEMON_BOSS_CH1_ART`（10 色）。
+    - `src/game/effects.ts`、`src/game/battle.ts`、`src/scenes/CardBattleScene.ts` 实现 `BOSS_CHARGE_STARTED` 与 `BOSS_CHARGE_INTERRUPTED` 结构化事件流驱动蓄力提示、打断反馈与返还人情飘字。
+    - `src/scenes/ResultScene.ts` 实现击败 Boss 进「周日休市」《老掌柜的日记》→「第 1 章 · 完成」统计结局屏（再开一局 / 回到标题）；打输 Boss 为章节失败（回标题、记一次第 1 章未通关、不扣钱不扣牌）。
+    - `src/game/save.ts` 升级至 `SAVE_VERSION = 3`，新增 `v2 → v3` 迁移与 `chapter` 章节块，保持坏档隔离不变；`src/game/validate.ts` 与 `src/game/montecarlo.ts` 扩展章节校验、Boss 与 7 天通关模拟及 `sim:check` 新护栏（Boss 胜率 45%–85%、常规 7 天通关率 35%–75%）。
+  - **子项 2（7 天老街台历屏 + 牌局详情条瘦身）**：
+    - 新增独立全屏场景 `src/scenes/CalendarMapScene.ts`（320×180 16 色像素风，7 天格子标明已收红戳/已过/当前/未到、心魔名、第 4 天「集市日」、第 7 天标红「大心魔」与 Boss 名，标题画面与收当顶部 HUD 加「台历」入口，返回原画面状态零丢失）。
+    - `src/scenes/CardBattleScene.ts` 按方案 C 将双行详情条合并瘦身为单行详情条（`y=81..95` + `[故]`/`[效]` 切换钮），净腾出 `y=66..79` 徽章带，保留 P8 选牌提示行间隙。
+    - 重跑 `scripts/generate-pixel-font.py` 补全全部新增汉字（`src/data/pixel-font.json` 629 → 711 字形，155.5 KB，零缺字零方框，临时 TTF 用完即删）。
+  - **文档与测试**：`docs/GAME_DESIGN.md` 文末增补 §17（v1.0 核心不动）；新增 `tests/unit/p9-chapter.test.ts` 与 `tests/e2e/p9-chapter-one.spec.ts`，实测截图核验台历、契约、第 6 天支线、Boss 蓄力与打断、日记与结局屏。
