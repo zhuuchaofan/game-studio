@@ -2,6 +2,11 @@
 
 基于 Phaser 3 + TypeScript + Vite 构建的像素风纸牌游戏工程脚手架（原生分辨率 `320×180`，整数倍像素缩放）。
 
+## 试玩
+
+- 正式地址：https://game.zhuchaofan.com/
+- 备用地址：https://zhuuchaofan.github.io/game-studio/
+
 ## 环境要求
 
 - Node.js 20+（推荐 Node.js 24）

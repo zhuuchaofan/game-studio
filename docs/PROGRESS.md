@@ -305,3 +305,9 @@
   - `npx vitest run` 13/13 文件、112/112 单测全过；
   - `npm run test:e2e`（Playwright，localhost）29/29 全过；
   - 浏览器实测截图存 `/tmp/p8-shots/`（8 张：`01-battle-pending-choice.png`、`02-feedback-bicycle.png`、`03-feedback-stamp-album.png`、`04-feedback-stamp_album-with-tutorial-3of6.png` 及另外 4 件旧物 `05-feedback-{erhu,old_book,ring,watch}.png`），逐张核查通过：当票提示行与详情条之间间隙清晰无触碰，6 件旧物故事均完整可见、无截断、无出框，3/6 教程气泡与「下一位」按钮无遮挡。
+
+## 2026-11-25 — 自定义域名上线（fix/custom-domain，PR #11）
+- **范围**：仓库加 `public/CNAME`（一行 `game.zhuchaofan.com`），Cloudflare 加 CNAME 记录（`game` → `zhuuchaofan.github.io`，DNS only 灰云、TTL Auto），由制作人在 Cloudflare 后台加好记录。
+- **合并与部署**：2026-11-25 14:53 合并（merge `f919ccd`），部署运行 45563928848 成功；原 `https://zhuuchaofan.github.io/game-studio/` 仍返回 200，不受影响。
+- **关键教训**：仅仓库 CNAME 文件，GitHub 不自动注册自定义域名——合并部署后新域名 23 分钟始终不通（HTTP 404、HTTPS 000，Pages API 的 `cname` 字段一直为 `null`），须用 Pages API 显式 PUT（`build_type=workflow` + `cname=game.zhuchaofan.com`）注册后才生效；注册时 `https_enforced` 会被重置为 `false`，须再改回 `true`。
+- **验证**：2026-11-25 15:21 云端浏览器截图验收通过——HTTPS 200、标题与第 1 天正常渲染、口碑提示数值正确、无缺字；HTTP 301 跳转 HTTPS。
