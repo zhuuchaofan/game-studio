@@ -350,7 +350,7 @@ export class CardBattleScene extends Phaser.Scene {
   }
 
   private createActionStrip(): void {
-    this.feedbackText = addPixelText(this, 6, 104, '', {
+    this.feedbackText = addPixelText(this, 6, 103, '', {
       color: PALETTE.silverBlue.hex,
       origin: [0, 0.5],
     });
@@ -505,10 +505,10 @@ export class CardBattleScene extends Phaser.Scene {
 
     const cx = Math.floor(BASE_WIDTH / 2);
     this.detailLayer.add([
-      this.add.rectangle(cx, 75, BASE_WIDTH - 8, 14, PALETTE.nightBlack.num).setStrokeStyle(1, PALETTE.nightBlue.num),
-      addPixelText(this, 8, 75, card.story, { color: PALETTE.candle.hex, origin: [0, 0.5] }),
-      this.add.rectangle(126, 91, 244, 14, PALETTE.nightBlack.num).setStrokeStyle(1, PALETTE.brass.num),
-      addPixelText(this, 8, 91, `${card.name}:${formatEffectDescription(card)}`, {
+      this.add.rectangle(cx, 73, BASE_WIDTH - 8, 14, PALETTE.nightBlack.num).setStrokeStyle(1, PALETTE.nightBlue.num),
+      addPixelText(this, 8, 73, card.story, { color: PALETTE.candle.hex, origin: [0, 0.5] }),
+      this.add.rectangle(126, 88, 244, 14, PALETTE.nightBlack.num).setStrokeStyle(1, PALETTE.brass.num),
+      addPixelText(this, 8, 88, `${card.name}:${formatEffectDescription(card)}`, {
         color: PALETTE.lampYellow.hex,
         origin: [0, 0.5],
       }),

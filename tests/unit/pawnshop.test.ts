@@ -25,6 +25,7 @@ import {
   skipCustomer,
   TIER_ORDER,
   toDebugSnapshot,
+  wrapCjkText,
 } from '../../src/game/pawnshop';
 import { mulberry32 } from '../../src/utils/rng';
 
@@ -589,6 +590,31 @@ describe('P7: Customer temperaments, 1987 offer dialogue & economic invariants',
       expect(
         createRedemptionOffer(afterRedeem.deck, afterRedeem.redeemTickets ?? 0, afterRedeem.pawnPrices ?? {}, () => 0),
       ).toBeNull();
+    }
+  });
+});
+
+describe('P8 feedback story wrapping (all 6 items)', () => {
+  it('wraps every item feedback story within <=2 lines and panel right margin without altering copy', () => {
+    expect(ITEMS).toHaveLength(6);
+    const panelRight = 310;
+    const textStartX = 60;
+    const maxChars = 20;
+
+    for (const item of ITEMS) {
+      const fullText = `你收下了：${item.story}`;
+      const wrapped = wrapCjkText(fullText, maxChars);
+      const lines = wrapped.split('\n');
+
+      // Exact original copy preserved (zero characters altered or truncated)
+      expect(lines.join('')).toBe(fullText);
+      // Fits inside y=63..86 (<= 2 lines of 12px height inside y=24..88 panel)
+      expect(lines.length).toBeLessThanOrEqual(2);
+      // Every line fits well inside panel x=10..310 (each CJK glyph is 12px wide)
+      for (const line of lines) {
+        expect(line.length).toBeLessThanOrEqual(maxChars);
+        expect(textStartX + line.length * 12).toBeLessThanOrEqual(panelRight - 10);
+      }
     }
   });
 });
