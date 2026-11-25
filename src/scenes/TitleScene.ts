@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { audio, installAudioDebugHook } from '../game/audio';
-import { BALANCE, PALETTE } from '../game/pawnshop';
+import { BALANCE, PALETTE, SHOPKEEPER_OPENING_NOTE_LINES } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
 import {
   clearPawnPrices,
@@ -50,6 +50,7 @@ export class TitleScene extends Phaser.Scene {
         hasSave: existingSave !== null,
         corruptSaveQuarantined: loadResult.quarantinedCorrupt,
         chapter: existingSave?.chapter,
+        shopkeeperNote: SHOPKEEPER_OPENING_NOTE_LINES.join('\n'),
         tutorialActive: false,
         currentStep: null,
         tutorialDone: loadTutorialDone(),
@@ -76,19 +77,40 @@ export class TitleScene extends Phaser.Scene {
     );
 
     // 标题：PAWN SHOP CARDS（24px 2× 位图大字）+ 当铺纸牌（12px 金色字）
-    addPixelText(this, centerX, 46, 'PAWN SHOP CARDS', {
+    addPixelText(this, centerX, 32, 'PAWN SHOP CARDS', {
       size: 24,
       color: PALETTE.paperWhite.hex,
       origin: 0.5,
     });
 
-    addPixelText(this, centerX, 74, '当铺纸牌', {
+    addPixelText(this, centerX, 54, '当铺纸牌', {
       size: 12,
       color: PALETTE.lampYellow.hex,
       origin: 0.5,
     });
 
-    this.add.rectangle(centerX, 92, 136, 1, PALETTE.brass.num);
+    this.add.rectangle(centerX, 64, 136, 1, PALETTE.brass.num);
+
+    const hasStatusLine =
+      loadResult.quarantinedCorrupt ||
+      existingSave?.chapter.status === 'failed' ||
+      Boolean(existingSave?.chapter.chapter1Completed);
+    const noteCenterY = hasStatusLine ? 81 : 85;
+    const noteHeight = hasStatusLine ? 26 : 30;
+
+    this.add
+      .rectangle(centerX, noteCenterY, BASE_WIDTH - 36, noteHeight, PALETTE.ink.num)
+      .setStrokeStyle(1, PALETTE.brass.num);
+    addPixelText(this, centerX, noteCenterY - 6, SHOPKEEPER_OPENING_NOTE_LINES[0], {
+      size: 12,
+      color: PALETTE.candle.hex,
+      origin: 0.5,
+    });
+    addPixelText(this, centerX, noteCenterY + 6, SHOPKEEPER_OPENING_NOTE_LINES[1], {
+      size: 12,
+      color: PALETTE.lampYellow.hex,
+      origin: 0.5,
+    });
 
     if (loadResult.quarantinedCorrupt) {
       this.add

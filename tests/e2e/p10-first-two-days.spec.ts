@@ -465,12 +465,13 @@ test('P10 E2E 3: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   expect(pageErrors).toEqual([]);
 });
 
-test('P10 E2E 4: Demon opening banner & details explicitly link to daytime customer, victory screen shows grounded aftermath', async ({
+test('P10 E2E 4: Demon opening banner & details explicitly link to daytime customer when linked item was pawned, victory screen shows grounded aftermath', async ({
   page,
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.goto('/?seed=2&deck=test');
+  // seed=4 Day 1 lineup starts with watch (旧手表); pawning it links Night 1 Demon A (药费) to the father
+  await page.goto('/?seed=4&deck=test');
   await page.evaluate(
     ([saveKey, tutKey]) => {
       localStorage.removeItem(saveKey);
@@ -485,7 +486,13 @@ test('P10 E2E 4: Demon opening banner & details explicitly link to daytime custo
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleStart);
 
-  for (let i = 0; i < 3; i += 1) {
+  // Pawn watch (1st customer) at high, skip the other two
+  await waitForPawnshopPhase(page, 'negotiating');
+  await clickLogical(page, canvas, BUTTONS.tierHigh);
+  await waitForPawnshopPhase(page, 'feedback');
+  await clickLogical(page, canvas, BUTTONS.nextOrSummary);
+
+  for (let i = 1; i < 3; i += 1) {
     await waitForPawnshopPhase(page, 'negotiating');
     await clickLogical(page, canvas, BUTTONS.skipCustomer);
   }

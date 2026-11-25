@@ -7,6 +7,7 @@ const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
 interface PawnshopDebugState {
   phase:
     | 'title'
+    | 'boss_preview'
     | 'pact'
     | 'trim_deck'
     | 'redemption'
@@ -121,6 +122,7 @@ const BUTTONS = {
   nextOrSummary: { x: 160, y: 154 },
   sideQuestAccept: { x: 96, y: 151 },
   sideQuestReject: { x: 224, y: 151 },
+  bossPreviewConfirm: { x: 160, y: 158 },
   enterNightBattle: { x: 88, y: 151 },
   detailToggle: { x: 13, y: 88 },
   endTurn: { x: 283, y: 95 },
@@ -288,6 +290,7 @@ function trackErrors(page: Page): { pageErrors: string[]; failedRequests: string
 test('P9 E2E 1: Full Chapter 1 playthrough (?seed=2&deck=test) Day 1 -> Day 3 rumor -> Day 4 Pact/Trim -> Day 6 Side Quest -> Day 7 Boss -> Diary -> Ending', async ({
   page,
 }) => {
+  test.slow();
   const { pageErrors, failedRequests } = trackErrors(page);
 
   await page.goto('/?seed=2&deck=test');
@@ -306,6 +309,11 @@ test('P9 E2E 1: Full Chapter 1 playthrough (?seed=2&deck=test) Day 1 -> Day 3 ru
   await clickLogical(page, canvas, BUTTONS.titleStart);
 
   for (let day = 1; day <= 7; day += 1) {
+    if (day === 7) {
+      await waitForPawnshopPhase(page, 'boss_preview');
+      await clickLogical(page, canvas, BUTTONS.bossPreviewConfirm);
+    }
+
     if (day === 4) {
       const pactState = await waitForPawnshopPhase(page, 'pact');
       expect(pactState.day).toBe(4);
@@ -381,6 +389,7 @@ test('P9 E2E 1: Full Chapter 1 playthrough (?seed=2&deck=test) Day 1 -> Day 3 ru
       expect(battleStart.demonId).toBe('boss_ch1');
       expect(battleStart.demonName).toBe('老债主·催账单');
       expect(battleStart.maxRounds).toBe(4);
+      // TEST_DECK has 3 pawnshop items (倒转, 守诺, 旧书) -> 32 + 2*3 = 38 HP
       expect(battleStart.demonMaxHp).toBe(38);
     }
 
@@ -559,6 +568,10 @@ test('P9 E2E 3: Boss R2 Interrupt path (>=10 dmg -> +1 renqing, R3 deals 3 dmg) 
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
 
+  // Day 7 starts with Boss pre-opening preview -> confirm to proceed
+  await waitForPawnshopPhase(page, 'boss_preview');
+  await clickLogical(page, canvas, BUTTONS.bossPreviewConfirm);
+
   // Skip all 3 Day 7 customers to preserve exact 秤砣 deck
   for (let i = 0; i < 3; i += 1) {
     await waitForPawnshopPhase(page, 'negotiating');
@@ -569,7 +582,8 @@ test('P9 E2E 3: Boss R2 Interrupt path (>=10 dmg -> +1 renqing, R3 deals 3 dmg) 
 
   const r1 = await waitForBattleReady(page, 'play');
   expect(r1.demonId).toBe('boss_ch1');
-  expect(r1.demonHp).toBe(38);
+  // 0 pawnshop items in deck -> bare Boss (素体) 32 HP, R2 interrupt rule unchanged
+  expect(r1.demonHp).toBe(32);
   expect(r1.detailMode).toBe('effect');
 
   // Verify Plan C detail bar toggle [故] <-> [效]
@@ -683,6 +697,10 @@ test('P9 E2E 4: Boss R2 Non-Interrupt path (R3 deals full 11 dmg) & Chapter Fail
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
 
+  // Day 7 starts with Boss pre-opening preview -> confirm to proceed
+  await waitForPawnshopPhase(page, 'boss_preview');
+  await clickLogical(page, canvas, BUTTONS.bossPreviewConfirm);
+
   for (let i = 0; i < 3; i += 1) {
     await waitForPawnshopPhase(page, 'negotiating');
     await clickLogical(page, canvas, BUTTONS.skipCustomer);
@@ -691,7 +709,8 @@ test('P9 E2E 4: Boss R2 Non-Interrupt path (R3 deals full 11 dmg) & Chapter Fail
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   await waitForBattleReady(page, 'play');
 
-  // End R1 (30 -> 27) -> End R2 without interrupting (27 -> 27) -> End R3 (27 - 11 = 16!) -> End R4 (16 - 6 = 10, timeout)
+  // Deck ['守诺', '守诺', '守诺', '旧书', '钢笔'] -> 婚戒(R1盾+5) + 旧书(R1/2/3伤+1)
+  // End R1 (4 dmg -> 26) -> End R2 without interrupting (1 dmg -> 25) -> End R3 (12 dmg -> 13!) -> End R4 (6 dmg -> 7, timeout)
   for (const expectedNextRound of [2, 3, 4]) {
     await clickLogical(page, canvas, BUTTONS.endTurn);
     await expect.poll(async () => {
@@ -701,7 +720,7 @@ test('P9 E2E 4: Boss R2 Non-Interrupt path (R3 deals full 11 dmg) & Chapter Fail
     if (expectedNextRound === 4) {
       const r4 = await getBattleState(page);
       expect(r4.bossChargeInterrupted).toBe(false);
-      expect(r4.playerHp).toBe(16); // 27 - 11 = 16!
+      expect(r4.playerHp).toBe(13); // 30 - 4 - 1 - 12 = 13!
     }
   }
 

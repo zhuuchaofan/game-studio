@@ -2,17 +2,22 @@ import Phaser from 'phaser';
 import demonsJson from '../data/demons.json';
 import { audio, installAudioDebugHook } from '../game/audio';
 import {
+  composeBoss,
+  formatCalendarBossPreviewText,
+  getBossDemonDef,
+  type ComposedBossResult,
+} from '../game/bossComposition';
+import {
   buildCalendarEntries,
   CHAPTER_ONE_ID,
   createInitialChapterState,
-  getBossHpBonus,
   getChapterConfig,
   getPactDef,
   type CalendarDayEntry,
   type ChapterSaveState,
 } from '../game/chapters';
 import type { DemonDef } from '../game/effects';
-import { PALETTE } from '../game/pawnshop';
+import { ITEMS, PALETTE, parseHexColor } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
 import { loadSave, type SaveData } from '../game/save';
 import { createRngFromUrl } from '../utils/rng';
@@ -38,6 +43,12 @@ export interface CalendarDebugSnapshot {
   selectedDay: number;
   bossName: string;
   bossHp: number;
+  bossComponentCount: number;
+  bossActiveItemIds: string[];
+  bossFragmentNames: string[];
+  bossHpCapped: boolean;
+  bossChargeThreshold: number;
+  bossPreviewText: string;
   chapter1Completed: boolean;
   chapter1FailedCount: number;
   status: ChapterSaveState['status'];
@@ -61,9 +72,9 @@ const DEMONS: readonly DemonDef[] = demonsJson as DemonDef[];
 export const CALENDAR_DAY_CELLS = Array.from({ length: 7 }, (_, i) => ({
   day: i + 1,
   x: 28 + i * 44,
-  y: 62,
+  y: 55,
   width: 40,
-  height: 72,
+  height: 62,
 })) as readonly { day: number; x: number; y: number; width: number; height: number }[];
 
 export const CALENDAR_RETURN_BUTTON = { x: 160, y: 163, width: 96, height: 22 } as const;
@@ -98,6 +109,7 @@ function formatDayStatusLabel(status: CalendarDayEntry['status']): string {
 export class CalendarMapScene extends Phaser.Scene {
   private returnTo: 'TitleScene' | 'PawnshopScene' = 'TitleScene';
   private chapterState!: ChapterSaveState;
+  private composedBoss!: ComposedBossResult;
   private entries: CalendarDebugDayEntry[] = [];
   private selectedDay = 1;
   private isOpen = false;
@@ -136,8 +148,12 @@ export class CalendarMapScene extends Phaser.Scene {
     this.selectedDay = this.chapterState.dayInChapter;
     this.isOpen = true;
 
-    const bossDef = getDemonById(chapterCfg.bossId);
-    const bossHp = (bossDef?.hp ?? 38) + getBossHpBonus(this.chapterState.pactChoice);
+    const baseBossDef = getBossDemonDef(DEMONS, chapterCfg.bossId);
+    const liveDeck = loadedSave?.deck ? [...loadedSave.deck] : [];
+    const composed = composeBoss(liveDeck, this.chapterState.pactChoice, baseBossDef);
+    this.composedBoss = composed;
+    const bossHp = composed.finalHp;
+    const bossPreviewText = formatCalendarBossPreviewText(composed);
 
     installAudioDebugHook(audio);
 
@@ -149,8 +165,14 @@ export class CalendarMapScene extends Phaser.Scene {
         chapterName: chapterCfg.name,
         dayInChapter: this.chapterState.dayInChapter,
         selectedDay: this.selectedDay,
-        bossName: bossDef?.name ?? '老债主·催账单',
+        bossName: composed.bossDef.name,
         bossHp,
+        bossComponentCount: composed.componentCount,
+        bossActiveItemIds: composed.activeComponents.map((c) => c.itemId),
+        bossFragmentNames: [...composed.fragmentNames],
+        bossHpCapped: composed.hpCapped,
+        bossChargeThreshold: composed.chargeThreshold,
+        bossPreviewText,
         chapter1Completed: this.chapterState.chapter1Completed,
         chapter1FailedCount: this.chapterState.chapter1FailedCount,
         status: this.chapterState.status,
@@ -194,7 +216,7 @@ export class CalendarMapScene extends Phaser.Scene {
     });
 
     this.contentLayer = this.add.container(0, 0);
-    this.renderCalendarGrid(bossDef?.name ?? '老债主·催账单', bossHp);
+    this.renderCalendarGrid(composed.bossDef.name, bossHp);
 
     // 底部返回按钮
     const retBtn = this.add
@@ -272,13 +294,13 @@ export class CalendarMapScene extends Phaser.Scene {
           ? PALETTE.ink.hex
           : PALETTE.paperWhite.hex;
 
-      const headerRect = this.add.rectangle(cell.x, cell.y - 29, cell.width - 2, 14, headerFill);
-      const headerText = addPixelText(this, cell.x, cell.y - 29, `第${entry.day}天`, {
+      const headerRect = this.add.rectangle(cell.x, cell.y - 23, cell.width - 2, 14, headerFill);
+      const headerText = addPixelText(this, cell.x, cell.y - 23, `第${entry.day}天`, {
         color: headerTextColor,
         origin: 0.5,
       });
 
-      // Row 1 (y=48): special tag (集市日 / 大心魔 / 暗当) or day label
+      // Row 1 (y=45): special tag (集市日 / 大心魔 / 暗当) or day label
       let row1Text = entry.tag ?? formatDayStatusLabel(entry.status);
       if (entry.day === 4) {
         row1Text = '集市日';
@@ -295,23 +317,23 @@ export class CalendarMapScene extends Phaser.Scene {
             ? PALETTE.copperBrown.hex
             : PALETTE.silverBlue.hex;
 
-      const tagLabel = addPixelText(this, cell.x, 48, row1Text, {
+      const tagLabel = addPixelText(this, cell.x, 45, row1Text, {
         color: row1Color,
         origin: 0.5,
       });
 
-      // Row 2 (y=64): that day's demon name (or Boss name on Day 7)
+      // Row 2 (y=58): that day's demon name (or Boss name on Day 7)
       const demonColor = entry.isBossDay
         ? PALETTE.paperWhite.hex
         : entry.status === 'current' || entry.status === 'cleared'
           ? PALETTE.ink.hex
           : PALETTE.candle.hex;
-      const demonLabel = addPixelText(this, cell.x, 64, entry.shortDemonName, {
+      const demonLabel = addPixelText(this, cell.x, 58, entry.shortDemonName, {
         color: demonColor,
         origin: 0.5,
       });
 
-      // Row 3 (y=84): status stamp box (已收 / 当前 / 已过 / 未到)
+      // Row 3 (y=74): status stamp box (已收 / 当前 / 已过 / 未到)
       const stampText = formatDayStatusLabel(entry.status);
       const stampFill =
         entry.status === 'cleared'
@@ -335,9 +357,9 @@ export class CalendarMapScene extends Phaser.Scene {
             : PALETTE.paperWhite.hex;
 
       const stampBox = this.add
-        .rectangle(cell.x, 84, 32, 14, stampFill)
+        .rectangle(cell.x, 74, 32, 14, stampFill)
         .setStrokeStyle(1, stampStroke);
-      const stampLabel = addPixelText(this, cell.x, 84, stampText, {
+      const stampLabel = addPixelText(this, cell.x, 74, stampText, {
         color: stampTextColor,
         origin: 0.5,
       });
@@ -345,13 +367,65 @@ export class CalendarMapScene extends Phaser.Scene {
       this.contentLayer.add([card, headerRect, headerText, tagLabel, demonLabel, stampBox, stampLabel]);
     });
 
-    // 中下详情预览条（y=104..144，选中某日展示详情与完整 Boss 名）
-    const selected = this.entries.find((e) => e.day === this.selectedDay) ?? this.entries[0];
     const centerX = Math.floor(BASE_WIDTH / 2);
+    const composed = this.composedBoss;
+    const activeSet = new Set(composed.activeComponents.map((c) => c.itemId));
+
+    // P11 子项 1：第 7 天 Boss 组件徽章 + 血量常驻预览带（y=89..120，从第 1 天起可见，随收当/赎当实时变化）
+    this.contentLayer.add(
+      this.add
+        .rectangle(centerX, 104, 304, 31, PALETTE.nightBlack.num)
+        .setStrokeStyle(1, composed.componentCount > 0 ? PALETTE.vermilion.num : PALETTE.mistBlue.num),
+    );
+    this.contentLayer.add(
+      addPixelText(this, 14, 96, '执念:', {
+        color: PALETTE.lampYellow.hex,
+        origin: [0, 0.5],
+      }),
+    );
+
+    composed.allComponents.forEach((comp, cIdx) => {
+      const bx = 62 + cIdx * 16;
+      const by = 96;
+      const isActive = activeSet.has(comp.itemId);
+      const itemMeta = ITEMS.find((it) => it.id === comp.itemId);
+      const activeFill = itemMeta ? parseHexColor(itemMeta.color) : PALETTE.lampYellow.num;
+      const boxFill = isActive ? activeFill : PALETTE.nightBlack.num;
+      const boxStroke = isActive ? PALETTE.lampYellow.num : PALETTE.mistBlue.num;
+      const labelColor = isActive ? PALETTE.paperWhite.hex : PALETTE.mistBlue.hex;
+
+      this.contentLayer.add([
+        this.add.rectangle(bx, by, 12, 12, boxFill).setStrokeStyle(1, boxStroke),
+        addPixelText(this, bx, by, comp.shortLabel, {
+          color: labelColor,
+          origin: 0.5,
+        }),
+      ]);
+    });
+
+    const rightTag =
+      composed.r1Shield > 0
+        ? `${composed.componentCount}/6块 盾+${composed.r1Shield} 阈${composed.chargeThreshold}`
+        : `${composed.componentCount}/6块 阈${composed.chargeThreshold}`;
+    this.contentLayer.add(
+      addPixelText(this, 306, 96, rightTag, {
+        color: composed.componentCount > 0 ? PALETTE.vermilion.hex : PALETTE.silverBlue.hex,
+        origin: [1, 0.5],
+      }),
+    );
+    this.contentLayer.add(
+      addPixelText(this, centerX, 112, formatCalendarBossPreviewText(composed), {
+        color: composed.hpCapped ? PALETTE.vermilion.hex : PALETTE.candle.hex,
+        origin: 0.5,
+      }),
+    );
+
+    // 中下详情预览条（y=123..149，选中某日展示详情与完整 Boss 名）
+    const selected = this.entries.find((e) => e.day === this.selectedDay) ?? this.entries[0];
 
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, 124, 304, 38, PALETTE.deepWood.num)
+        .rectangle(centerX, 136, 304, 26, PALETTE.deepWood.num)
         .setStrokeStyle(1, selected.isBossDay ? PALETTE.vermilion.num : PALETTE.brass.num),
     );
 
@@ -360,7 +434,8 @@ export class CalendarMapScene extends Phaser.Scene {
     if (selected.day === 4) {
       line1 = `第4天·集市日(${statusName}) 心魔:${selected.demonName}`;
     } else if (selected.isBossDay) {
-      line1 = `第7天·大心魔「${bossName}」${bossHp}血`;
+      const capSuffix = composed.hpCapped ? '[已到顶]' : '';
+      line1 = `第7天·大心魔「${bossName}」${bossHp}血${capSuffix}`;
     }
 
     let line2 = '白天3位当客，夜里心魔牌局';
@@ -374,7 +449,7 @@ export class CalendarMapScene extends Phaser.Scene {
     } else if (selected.day === 6) {
       line2 = '收当后可选「偏巷暗当」:多收1件/心魔+4血';
     } else if (selected.isBossDay) {
-      line2 = '4回合战:R2蓄力封门4盾，累伤10打断返+1情';
+      line2 = `4回战:R2封门4盾,累伤${composed.chargeThreshold}打断返+1情`;
     } else if (this.chapterState.pactChoice) {
       const pactDef = getPactDef(this.chapterState.pactChoice);
       if (pactDef) {
@@ -383,14 +458,14 @@ export class CalendarMapScene extends Phaser.Scene {
     }
 
     this.contentLayer.add(
-      addPixelText(this, 14, 114, line1, {
+      addPixelText(this, 14, 130, line1, {
         color: selected.isBossDay ? PALETTE.vermilion.hex : PALETTE.lampYellow.hex,
         origin: [0, 0.5],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, 14, 132, line2, {
+      addPixelText(this, 14, 142, line2, {
         color: PALETTE.paperWhite.hex,
         origin: [0, 0.5],
       }),

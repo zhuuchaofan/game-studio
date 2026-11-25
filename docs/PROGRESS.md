@@ -342,3 +342,13 @@
   - `npm run sim:check` 全部护栏通过（含新玩家首夜模拟）；
   - `npm run test:e2e`（Playwright，localhost）37/37 全过（含新增 `tests/e2e/p10-first-two-days.spec.ts` 4 用例，无失败请求、无 `pageerror`）；
   - 浏览器实测修复前后同屏截图存 `/tmp/p10-shots-before/`（5 张）与 `/tmp/p10-shots-after/`（10 张，含 WebGL 对比、Canvas2D 回退验证、首夜引导、新娘赎当、风声折行、开场横幅不遮血条、胜负结算）并逐张目视核查通过。
+
+## 2026-11-25 — P11 Boss 组合 + 主线包装第一期 + 横幅条件文案 + 防重复软版（feature/p11-boss-composition）
+- **范围**：按 `proto-tasks/14-p11-boss-composition.md` 全部完成 4 大子项、场景接线、字形补全、单测/E2E、sim 组合扫描与文档增补（严格遵守红线：药费 20 不动、随机赎当与新娘事件结算逻辑不动、未碰 `.github/workflows/`、未留临时 TTF、任务书 `proto-tasks/14-p11-boss-composition.md` 一并留存工作区）：
+  - **子项 1（Boss 组合）**：`src/data/demons.json` 新增 `boss_ch1.composition` 6 组件表；新增纯函数模块 `src/game/bossComposition.ts`（`composeBoss`、基础 32 血 / 每块 +2 / 组合上限 44 / 赊账 +6 / 绝对上限 48 截断标「已到顶」 / 0 块素体兜底「柜子空了，债主只身前来」 / 同名牌去重）；`battle.ts` 接入 `demonOverride` 与开局护盾；场景三处可见性落地：`CalendarMapScene.ts`（第 1 天起常驻 6 枚 12×12 组件徽章与血量预告）、`PawnshopScene.ts`（第 7 天白天开张前「封门预告」弹窗 `boss_preview`）、`CardBattleScene.ts`（开场横幅按组件列出碎片名与中部执念带）。
+  - **子项 2（主线包装第一期）**：① `TitleScene.ts` 与 `PawnshopScene.ts` 第 1 天开张前显示 1987 口吻掌柜交代，第 3 章结局后增加「月末结算 · 掌柜回铺对账」尾声页（不新增可玩天数）；② `pawnshop.ts` 与 `PawnshopScene.ts` 新增第 7 天白天开张前「父亲过赎期回来」事件（手表在库仅触发一次，唯一新增持久字段 `day7FatherRedemptionDone`，破例赎回钱 +1.2×/口碑 +1/少倒转/Boss 弱一块 vs 留下口碑 −1/留倒转/Boss 保留组件）；③ `ResultScene.ts` 结局屏改为基于真实记录（`pawnedItemIds`、`redeemedDayByItem`、`bossComponentItemIds`）的「结局翻账本」，逐件点名物归原主、留柜未赎、化作执念。
+  - **子项 3（横幅条件文案）**：`demons.json` 补充通用句 `genericCustomerLink` / `genericAftermathLine`，`CardBattleScene.ts` 与 `ResultScene.ts` 经 `resolveDemonNarrative` 仅当 `linkedItemId` 本章已成交且牌仍在库时渲染具体关联文案与后情，否则渲染通用句；`dailyDemonPools` 与所有数值一字未改。
+  - **子项 4（防重复软版 D1 方案 B + D2 软版）**：`pawnshop.ts` 的 `pickDailyItems` 与 `PawnshopScene.ts`、`montecarlo.ts` 同步实现 D1 赎回后 `N = 2` 天冷却排除（`redeemedDayByItem`）+ D2 优先未拥有软版（池子不足时自动放宽到已拥有），`validate.ts` 校验排除后池子非空；购买环节不禁买。
+  - **sim 与护栏**：`montecarlo.ts` 新增 `simulateBossCompositionScan`（`n = 0..6` 赊账开关、6 单件敏感性、逐件赎当削弱路径、邮票册阈值 14 专项、`TEST_DECK` 对照）与 7 项组合护栏，全部实测通过（典型档 `41.4%–60.1%`、素体 `68.8%`、满配+赊账 48 血 `27.7%`、通关率 `46.2%`、邮票册打断率 `25.3%`、首夜回归 `28.5% / 8.8%`）。
+  - **字形与测试**：重跑 `scripts/generate-pixel-font.py` 补全全部新增汉字（`src/data/pixel-font.json` 774 字形，169.9 KB）；新增 `tests/unit/p11-boss-composition.test.ts`（8 用例）与 `tests/e2e/p11-boss-composition.spec.ts`（5 用例），适配 `tests/e2e/p9-chapter-one.spec.ts` 与 `tests/e2e/p10-first-two-days.spec.ts`；全套单测（134/134）、全套 E2E 与 `npm run sim:check` 通过，并逐张目视核查 `test-results/p11-*.png` 截图（320×180 无溢出、无遮挡、无方框字）。
+

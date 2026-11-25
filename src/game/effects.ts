@@ -45,17 +45,43 @@ export interface DemonAction {
   charge?: DemonChargeConfig;
 }
 
+export interface BossComponentDef {
+  itemId: string;
+  cardName: string;
+  name: string;
+  fragmentName: string;
+  shortLabel: string;
+  effectText: string;
+  hpBonus: number;
+  roundDeltas: Record<string, number>;
+  shield: number;
+  chargeThresholdDelta: number;
+}
+
+export interface BossCompositionConfig {
+  baseHp: number;
+  maxCompositionHp: number;
+  absoluteMaxHp: number;
+  bareIntroLine: string;
+  composedIntroLine: string;
+  components: BossComponentDef[];
+}
+
 export interface DemonDef {
   id: string;
   name: string;
   hp: number;
   isBoss?: boolean;
   chapter?: number;
+  linkedItemId?: string;
   introLine?: string;
   customerLink?: string;
+  genericCustomerLink?: string;
   customerTag?: string;
   victoryLine?: string;
   aftermathLine?: string;
+  genericAftermathLine?: string;
+  composition?: BossCompositionConfig;
   actions: DemonAction[];
 }
 

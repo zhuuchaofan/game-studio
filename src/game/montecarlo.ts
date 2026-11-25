@@ -3,6 +3,7 @@ import cardsJson from '../data/cards.json';
 import demonsJson from '../data/demons.json';
 import { mulberry32 } from '../utils/rng';
 import {
+  cancelPendingChoice,
   canPlayCard,
   createBattle,
   endTurn,
@@ -18,11 +19,15 @@ import {
   type DemonDef,
 } from './battle';
 import {
+  composeBoss,
+  getBossDemonDef,
+  type ComposedBossResult,
+} from './bossComposition';
+import {
   CHAPTER_DAYS,
   CHAPTER_ONE_ID,
   CHAPTERS,
   deriveSideQuestSeed,
-  getBossHpBonus,
   getChapterConfig,
   getPactEffectDelta,
   getRedemptionMultiplier,
@@ -45,6 +50,7 @@ import {
   ITEMS,
   pickDailyItems,
   quotePrice,
+  REDEMPTION_COOLDOWN_DAYS,
   resolveOffer,
   type BalanceConfig,
   type PawnItem,
@@ -81,6 +87,15 @@ export const SIM_BOSS_WIN_RATE_MIN = 0.45;
 export const SIM_BOSS_WIN_RATE_MAX = 0.85;
 export const SIM_CHAPTER_CLEAR_RATE_MIN = 0.35;
 export const SIM_CHAPTER_CLEAR_RATE_MAX = 0.75;
+/** P11 组合 Boss 护栏（严格按任务书 proto-tasks/14-p11-boss-composition.md，数字服从护栏）。 */
+export const SIM_COMPOSED_BOSS_TYPICAL_MIN = 0.4;
+export const SIM_COMPOSED_BOSS_TYPICAL_MAX = 0.85;
+export const SIM_COMPOSED_BOSS_BARE_MIN = 0.5;
+export const SIM_COMPOSED_BOSS_BARE_MAX = 0.9;
+export const SIM_COMPOSED_BOSS_FULL_CREDIT_MIN = 0.25;
+export const SIM_COMPOSED_BOSS_MONOTONIC_NOISE = 0.03;
+export const SIM_COMPOSED_BOSS_REDEEM_NOISE = 0.03;
+export const SIM_COMPOSED_BOSS_STAMP_INTERRUPT_MIN = 0.1;
 /**
  * P10 子项 7 新玩家首夜模拟护栏（先测 1000 局基线：总胜率 28.5%、单攻击牌 8.8%，
  * 据实测结果定区间，未为过护栏改动任何游戏数值）。
@@ -104,6 +119,13 @@ export interface MonteCarloStats {
   interruptRate?: number;
 }
 
+export interface Day7EndgameSample {
+  deck: string[];
+  maxRenqing: number;
+  pactChoice: PactId | null;
+  activeItemIds: string[];
+}
+
 export interface ChapterOneSimStats {
   runs: number;
   clears: number;
@@ -118,6 +140,65 @@ export interface ChapterOneSimStats {
   medianFinalMoney: number;
   avgFinalDeckSize: number;
   avgBossRenqing: number;
+  avgBossComponents: number;
+  day7Samples: Day7EndgameSample[];
+}
+
+export interface BossSubsetSimStats {
+  componentCount: number;
+  itemIds: string[];
+  creditStock: boolean;
+  bossHp: number;
+  hpCapped: boolean;
+  chargeThreshold: number;
+  runs: number;
+  wins: number;
+  winRate: number;
+  interrupts: number;
+  interruptRate: number;
+  avgEndRound: number;
+  avgWinRemainingHp: number;
+}
+
+export interface BossTierSummary {
+  componentCount: number;
+  creditStock: boolean;
+  subsets: BossSubsetSimStats[];
+  avgWinRate: number;
+  avgInterruptRate: number;
+}
+
+export interface RedemptionPathStep {
+  stepIndex: number;
+  componentCount: number;
+  redeemedItemId: string | null;
+  remainingItemIds: string[];
+  bossHp: number;
+  winRate: number;
+  deltaFromPrev: number;
+  interruptRate: number;
+}
+
+export interface StampAlbumInterruptStudy {
+  withStampThreshold: number;
+  withStampWinRate: number;
+  withStampInterruptRate: number;
+  withoutStampThreshold: number;
+  withoutStampWinRate: number;
+  withoutStampInterruptRate: number;
+}
+
+export interface BossCompositionScanReport {
+  runsPerBucket: number;
+  tiersNoCredit: BossTierSummary[];
+  tiersWithCredit: BossTierSummary[];
+  singleItemSensitivity: BossSubsetSimStats[];
+  bareStats: BossSubsetSimStats;
+  fullStats: BossSubsetSimStats;
+  fullWithCreditStats: BossSubsetSimStats;
+  redemptionPath: RedemptionPathStep[];
+  stampAlbumStudy: StampAlbumInterruptStudy;
+  testDeckControl: BossSubsetSimStats;
 }
 
 export interface SimTuneOverrides {
@@ -167,6 +248,7 @@ export interface BalanceSimulationReport {
   economy: SevenDayEconomyStats;
   boss: MonteCarloStats;
   chapter1: ChapterOneSimStats;
+  bossComposition: BossCompositionScanReport;
   newPlayerFirstNight: NewPlayerFirstNightStats;
 }
 
@@ -287,7 +369,9 @@ export function simulateSingleBattle(
   const rng = mulberry32(seed);
   let state = createBattle(deck, demonId, rng, cards, demons, balance, undefined, options);
 
-  while (state.result === 'ongoing') {
+  let safetyRounds = 0;
+  while (state.result === 'ongoing' && safetyRounds < 20) {
+    safetyRounds += 1;
     let playsThisRound = 0;
     while (state.phase === 'play' && state.result === 'ongoing' && playsThisRound < MAX_PLAYS_PER_ROUND) {
       if (state.pendingChoice && state.hand.length > 0) {
@@ -312,6 +396,13 @@ export function simulateSingleBattle(
       }
       state = playCard(state, choice).state;
       playsThisRound += 1;
+    }
+
+    if (state.result === 'ongoing' && state.pendingChoice) {
+      state =
+        state.hand.length > 0
+          ? resolvePendingChoice(state, 0).state
+          : cancelPendingChoice(state).state;
     }
 
     if (state.result === 'ongoing') {
@@ -438,6 +529,7 @@ export function simulateSevenDayEconomy(opts: EconomySimOptions): SevenDayEconom
     let reputation = balance.startingReputation;
     const deck: string[] = [];
     let pawnPrices: PawnPriceLedger = {};
+    const redeemedDayByItem: Record<string, number> = {};
     let redeemTickets = 0;
     let wins = 0;
     let redemptionsAccepted = 0;
@@ -450,6 +542,7 @@ export function simulateSevenDayEconomy(opts: EconomySimOptions): SevenDayEconom
         if (offer) {
           deck.splice(offer.deckIndex, 1);
           pawnPrices = consumePawnPrice(pawnPrices, offer.cardName);
+          redeemedDayByItem[offer.item.id] = day;
           money += offer.payout;
           reputation += 1;
           redeemTickets -= 1;
@@ -458,7 +551,11 @@ export function simulateSevenDayEconomy(opts: EconomySimOptions): SevenDayEconom
       }
 
       const dayRng = mulberry32(deriveDaySeed(seed, day));
-      const dailyCustomers = pickDailyItems(items, day, dayRng, DAILY_CUSTOMER_COUNT);
+      const dailyCustomers = pickDailyItems(items, day, dayRng, DAILY_CUSTOMER_COUNT, {
+        deck,
+        redeemedDayByItem,
+        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
+      });
 
       for (const item of dailyCustomers) {
         const fairPrice = quotePrice(item.trueValue, 'fair', balance);
@@ -610,10 +707,32 @@ function pickChapterBattleCardIndex(state: BattleState): number | null {
     return freeEngine[0].index;
   }
 
-  // 3. Shield if incoming damage this turn is lethal
+  // 2.5 Use 当票 early when hand has a pure non-damage/non-draw/non-renqing/non-reflect card to discard
   const intent = getIntent(state);
   const incoming = intent.current?.damage ?? 0;
   const isLethalIncoming = !state.reflectNextDamage && incoming - state.shield >= state.playerHp;
+
+  const isDiscardFodder = (card: CardDef | undefined): boolean => {
+    if (!card) return false;
+    if (getCardBaseDamage(card) > 0 || getCardDrawCount(card) > 0) return false;
+    if (card.effects.some((e) => e.type === 'renqing' || e.type === 'reflect' || e.type === 'discard_for_renqing')) {
+      return false;
+    }
+    if (isLethalIncoming && getCardShield(card) > 0) return false;
+    return true;
+  };
+
+  const earlyPawnTicket = playable.find((p) =>
+    p.card.effects.some((e) => e.type === 'discard_for_renqing'),
+  );
+  if (
+    earlyPawnTicket &&
+    state.hand.some((n, idx) => idx !== earlyPawnTicket.index && isDiscardFodder(state.cardsByName.get(n)))
+  ) {
+    return earlyPawnTicket.index;
+  }
+
+  // 3. Shield if incoming damage this turn is lethal
   if (isLethalIncoming) {
     const shieldCards = playable
       .filter((p) => getCardShield(p.card) > 0)
@@ -633,6 +752,14 @@ function pickChapterBattleCardIndex(state: BattleState): number | null {
     }
   }
 
+  // 4.5 Play 铜镜 (reflect) against heavy incoming hits (>= 6)
+  if (!state.reflectNextDamage && incoming >= 6) {
+    const reflectCard = playable.find((p) => p.card.effects.some((e) => e.type === 'reflect'));
+    if (reflectCard) {
+      return reflectCard.index;
+    }
+  }
+
   // 5. Play highest damage-per-renqing cards
   const damageCards = playable
     .filter((p) => getCardDamage(p.card, state) > 0)
@@ -646,17 +773,28 @@ function pickChapterBattleCardIndex(state: BattleState): number | null {
     return damageCards[0].index;
   }
 
-  // 6. Use 当票 if we have a 0-damage card to discard and can gain +2 renqing
-  const pawnTicket = playable.find((p) =>
-    p.card.effects.some((e) => e.type === 'discard_for_renqing'),
-  );
-  if (pawnTicket && state.hand.some((n, idx) => idx !== pawnTicket.index && getCardBaseDamage(state.cardsByName.get(n)) === 0)) {
-    return pawnTicket.index;
+  // 6. Fallback 当票 if we still have any 0-damage card to discard
+  if (
+    earlyPawnTicket &&
+    state.hand.some((n, idx) => idx !== earlyPawnTicket.index && getCardBaseDamage(state.cardsByName.get(n)) === 0)
+  ) {
+    return earlyPawnTicket.index;
   }
 
-  // 7. Useful non-rewind utility (e.g. 手电, 煤油灯, 铜镜 before heavy hits)
+  // 7. Useful non-rewind utility (avoid wasting 铜镜 on <=2 dmg or next-turn buffs on final round)
+  const isFinalRound = state.round >= state.maxRounds;
   const utility = playable
-    .filter((p) => !isRewindCard(p.card) && getCardShield(p.card) === 0)
+    .filter((p) => {
+      if (isRewindCard(p.card) || getCardShield(p.card) > 0) return false;
+      if (p.card.effects.some((e) => e.type === 'reflect') && incoming <= 2) return false;
+      if (
+        isFinalRound &&
+        p.card.effects.every((e) => e.type === 'illuminate' || e.type === 'reveal' || e.type === 'renqing_next')
+      ) {
+        return false;
+      }
+      return true;
+    })
     .sort((a, b) => a.card.cost - b.card.cost);
   if (utility.length > 0) {
     return utility[0].index;
@@ -677,17 +815,25 @@ function simulateChapterBattle(
   const rng = mulberry32(seed);
   let state = createBattle(deck, demonId, rng, cards, demons, balance, undefined, options);
 
-  while (state.result === 'ongoing') {
+  let safetyRounds = 0;
+  while (state.result === 'ongoing' && safetyRounds < 20) {
+    safetyRounds += 1;
     let playsThisRound = 0;
     while (state.phase === 'play' && state.result === 'ongoing' && playsThisRound < MAX_PLAYS_PER_ROUND) {
       if (state.pendingChoice && state.hand.length > 0) {
         let discardIdx = 0;
-        let lowestDmg = Infinity;
+        let lowestScore = Infinity;
         for (let i = 0; i < state.hand.length; i += 1) {
           const card = state.cardsByName.get(state.hand[i]);
           const dmg = card ? getCardDamage(card, state) : 0;
-          if (dmg < lowestDmg) {
-            lowestDmg = dmg;
+          const engineBonus = card
+            ? getCardDrawCount(card) * 3 +
+              Math.max(0, getCardNetRenqing(card)) * 4 +
+              (card.effects.some((e) => e.type === 'reflect') ? 4 : 0)
+            : 0;
+          const score = dmg + engineBonus;
+          if (score < lowestScore) {
+            lowestScore = score;
             discardIdx = i;
           }
         }
@@ -701,6 +847,13 @@ function simulateChapterBattle(
       }
       state = playCard(state, choice).state;
       playsThisRound += 1;
+    }
+
+    if (state.result === 'ongoing' && state.pendingChoice) {
+      state =
+        state.hand.length > 0
+          ? resolvePendingChoice(state, 0).state
+          : cancelPendingChoice(state).state;
     }
 
     if (state.result === 'ongoing') {
@@ -745,7 +898,10 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
   let totalFinalMoney = 0;
   let totalFinalDeckSize = 0;
   let totalBossRenqing = 0;
+  let totalBossComponents = 0;
   const finalMoneys: number[] = [];
+  const day7Samples: Day7EndgameSample[] = [];
+  const baseBoss = getBossDemonDef(demons, chapter.bossId);
 
   for (let seed = 1; seed <= runs; seed += 1) {
     const offerRng = mulberry32(seed * 9973 + 17);
@@ -755,6 +911,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     let reputation = pawnBalance.startingReputation;
     let deck: string[] = [];
     let pawnPrices: PawnPriceLedger = {};
+    const redeemedDayByItem: Record<string, number> = {};
     let redeemTickets = 0;
     let shopLevel = 1;
     let pactChoice: PactId | null = null;
@@ -807,6 +964,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
           if (getCardBaseDamage(offerCard) === 0 || (money < 50 && deck.length >= 6)) {
             deck.splice(offer.deckIndex, 1);
             pawnPrices = consumePawnPrice(pawnPrices, offer.cardName);
+            redeemedDayByItem[offer.item.id] = day;
             money += offer.payout;
             reputation += 1;
             redeemTickets -= 1;
@@ -814,9 +972,13 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         }
       }
 
-      // Daytime pawnshop (3 customers, Day 1 damage guarantee)
+      // Daytime pawnshop (3 customers, Day 1 damage guarantee + P11 D1 cooldown & D2 prefer unowned)
       const dayRng = mulberry32(deriveDaySeed(seed, day));
-      const dailyCustomers = pickDailyItems(items, day, dayRng, DAILY_CUSTOMER_COUNT);
+      const dailyCustomers = pickDailyItems(items, day, dayRng, DAILY_CUSTOMER_COUNT, {
+        deck,
+        redeemedDayByItem,
+        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
+      });
 
       // Day 6 optional side quest: accept when deck still wants another damage/draw item and money >= 40
       if (day === 6) {
@@ -886,16 +1048,22 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         startingRenqing: nightRenqing,
         maxRenqing: nightRenqing,
       };
-      const demonHpBonus =
-        day === 6 && sideQuestAccepted
-          ? chapter.day6SideQuest.nightDemonHpBonus
-          : day === CHAPTER_DAYS
-            ? getBossHpBonus(pactChoice, CHAPTER_ONE_ID, chapters)
-            : 0;
 
+      let battleOptions: CreateBattleOptions | undefined;
       if (day === CHAPTER_DAYS) {
         bossReached += 1;
         totalBossRenqing += nightRenqing;
+        const composed: ComposedBossResult = composeBoss(deck, pactChoice, baseBoss);
+        totalBossComponents += composed.componentCount;
+        day7Samples.push({
+          deck: [...deck],
+          maxRenqing: nightRenqing,
+          pactChoice,
+          activeItemIds: composed.activeComponents.map((c) => c.itemId),
+        });
+        battleOptions = { demonOverride: composed.bossDef };
+      } else if (day === 6 && sideQuestAccepted) {
+        battleOptions = { demonHpBonus: chapter.day6SideQuest.nightDemonHpBonus };
       }
 
       if (deck.length === 0) {
@@ -910,7 +1078,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         deck,
         demonId,
         battleSeed,
-        { demonHpBonus },
+        battleOptions,
       );
 
       if (day === CHAPTER_DAYS && finalBattle.bossChargeInterrupted) {
@@ -953,6 +1121,406 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     medianFinalMoney: median(finalMoneys),
     avgFinalDeckSize: runs > 0 ? totalFinalDeckSize / runs : 0,
     avgBossRenqing: bossReached > 0 ? totalBossRenqing / bossReached : 0,
+    avgBossComponents: bossReached > 0 ? totalBossComponents / bossReached : 0,
+    day7Samples,
+  };
+}
+
+export interface BossCompositionScanOptions {
+  cards?: readonly CardDef[];
+  demons?: readonly DemonDef[];
+  battleBalance?: BattleBalanceConfig;
+  items?: readonly PawnItem[];
+  day7Samples: readonly Day7EndgameSample[];
+  runsPerBucket?: number;
+}
+
+const FALLBACK_SUBSETS_BY_COUNT: Record<number, readonly (readonly string[])[]> = {
+  0: [[]],
+  1: [['watch'], ['ring'], ['old_book'], ['bicycle'], ['erhu'], ['stamp_album']],
+  2: [
+    ['bicycle', 'erhu'],
+    ['old_book', 'erhu'],
+  ],
+  3: [
+    ['old_book', 'bicycle', 'erhu'],
+    ['bicycle', 'erhu', 'stamp_album'],
+  ],
+  4: [
+    ['old_book', 'bicycle', 'erhu', 'stamp_album'],
+    ['watch', 'old_book', 'bicycle', 'erhu'],
+  ],
+  5: [
+    ['watch', 'old_book', 'bicycle', 'erhu', 'stamp_album'],
+    ['ring', 'old_book', 'bicycle', 'erhu', 'stamp_album'],
+  ],
+  6: [['watch', 'ring', 'old_book', 'bicycle', 'erhu', 'stamp_album']],
+};
+
+function subsetKey(ids: readonly string[]): string {
+  return [...ids].sort().join(',');
+}
+
+function selectObservedSubsetsForCount(
+  samples: readonly Day7EndgameSample[],
+  count: number,
+  maxSubsets: number,
+): string[][] {
+  const freq = new Map<string, { ids: string[]; count: number }>();
+  for (const sample of samples) {
+    if (sample.activeItemIds.length !== count) {
+      continue;
+    }
+    const key = subsetKey(sample.activeItemIds);
+    const existing = freq.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      freq.set(key, { ids: [...sample.activeItemIds], count: 1 });
+    }
+  }
+
+  const sorted = [...freq.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, maxSubsets)
+    .map((entry) => entry.ids);
+
+  const fallbacks = FALLBACK_SUBSETS_BY_COUNT[count] ?? [];
+  const seen = new Set(sorted.map(subsetKey));
+  for (const fb of fallbacks) {
+    if (sorted.length >= maxSubsets) {
+      break;
+    }
+    const k = subsetKey(fb);
+    if (!seen.has(k)) {
+      seen.add(k);
+      sorted.push([...fb]);
+    }
+  }
+  return sorted;
+}
+
+function simulateComposedBossSubset(
+  cards: readonly CardDef[],
+  demons: readonly DemonDef[],
+  battleBalance: BattleBalanceConfig,
+  items: readonly PawnItem[],
+  baseBoss: DemonDef,
+  itemIds: readonly string[],
+  creditStock: boolean,
+  samples: readonly Day7EndgameSample[],
+  runs: number,
+): BossSubsetSimStats {
+  const itemCardById = new Map(items.map((i) => [i.id, i.cardName]));
+  const syntheticItemDeck = itemIds
+    .map((id) => itemCardById.get(id))
+    .filter((name): name is string => Boolean(name));
+  const composed = composeBoss(syntheticItemDeck, creditStock ? 'credit_stock' : null, baseBoss);
+
+  let wins = 0;
+  let interrupts = 0;
+  let totalEndRound = 0;
+  let totalWinRemainingHp = 0;
+
+  for (let i = 0; i < runs; i += 1) {
+    const sample = samples[i % samples.length];
+    const bal: BattleBalanceConfig = {
+      ...battleBalance,
+      startingRenqing: sample.maxRenqing,
+      maxRenqing: sample.maxRenqing,
+    };
+    const finalState = simulateChapterBattle(
+      cards,
+      demons,
+      bal,
+      sample.deck,
+      composed.bossDef.id,
+      (i + 1) * 1013 + itemIds.length * 97 + (creditStock ? 13 : 0),
+      { demonOverride: composed.bossDef },
+    );
+    totalEndRound += finalState.round;
+    if (finalState.bossChargeInterrupted) {
+      interrupts += 1;
+    }
+    if (finalState.result === 'win') {
+      wins += 1;
+      totalWinRemainingHp += finalState.playerHp;
+    }
+  }
+
+  return {
+    componentCount: composed.componentCount,
+    itemIds: composed.activeComponents.map((c) => c.itemId),
+    creditStock,
+    bossHp: composed.finalHp,
+    hpCapped: composed.hpCapped,
+    chargeThreshold: composed.chargeThreshold,
+    runs,
+    wins,
+    winRate: runs > 0 ? wins / runs : 0,
+    interrupts,
+    interruptRate: runs > 0 ? interrupts / runs : 0,
+    avgEndRound: runs > 0 ? totalEndRound / runs : 0,
+    avgWinRemainingHp: wins > 0 ? totalWinRemainingHp / wins : 0,
+  };
+}
+
+/**
+ * P11 组合 Boss 扫描模拟：
+ * - 覆盖 n = 0..6（赊账开 / 关）、n = 1 六单件敏感性、n = 2..5 实测最常见子集、满配 + 赊账 48 血；
+ * - 赎当削弱验证（同一终局牌组分布下逐件拆组件 n = 6 -> 0）；
+ * - 邮票册打断专项（含邮票册阈值 14 vs 不含邮票册阈值 10）；
+ * - TEST_DECK 对照（n = 3 典型组合 vs 现行 48.5%）。
+ */
+export function simulateBossCompositionScan(
+  opts: BossCompositionScanOptions,
+): BossCompositionScanReport {
+  const cards = opts.cards ?? (cardsJson as CardDef[]);
+  const demons = opts.demons ?? (demonsJson as DemonDef[]);
+  const battleBalance: BattleBalanceConfig = opts.battleBalance ?? {
+    startingHp: balanceJson.startingHp,
+    startingRenqing: balanceJson.startingRenqing,
+    maxRenqing: balanceJson.maxRenqing,
+    drawFirst: balanceJson.drawFirst,
+    drawPerRound: balanceJson.drawPerRound,
+    winRewardMoney: balanceJson.winRewardMoney,
+  };
+  const items = opts.items ?? ITEMS;
+  const runsPerBucket = opts.runsPerBucket ?? 1000;
+  const baseBoss = getBossDemonDef(demons);
+
+  const validSamples =
+    opts.day7Samples.length > 0
+      ? opts.day7Samples.filter((s) => s.deck.length > 0)
+      : [
+          {
+            deck: [...TEST_DECK],
+            maxRenqing: maxRenqingForLevel(4),
+            pactChoice: null,
+            activeItemIds: ['watch', 'ring', 'old_book'],
+          },
+        ];
+
+  const allItemIds = items.map((i) => i.id);
+
+  // Single-item sensitivity (n = 1, all 6 items, credit_stock OFF)
+  const singleItemSensitivity: BossSubsetSimStats[] = allItemIds.map((id) =>
+    simulateComposedBossSubset(
+      cards,
+      demons,
+      battleBalance,
+      items,
+      baseBoss,
+      [id],
+      false,
+      validSamples,
+      runsPerBucket,
+    ),
+  );
+
+  // Build tiers n = 0..6 for creditStock OFF and ON
+  const buildTiers = (creditStock: boolean): BossTierSummary[] => {
+    const tiers: BossTierSummary[] = [];
+    for (let n = 0; n <= 6; n += 1) {
+      let subsets: BossSubsetSimStats[];
+      if (n === 0) {
+        subsets = [
+          simulateComposedBossSubset(
+            cards,
+            demons,
+            battleBalance,
+            items,
+            baseBoss,
+            [],
+            creditStock,
+            validSamples,
+            runsPerBucket,
+          ),
+        ];
+      } else if (n === 1) {
+        subsets = creditStock
+          ? allItemIds.map((id) =>
+              simulateComposedBossSubset(
+                cards,
+                demons,
+                battleBalance,
+                items,
+                baseBoss,
+                [id],
+                true,
+                validSamples,
+                runsPerBucket,
+              ),
+            )
+          : singleItemSensitivity;
+      } else if (n === 6) {
+        subsets = [
+          simulateComposedBossSubset(
+            cards,
+            demons,
+            battleBalance,
+            items,
+            baseBoss,
+            allItemIds,
+            creditStock,
+            validSamples,
+            runsPerBucket,
+          ),
+        ];
+      } else {
+        const pickedSubsets = selectObservedSubsetsForCount(validSamples, n, 2);
+        subsets = pickedSubsets.map((ids) =>
+          simulateComposedBossSubset(
+            cards,
+            demons,
+            battleBalance,
+            items,
+            baseBoss,
+            ids,
+            creditStock,
+            validSamples,
+            runsPerBucket,
+          ),
+        );
+      }
+
+      const avgWinRate =
+        subsets.length > 0
+          ? subsets.reduce((sum, s) => sum + s.winRate, 0) / subsets.length
+          : 0;
+      const avgInterruptRate =
+        subsets.length > 0
+          ? subsets.reduce((sum, s) => sum + s.interruptRate, 0) / subsets.length
+          : 0;
+
+      tiers.push({
+        componentCount: n,
+        creditStock,
+        subsets,
+        avgWinRate,
+        avgInterruptRate,
+      });
+    }
+    return tiers;
+  };
+
+  const tiersNoCredit = buildTiers(false);
+  const tiersWithCredit = buildTiers(true);
+
+  const bareStats = tiersNoCredit[0].subsets[0];
+  const fullStats = tiersNoCredit[6].subsets[0];
+  const fullWithCreditStats = tiersWithCredit[6].subsets[0];
+
+  // Redemption weakening verification: from full composition (n=6) remove 1 component at a time (n=6 -> 0)
+  // Order: stamp_album -> ring -> old_book -> watch -> erhu -> bicycle (each step removes a Boss component)
+  const redeemOrder = ['stamp_album', 'ring', 'old_book', 'watch', 'erhu', 'bicycle'];
+  const redemptionPath: RedemptionPathStep[] = [];
+  let remaining = [...allItemIds];
+  let prevWinRate = fullStats.winRate;
+
+  redemptionPath.push({
+    stepIndex: 0,
+    componentCount: remaining.length,
+    redeemedItemId: null,
+    remainingItemIds: [...remaining],
+    bossHp: fullStats.bossHp,
+    winRate: fullStats.winRate,
+    deltaFromPrev: 0,
+    interruptRate: fullStats.interruptRate,
+  });
+
+  for (let step = 1; step <= redeemOrder.length; step += 1) {
+    const redeemedId = redeemOrder[step - 1];
+    remaining = remaining.filter((id) => id !== redeemedId);
+    const stats = simulateComposedBossSubset(
+      cards,
+      demons,
+      battleBalance,
+      items,
+      baseBoss,
+      remaining,
+      false,
+      validSamples,
+      runsPerBucket,
+    );
+    redemptionPath.push({
+      stepIndex: step,
+      componentCount: remaining.length,
+      redeemedItemId: redeemedId,
+      remainingItemIds: [...remaining],
+      bossHp: stats.bossHp,
+      winRate: stats.winRate,
+      deltaFromPrev: stats.winRate - prevWinRate,
+      interruptRate: stats.interruptRate,
+    });
+    prevWinRate = stats.winRate;
+  }
+
+  // Stamp album interrupt study: full (with stamp_album, threshold 14) vs 5-component without stamp_album (threshold 10)
+  const withoutStampIds = allItemIds.filter((id) => id !== 'stamp_album');
+  const withoutStampStats = simulateComposedBossSubset(
+    cards,
+    demons,
+    battleBalance,
+    items,
+    baseBoss,
+    withoutStampIds,
+    false,
+    validSamples,
+    runsPerBucket,
+  );
+  const stampAlbumStudy: StampAlbumInterruptStudy = {
+    withStampThreshold: fullStats.chargeThreshold,
+    withStampWinRate: fullStats.winRate,
+    withStampInterruptRate: fullStats.interruptRate,
+    withoutStampThreshold: withoutStampStats.chargeThreshold,
+    withoutStampWinRate: withoutStampStats.winRate,
+    withoutStampInterruptRate: withoutStampStats.interruptRate,
+  };
+
+  // TEST_DECK control: composeBoss(TEST_DECK, null) -> n=3 (watch, ring, old_book, 38 HP) at Lv.3 renqing 5
+  const testComposed = composeBoss(TEST_DECK, null, baseBoss);
+  const testBossBal: BattleBalanceConfig = {
+    ...battleBalance,
+    startingRenqing: maxRenqingForLevel(3),
+    maxRenqing: maxRenqingForLevel(3),
+  };
+  const testMc = runMonteCarlo(
+    cards,
+    demons,
+    testBossBal,
+    TEST_DECK,
+    testComposed.bossDef.id,
+    runsPerBucket,
+    { demonOverride: testComposed.bossDef },
+  );
+  const testDeckControl: BossSubsetSimStats = {
+    componentCount: testComposed.componentCount,
+    itemIds: testComposed.activeComponents.map((c) => c.itemId),
+    creditStock: false,
+    bossHp: testComposed.finalHp,
+    hpCapped: testComposed.hpCapped,
+    chargeThreshold: testComposed.chargeThreshold,
+    runs: testMc.runs,
+    wins: testMc.wins,
+    winRate: testMc.winRate,
+    interrupts: testMc.interrupts ?? 0,
+    interruptRate: testMc.interruptRate ?? 0,
+    avgEndRound: testMc.avgEndRound,
+    avgWinRemainingHp: testMc.avgWinRemainingHp,
+  };
+
+  return {
+    runsPerBucket,
+    tiersNoCredit,
+    tiersWithCredit,
+    singleItemSensitivity,
+    bareStats,
+    fullStats,
+    fullWithCreditStats,
+    redemptionPath,
+    stampAlbumStudy,
+    testDeckControl,
   };
 }
 
@@ -1163,7 +1731,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
   };
   const bossStats = runMonteCarlo(cards, demons, bossBalance, TEST_DECK, 'boss_ch1', runs);
 
-  // Full 7-day Chapter 1 progression simulation (Day 1 -> Night 7 Boss)
+  // Full 7-day Chapter 1 progression simulation (Day 1 -> Night 7 Composed Boss)
   const chapter1 = simulateChapterOne({
     cards,
     demons,
@@ -1172,6 +1740,16 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     items: ITEMS,
     chapters: CHAPTERS,
     runs,
+  });
+
+  // P11 Composed Boss sweep (n = 0..6, credit_stock on/off, single-item sensitivity, redemption path, stamp interrupt study)
+  const bossComposition = simulateBossCompositionScan({
+    cards,
+    demons,
+    battleBalance,
+    items: ITEMS,
+    day7Samples: chapter1.day7Samples,
+    runsPerBucket: runs,
   });
 
   // P10 New-player Night 1 simulation (realistic Day 1 3-item pool via pickDailyItems)
@@ -1189,16 +1767,21 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     economy,
     boss: bossStats,
     chapter1,
+    bossComposition,
     newPlayerFirstNight,
   };
 }
 
 /**
- * Balance guardrails for `npm run sim:check`:
+ * Balance guardrails for `npm run sim:check` (P7 + P9 + P10 + P11):
  * - Every regular demon (A/B/C/D) win rate must be within [40%, 95%].
  * - 7-day frequent winner median cash flow (Day 7) must be >= 30.
  * - P9 Boss win rate must be within [45%, 85%].
- * - P9 regular 7-day Chapter 1 clear rate must be within [35%, 75%].
+ * - Chapter 1 7-day clear rate must be within [35%, 75%].
+ * - P10 New-player Night 1 win rate [20%, 45%], single-attack [5%, 25%].
+ * - P11 Composed Boss typical tiers (n=2..5) [40%, 85%], bare (n=0) [50%, 90%],
+ *   full+credit (48 HP) >= 25%, monotonicity (<= +3% noise), redemption weakening (>= -3% noise),
+ *   and full-composition stamp_album interrupt rate >= 10%.
  */
 export function checkSimGuardrails(report: BalanceSimulationReport): SimGuardrailCheckResult {
   const errors: string[] = [];
@@ -1253,6 +1836,61 @@ export function checkSimGuardrails(report: BalanceSimulationReport): SimGuardrai
     );
   }
 
+  // P11 Composed Boss guardrails
+  const bc = report.bossComposition;
+  if (
+    bc.bareStats.winRate < SIM_COMPOSED_BOSS_BARE_MIN ||
+    bc.bareStats.winRate > SIM_COMPOSED_BOSS_BARE_MAX
+  ) {
+    errors.push(
+      `Composed Boss bare (n=0) winRate ${(bc.bareStats.winRate * 100).toFixed(1)}% out of [${(SIM_COMPOSED_BOSS_BARE_MIN * 100).toFixed(0)}%, ${(SIM_COMPOSED_BOSS_BARE_MAX * 100).toFixed(0)}%]`,
+    );
+  }
+
+  for (const tier of bc.tiersNoCredit) {
+    if (tier.componentCount >= 2 && tier.componentCount <= 5) {
+      if (
+        tier.avgWinRate < SIM_COMPOSED_BOSS_TYPICAL_MIN ||
+        tier.avgWinRate > SIM_COMPOSED_BOSS_TYPICAL_MAX
+      ) {
+        errors.push(
+          `Composed Boss typical tier n=${tier.componentCount} winRate ${(tier.avgWinRate * 100).toFixed(1)}% out of [${(SIM_COMPOSED_BOSS_TYPICAL_MIN * 100).toFixed(0)}%, ${(SIM_COMPOSED_BOSS_TYPICAL_MAX * 100).toFixed(0)}%]`,
+        );
+      }
+    }
+  }
+
+  if (bc.fullWithCreditStats.winRate < SIM_COMPOSED_BOSS_FULL_CREDIT_MIN) {
+    errors.push(
+      `Composed Boss full+credit (n=6, ${bc.fullWithCreditStats.bossHp} HP) winRate ${(bc.fullWithCreditStats.winRate * 100).toFixed(1)}% below guardrail ${(SIM_COMPOSED_BOSS_FULL_CREDIT_MIN * 100).toFixed(0)}%`,
+    );
+  }
+
+  for (let i = 1; i < bc.tiersNoCredit.length; i += 1) {
+    const prev = bc.tiersNoCredit[i - 1];
+    const curr = bc.tiersNoCredit[i];
+    if (curr.avgWinRate > prev.avgWinRate + SIM_COMPOSED_BOSS_MONOTONIC_NOISE) {
+      errors.push(
+        `Composed Boss monotonicity violated: n=${curr.componentCount} (${(curr.avgWinRate * 100).toFixed(1)}%) > n=${prev.componentCount} (${(prev.avgWinRate * 100).toFixed(1)}%) + 3%`,
+      );
+    }
+  }
+
+  for (let i = 1; i < bc.redemptionPath.length; i += 1) {
+    const step = bc.redemptionPath[i];
+    if (step.deltaFromPrev < -SIM_COMPOSED_BOSS_REDEEM_NOISE) {
+      errors.push(
+        `Redemption weakening invariant violated at step ${step.stepIndex} (redeemed ${step.redeemedItemId}): delta ${(step.deltaFromPrev * 100).toFixed(1)}% < -3%`,
+      );
+    }
+  }
+
+  if (bc.stampAlbumStudy.withStampInterruptRate < SIM_COMPOSED_BOSS_STAMP_INTERRUPT_MIN) {
+    errors.push(
+      `Composed Boss full (with stamp_album, threshold ${bc.stampAlbumStudy.withStampThreshold}) interruptRate ${(bc.stampAlbumStudy.withStampInterruptRate * 100).toFixed(1)}% below guardrail ${(SIM_COMPOSED_BOSS_STAMP_INTERRUPT_MIN * 100).toFixed(0)}%`,
+    );
+  }
+
   return {
     passed: errors.length === 0,
     errors,
@@ -1280,12 +1918,67 @@ export function formatSimReport(report: BalanceSimulationReport): string {
   );
 
   const ch = report.chapter1;
-  lines.push('\n[第 1 章 7 天完整通关模拟]');
+  lines.push('\n[第 1 章 7 天完整通关模拟 (组合 Boss + D1 冷却 + D2 优先未拥有)]');
   lines.push(
-    `  7 天通关率: ${(ch.clearRate * 100).toFixed(1)}% (${ch.clears}/${ch.runs}) | Boss战胜率: ${(ch.bossWinRate * 100).toFixed(1)}% | Boss打断率: ${(ch.bossInterruptRate * 100).toFixed(1)}%`,
+    `  7 天通关率: ${(ch.clearRate * 100).toFixed(1)}% (${ch.clears}/${ch.runs}) | Boss战胜率: ${(ch.bossWinRate * 100).toFixed(1)}% | Boss打断率: ${(ch.bossInterruptRate * 100).toFixed(1)}% | 平均组件数: ${ch.avgBossComponents.toFixed(2)}`,
   );
   lines.push(
     `  平均胜夜数: ${ch.avgNightsWon.toFixed(2)}/7 | 第7夜平均人情: ${ch.avgBossRenqing.toFixed(2)} | 终局中位钱: ${ch.medianFinalMoney.toFixed(1)} | 终局均牌数: ${ch.avgFinalDeckSize.toFixed(1)}`,
+  );
+
+  const bc = report.bossComposition;
+  const avgTierMetrics = (tier: BossTierSummary): { avgRound: number; avgRemainHp: number } => {
+    const count = tier.subsets.length || 1;
+    const avgRound = tier.subsets.reduce((s, sub) => s + sub.avgEndRound, 0) / count;
+    const winSubsets = tier.subsets.filter((sub) => sub.wins > 0);
+    const avgRemainHp =
+      winSubsets.length > 0
+        ? winSubsets.reduce((s, sub) => s + sub.avgWinRemainingHp, 0) / winSubsets.length
+        : 0;
+    return { avgRound, avgRemainHp };
+  };
+  lines.push(`\n[P11 组合 Boss 扫描 (真实第7天牌组分布, ${bc.runsPerBucket} 局/档)]`);
+  lines.push('  -- 赊账 OFF (n = 0..6) --');
+  for (const tier of bc.tiersNoCredit) {
+    const sampleHp = tier.subsets[0]?.bossHp ?? 32;
+    const { avgRound, avgRemainHp } = avgTierMetrics(tier);
+    lines.push(
+      `    n=${tier.componentCount} (${sampleHp}血): 均胜率 ${(tier.avgWinRate * 100).toFixed(1)}% | 均打断率 ${(tier.avgInterruptRate * 100).toFixed(1)}% | 均回合 ${avgRound.toFixed(2)} | 胜场残血 ${avgRemainHp.toFixed(1)}`,
+    );
+  }
+  lines.push('  -- 赊账 ON (+6血, 绝对上限48) --');
+  for (const tier of bc.tiersWithCredit) {
+    const sample = tier.subsets[0];
+    const capTag = sample?.hpCapped ? ' [已到顶]' : '';
+    const { avgRound, avgRemainHp } = avgTierMetrics(tier);
+    lines.push(
+      `    n=${tier.componentCount} (${sample?.bossHp ?? 38}血${capTag}): 均胜率 ${(tier.avgWinRate * 100).toFixed(1)}% | 均打断率 ${(tier.avgInterruptRate * 100).toFixed(1)}% | 均回合 ${avgRound.toFixed(2)} | 胜场残血 ${avgRemainHp.toFixed(1)}`,
+    );
+  }
+  lines.push('  -- 单件敏感性 (n = 1) --');
+  for (const s of bc.singleItemSensitivity) {
+    lines.push(
+      `    单件 ${s.itemIds[0]} (${s.bossHp}血, 阈值${s.chargeThreshold}): 胜率 ${(s.winRate * 100).toFixed(1)}% | 打断率 ${(s.interruptRate * 100).toFixed(1)}% | 均回合 ${s.avgEndRound.toFixed(2)} | 胜场残血 ${s.avgWinRemainingHp.toFixed(1)}`,
+    );
+  }
+  lines.push('  -- 赎当削弱路径 (n = 6 -> 0) --');
+  for (const step of bc.redemptionPath) {
+    const label = step.redeemedItemId ? `赎回 ${step.redeemedItemId}` : '初始满配';
+    const deltaStr =
+      step.stepIndex === 0
+        ? ''
+        : ` (${step.deltaFromPrev >= 0 ? '+' : ''}${(step.deltaFromPrev * 100).toFixed(1)}%)`;
+    lines.push(
+      `    step ${step.stepIndex} [n=${step.componentCount}, ${step.bossHp}血] ${label}: 胜率 ${(step.winRate * 100).toFixed(1)}%${deltaStr} | 打断率 ${(step.interruptRate * 100).toFixed(1)}%`,
+    );
+  }
+  const st = bc.stampAlbumStudy;
+  lines.push(
+    `  -- 邮票册打断专项: 含邮票册(阈值${st.withStampThreshold}) 打断率 ${(st.withStampInterruptRate * 100).toFixed(1)}% / 胜率 ${(st.withStampWinRate * 100).toFixed(1)}% vs 不含(阈值${st.withoutStampThreshold}) 打断率 ${(st.withoutStampInterruptRate * 100).toFixed(1)}% / 胜率 ${(st.withoutStampWinRate * 100).toFixed(1)}%`,
+  );
+  const tc = bc.testDeckControl;
+  lines.push(
+    `  -- TEST_DECK 对照 (n=${tc.componentCount} [${tc.itemIds.join(',')}], ${tc.bossHp}血): 胜率 ${(tc.winRate * 100).toFixed(1)}% | 打断率 ${(tc.interruptRate * 100).toFixed(1)}%`,
   );
 
   const np = report.newPlayerFirstNight;
@@ -1301,7 +1994,7 @@ export function formatSimReport(report: BalanceSimulationReport): string {
   const lastIdx = eco.days - 1;
   const medTrail = eco.medianMoneyByDay.map((v) => v.toFixed(1)).join(' -> ');
   const fwMedTrail = eco.frequentWinnerMedianByDay.map((v) => v.toFixed(1)).join(' -> ');
-  lines.push('\n[7 天经济现金流与赎当]');
+  lines.push('\n[7 天经济现金流与赎当 (同步 D1/D2)]');
   lines.push(`  全体第 ${eco.days} 天中位现金流: ${eco.medianMoneyByDay[lastIdx].toFixed(1)} (逐日: ${medTrail})`);
   lines.push(
     `  常赢玩家(>=5胜, n=${eco.frequentWinnerCount})第 ${eco.days} 天中位现金流: ${eco.frequentWinnerMedianByDay[lastIdx].toFixed(1)} (逐日: ${fwMedTrail})`,

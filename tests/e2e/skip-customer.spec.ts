@@ -236,17 +236,19 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
 
-  // Day 4 with seed=4: watch (20/40/60) -> bicycle (40/80/120) -> erhu (25/50/75)
+  // Day 4 with seed=4 + P11 D2 (unowned bicycle & stamp_album prioritized, then watch):
+  // bicycle (40/80/120), stamp_album (15/30/45), watch (20/40/60)
   const c1 = await waitForPawnshopPhase(page, 'negotiating');
   expect(c1.day).toBe(4);
   expect(c1.customerIndex).toBe(0);
   expect(c1.money).toBe(35);
   expect(c1.reputation).toBe(5);
-  expect(c1.itemsOrder).toEqual(['watch', 'bicycle', 'erhu']);
-  expect(c1.tierAffordability).toEqual({ low: true, fair: false, high: false });
+  expect(c1.itemsOrder).toEqual(['bicycle', 'stamp_album', 'watch']);
+  // Bicycle low 40 > 35 -> all 3 tiers unaffordable!
+  expect(c1.tierAffordability).toEqual({ low: false, fair: false, high: false });
   expect(c1.canSkip).toBe(true);
 
-  // Skip Customer 1 (Watch) even though low tier is affordable -> advances to Customer 2 (Bicycle)
+  // Skip Customer 1 (Unaffordable Bicycle) -> advances to Customer 2 (Stamp Album)
   await clickLogical(page, canvas, BUTTONS.skipCustomer);
   await expect
     .poll(async () => (await getPawnshopState(page)).customerIndex)
@@ -256,11 +258,10 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   expect(c2.money).toBe(35);
   expect(c2.reputation).toBe(5);
   expect(c2.deck).toEqual(['倒转', '守诺', '旧书', '余音', '守诺']);
-  // Bicycle low 40 > 35 -> all 3 tiers unaffordable!
-  expect(c2.tierAffordability).toEqual({ low: false, fair: false, high: false });
+  expect(c2.tierAffordability).toEqual({ low: true, fair: true, high: false });
   expect(c2.canSkip).toBe(true);
 
-  // Skip Customer 2 (Bicycle) -> advances to Customer 3 (Erhu)
+  // Skip Customer 2 (Stamp Album) -> advances to Customer 3 (Watch)
   await clickLogical(page, canvas, BUTTONS.skipCustomer);
   await expect
     .poll(async () => (await getPawnshopState(page)).customerIndex)
@@ -273,14 +274,14 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   expect(c3.tierAffordability).toEqual({ low: true, fair: false, high: false });
   expect(c3.canSkip).toBe(true);
 
-  // Skip Customer 3 (Erhu) -> summary
+  // Skip Customer 3 (Watch) -> summary
   await clickLogical(page, canvas, BUTTONS.skipCustomer);
   const summary = await waitForPawnshopPhase(page, 'summary');
   expect(summary.customerIndex).toBe(3);
   expect(summary.money).toBe(35);
   expect(summary.reputation).toBe(5);
   expect(summary.deck).toEqual(['倒转', '守诺', '旧书', '余音', '守诺']);
-  expect(summary.log.slice(-3)).toEqual(['旧手表:跳过', '永久自行车:跳过', '二胡:跳过']);
+  expect(summary.log.slice(-3)).toEqual(['永久自行车:跳过', '邮票册:跳过', '旧手表:跳过']);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
