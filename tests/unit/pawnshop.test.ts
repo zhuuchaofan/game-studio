@@ -4,13 +4,19 @@ import {
   BALANCE,
   canAffordTier,
   createInitialState,
+  createRedemptionOffer,
+  DAY1_GUARANTEED_DAMAGE_ITEM_IDS,
   deriveDaySeed,
+  formatReputationHint,
+  getEffectiveAcceptRate,
   getTierAffordability,
   hasAnyAffordableTier,
   isTierAffordable,
   ITEMS,
+  pickDailyItems,
   quotePrice,
   resolveOffer,
+  resolveRedemption,
   settle,
   shuffleItems,
   skipCustomer,
@@ -297,5 +303,126 @@ describe('skipCustomer & hasAnyAffordableTier', () => {
     const afterSummarySkip = skipCustomer(summary);
     expect(afterSummarySkip).toEqual(summary);
     expect(afterSummarySkip).not.toBe(summary);
+  });
+});
+
+describe('P6 B2: Day 1 guaranteed damage item pool', () => {
+  it('guarantees at least one damage-card item (bicycle or erhu) on Day 1 across 1000 seeds', () => {
+    for (let seed = 1; seed <= 1000; seed += 1) {
+      const picked = pickDailyItems(ITEMS, 1, mulberry32(deriveDaySeed(seed, 1)), 3);
+      expect(picked).toHaveLength(3);
+      expect(new Set(picked.map((i) => i.id)).size).toBe(3);
+      const hasDamage = picked.some((item) => DAY1_GUARANTEED_DAMAGE_ITEM_IDS.includes(item.id));
+      expect(hasDamage, `Seed ${seed} Day 1 missing damage item`).toBe(true);
+    }
+  });
+
+  it('replaces the 3rd slot deterministically when a Day 1 shuffle has zero damage items', () => {
+    // Non-damage items first, damage items at the end; rng returning 0.999 keeps order mostly intact
+    const picked = pickDailyItems(ITEMS, 1, () => 0.999999, 3);
+    expect(picked).toHaveLength(3);
+    expect(picked.some((item) => DAY1_GUARANTEED_DAMAGE_ITEM_IDS.includes(item.id))).toBe(true);
+    expect(new Set(picked.map((i) => i.id)).size).toBe(3);
+  });
+});
+
+describe('P6 C3: Reputation modifies acceptance rate with clamps', () => {
+  it('computes exact acceptance rates for reputation 0, positive, and negative values', () => {
+    // Reputation = 0 (baseline)
+    expect(getEffectiveAcceptRate('low', 0)).toBe(0.3);
+    expect(getEffectiveAcceptRate('fair', 0)).toBe(0.8);
+    expect(getEffectiveAcceptRate('high', 0)).toBe(1.0);
+
+    // Positive reputation: low +5%/rep, fair +2%/rep, high unchanged
+    expect(getEffectiveAcceptRate('low', 2)).toBe(0.4);
+    expect(getEffectiveAcceptRate('fair', 2)).toBe(0.84);
+    expect(getEffectiveAcceptRate('high', 2)).toBe(1.0);
+
+    // Negative reputation: low -5%/rep, fair -2%/rep, high unchanged
+    expect(getEffectiveAcceptRate('low', -2)).toBe(0.2);
+    expect(getEffectiveAcceptRate('fair', -2)).toBe(0.76);
+    expect(getEffectiveAcceptRate('high', -2)).toBe(1.0);
+  });
+
+  it('enforces upper and lower clamps: low [10%, 60%], fair [50%, 95%], high 100%', () => {
+    // Upper clamps
+    expect(getEffectiveAcceptRate('low', 6)).toBe(0.6);
+    expect(getEffectiveAcceptRate('low', 20)).toBe(0.6);
+    expect(getEffectiveAcceptRate('fair', 8)).toBe(0.95);
+    expect(getEffectiveAcceptRate('fair', 20)).toBe(0.95);
+    expect(getEffectiveAcceptRate('high', 20)).toBe(1.0);
+
+    // Lower clamps
+    expect(getEffectiveAcceptRate('low', -4)).toBe(0.1);
+    expect(getEffectiveAcceptRate('low', -20)).toBe(0.1);
+    expect(getEffectiveAcceptRate('fair', -15)).toBe(0.5);
+    expect(getEffectiveAcceptRate('fair', -30)).toBe(0.5);
+    expect(getEffectiveAcceptRate('high', -30)).toBe(1.0);
+  });
+
+  it('formats clear UI hints for positive, zero, and negative reputation', () => {
+    expect(formatReputationHint(2)).toContain('口碑2');
+    expect(formatReputationHint(2)).toContain('更容易接受');
+    expect(formatReputationHint(-2)).toContain('口碑-2');
+    expect(formatReputationHint(-2)).toContain('更难接受');
+    expect(formatReputationHint(0)).toContain('口碑0');
+  });
+});
+
+describe('P6 C4: Redemption mechanism', () => {
+  it('does not trigger when redeemTickets < 1 or deck has no pawnshop item cards', () => {
+    expect(createRedemptionOffer(['倒转'], 0, {}, () => 0)).toBeNull();
+    expect(createRedemptionOffer([], 2, {}, () => 0)).toBeNull();
+    // Night-only reward card '钢笔' is not in items.json
+    expect(createRedemptionOffer(['钢笔', '秤砣'], 1, {}, () => 0)).toBeNull();
+  });
+
+  it('uses recorded deal price * 1.2 when present, and falls back to item trueValue * 1.2 otherwise', () => {
+    // Recorded deal price for 守诺 (婚戒): 90 -> 90 * 1.2 = 108
+    const offerRecorded = createRedemptionOffer(['守诺'], 1, { 守诺: [90] }, () => 0);
+    expect(offerRecorded).not.toBeNull();
+    expect(offerRecorded!.cardName).toBe('守诺');
+    expect(offerRecorded!.basePrice).toBe(90);
+    expect(offerRecorded!.payout).toBe(108);
+
+    // No recorded price -> fallback to 婚戒 trueValue 60 -> 60 * 1.2 = 72
+    const offerFallback = createRedemptionOffer(['守诺'], 1, {}, () => 0);
+    expect(offerFallback).not.toBeNull();
+    expect(offerFallback!.basePrice).toBe(60);
+    expect(offerFallback!.payout).toBe(72);
+  });
+
+  it('resolveRedemption accept removes card, adds payout, rep +1, tickets -1; reject changes nothing', () => {
+    const offer = createRedemptionOffer(['守诺', '余音'], 2, { 守诺: [90] }, () => 0)!;
+    const baseState = createInitialState({
+      day: 2,
+      money: 50,
+      reputation: 1,
+      deck: ['守诺', '余音'],
+      redeemTickets: 2,
+      pawnPrices: { 守诺: [90] },
+      redemptionOffer: offer,
+    });
+    expect(baseState.phase).toBe('redemption');
+
+    // Accept
+    const accepted = resolveRedemption(baseState, true);
+    expect(accepted.phase).toBe('negotiating');
+    expect(accepted.money).toBe(158); // 50 + 108
+    expect(accepted.reputation).toBe(2);
+    expect(accepted.redeemTickets).toBe(1);
+    expect(accepted.deck).toEqual(['余音']);
+    expect(accepted.pawnPrices).toEqual({});
+    expect(accepted.redemptionOffer).toBeNull();
+
+    // Reject (immutable from baseState)
+    const rejected = resolveRedemption(baseState, false);
+    expect(rejected.phase).toBe('negotiating');
+    expect(rejected.money).toBe(50);
+    expect(rejected.reputation).toBe(1);
+    expect(rejected.redeemTickets).toBe(2);
+    expect(rejected.deck).toEqual(['守诺', '余音']);
+    expect(rejected.pawnPrices).toEqual({ 守诺: [90] });
+    expect(rejected.redemptionOffer).toBeNull();
   });
 });

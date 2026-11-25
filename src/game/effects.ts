@@ -40,6 +40,8 @@ export interface DemonDef {
   id: string;
   name: string;
   hp: number;
+  introLine?: string;
+  victoryLine?: string;
   actions: DemonAction[];
 }
 
@@ -73,6 +75,8 @@ export interface BattleState {
   nextRoundRenqingBonus: number;
   demonId: string;
   demonName: string;
+  demonIntroLine: string;
+  demonVictoryLine: string;
   demonHp: number;
   demonMaxHp: number;
   demonActions: DemonAction[];

@@ -10,6 +10,21 @@ import {
   type CardDef,
   type DemonDef,
 } from './battle';
+import {
+  BALANCE,
+  createRedemptionOffer,
+  DAILY_CUSTOMER_COUNT,
+  deriveDaySeed,
+  deriveRedemptionSeed,
+  getEffectiveAcceptRate,
+  ITEMS,
+  pickDailyItems,
+  quotePrice,
+  resolveOffer,
+  type BalanceConfig,
+  type PawnItem,
+} from './pawnshop';
+import { consumePawnPrice, demonIdForDay, recordPawnPrice, type DemonId, type PawnPriceLedger } from './save';
 
 /**
  * 固定测试牌组（10 张，覆盖伤害/护盾/抽牌/人情四类，仅供验证与蒙特卡洛测试）。
@@ -223,5 +238,169 @@ export function runMonteCarlo(
     winRate: runs > 0 ? wins / runs : 0,
     avgEndRound: runs > 0 ? totalEndRound / runs : 0,
     avgWinRemainingHp: wins > 0 ? totalWinRemainingHp / wins : 0,
+  };
+}
+
+export interface EconomySimOptions {
+  winRewardMoney: number;
+  demonWinRates: Record<DemonId, number>;
+  runs?: number;
+  days?: number;
+  /** Minimum reserve to keep when choosing fair tier; when tight (money < fairPrice + tightBuffer), try low tier. */
+  tightBuffer?: number;
+  /** Whether player uses C4 redemption when holding >= 1 ticket and >= minDeckForRedeem cards. */
+  enableRedemption?: boolean;
+  minDeckForRedeem?: number;
+  /** If true, force every night to win (models a frequent/consistent winner). */
+  forceWinAllNights?: boolean;
+  balance?: BalanceConfig;
+  items?: readonly PawnItem[];
+}
+
+export interface SevenDayEconomyStats {
+  runs: number;
+  days: number;
+  winRewardMoney: number;
+  /** Average end-of-day money for days 1..7 (index 0 = Day 1 after night reward). */
+  avgMoneyByDay: number[];
+  /** Median end-of-day money for days 1..7. */
+  medianMoneyByDay: number[];
+  /** Average end-of-day money among frequent winners (>= 5 wins in 7 nights). */
+  frequentWinnerAvgByDay: number[];
+  frequentWinnerCount: number;
+  avgTotalWins: number;
+  avgFinalDeckSize: number;
+  avgRedemptionsAccepted: number;
+}
+
+function median(values: readonly number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/**
+ * 7-day daytime + nighttime economy simulation (P6 B3):
+ * Strategy: offer fair if comfortably affordable (money >= fairPrice + tightBuffer),
+ * try low when money is tight (money >= lowPrice), skip if unaffordable;
+ * night battle win probability is taken from Monte Carlo results per demon.
+ */
+export function simulateSevenDayEconomy(opts: EconomySimOptions): SevenDayEconomyStats {
+  const runs = opts.runs ?? 1000;
+  const days = opts.days ?? 7;
+  const tightBuffer = opts.tightBuffer ?? 0;
+  const enableRedemption = opts.enableRedemption ?? false;
+  const minDeckForRedeem = opts.minDeckForRedeem ?? 4;
+  const forceWinAllNights = opts.forceWinAllNights ?? false;
+  const balance = opts.balance ?? BALANCE;
+  const items = opts.items ?? ITEMS;
+
+  const moneyPerDayAll: number[][] = Array.from({ length: days }, () => []);
+  const moneyPerDayWinners: number[][] = Array.from({ length: days }, () => []);
+  let totalWinsSum = 0;
+  let totalDeckSizeSum = 0;
+  let totalRedemptionsSum = 0;
+
+  for (let seed = 1; seed <= runs; seed += 1) {
+    const offerRng = mulberry32(seed * 9973 + 17);
+    const nightRng = mulberry32(seed * 7919 + 31);
+
+    let money = balance.startingMoney;
+    let reputation = balance.startingReputation;
+    const deck: string[] = [];
+    let pawnPrices: PawnPriceLedger = {};
+    let redeemTickets = 0;
+    let wins = 0;
+    let redemptionsAccepted = 0;
+    const trajectory: number[] = [];
+
+    for (let day = 1; day <= days; day += 1) {
+      // Optional C4 pre-day redemption
+      if (enableRedemption && redeemTickets >= 1 && deck.length >= minDeckForRedeem) {
+        const redeemRng = mulberry32(deriveRedemptionSeed(seed, day));
+        const offer = createRedemptionOffer(deck, redeemTickets, pawnPrices, redeemRng, items);
+        if (offer) {
+          deck.splice(offer.deckIndex, 1);
+          pawnPrices = consumePawnPrice(pawnPrices, offer.cardName);
+          money += offer.payout;
+          reputation += 1;
+          redeemTickets -= 1;
+          redemptionsAccepted += 1;
+        }
+      }
+
+      const dayRng = mulberry32(deriveDaySeed(seed, day));
+      const dailyCustomers = pickDailyItems(items, day, dayRng, DAILY_CUSTOMER_COUNT);
+
+      for (const item of dailyCustomers) {
+        const fairPrice = quotePrice(item.trueValue, 'fair', balance);
+        const lowPrice = quotePrice(item.trueValue, 'low', balance);
+
+        let chosenTier: 'fair' | 'low' | null = null;
+        if (money >= fairPrice + tightBuffer) {
+          chosenTier = 'fair';
+        } else if (money >= lowPrice) {
+          chosenTier = 'low';
+        }
+
+        if (chosenTier === null) {
+          continue;
+        }
+
+        const price = quotePrice(item.trueValue, chosenTier, balance);
+        const rate = getEffectiveAcceptRate(chosenTier, reputation, balance);
+        if (resolveOffer(rate, offerRng)) {
+          money -= price;
+          reputation += balance.tiers[chosenTier].reputationOnAccept;
+          deck.push(item.cardName);
+          pawnPrices = recordPawnPrice(pawnPrices, item.cardName, price);
+        }
+      }
+
+      // Night battle outcome using Monte Carlo demon win rate
+      const demonId = demonIdForDay(day);
+      const winRate = opts.demonWinRates[demonId];
+      const won = forceWinAllNights || nightRng() < winRate;
+      if (won) {
+        money += opts.winRewardMoney;
+        redeemTickets += 1;
+        wins += 1;
+      }
+
+      trajectory.push(money);
+    }
+
+    for (let d = 0; d < days; d += 1) {
+      moneyPerDayAll[d].push(trajectory[d]);
+    }
+    if (wins >= 5) {
+      for (let d = 0; d < days; d += 1) {
+        moneyPerDayWinners[d].push(trajectory[d]);
+      }
+    }
+
+    totalWinsSum += wins;
+    totalDeckSizeSum += deck.length;
+    totalRedemptionsSum += redemptionsAccepted;
+  }
+
+  return {
+    runs,
+    days,
+    winRewardMoney: opts.winRewardMoney,
+    avgMoneyByDay: moneyPerDayAll.map((arr) =>
+      arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0,
+    ),
+    medianMoneyByDay: moneyPerDayAll.map((arr) => median(arr)),
+    frequentWinnerAvgByDay: moneyPerDayWinners.map((arr) =>
+      arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0,
+    ),
+    frequentWinnerCount: moneyPerDayWinners[0]?.length ?? 0,
+    avgTotalWins: totalWinsSum / runs,
+    avgFinalDeckSize: totalDeckSizeSum / runs,
+    avgRedemptionsAccepted: totalRedemptionsSum / runs,
   };
 }

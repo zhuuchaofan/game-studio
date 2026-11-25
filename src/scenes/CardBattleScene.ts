@@ -8,6 +8,7 @@ import {
   canPlayCard,
   createBattle,
   endTurn,
+  formatEffectDescription,
   formatEffectShort,
   getIntent,
   playCard,
@@ -44,9 +45,25 @@ export interface CardBattleSceneData {
   tutorial?: TutorialState;
 }
 
-const HUD_HEIGHT = 21;
-const DEMON_X = 96;
-const DEMON_Y = 53;
+interface HandSlotView {
+  slotIndex: number;
+  currentHandIndex: number;
+  card: CardDef;
+  x: number;
+  y: number;
+  container: Phaser.GameObjects.Container;
+  frame: Phaser.GameObjects.Rectangle;
+  artImage: Phaser.GameObjects.Image;
+  costText: Phaser.GameObjects.BitmapText;
+  nameText: Phaser.GameObjects.BitmapText;
+  effectText: Phaser.GameObjects.BitmapText;
+  consumed: boolean;
+  queued: boolean;
+}
+
+const HUD_HEIGHT = 20;
+const DEMON_X = 76;
+const DEMON_Y = 44;
 const CARD_WIDTH = 48;
 const CARD_HEIGHT = 64;
 const HAND_Y = 144;
@@ -60,6 +77,7 @@ const FLY_DURATION_MS = 240;
 const AFTERIMAGE_MS = 83;
 const SHATTER_DURATION_MS = 380;
 const DEMON_ACT_MS = 180;
+const INTRO_BANNER_MS = 2400;
 
 const CARDS: readonly CardDef[] = cardsJson as CardDef[];
 const DEMONS: readonly DemonDef[] = demonsJson as DemonDef[];
@@ -96,11 +114,21 @@ export class CardBattleScene extends Phaser.Scene {
   private isAnimating = false;
   private isEmptyDeck = false;
   private feedbackMessage = '';
+  private inspectedCardName: string | null = null;
+
+  // A4：稳定手牌槽位与连点排队执行（动画期间手牌不移位、第二次点击进队不吞输入）
+  private handSlots: HandSlotView[] = [];
+  private playQueue: number[] = [];
+  private inFlightSlotIndex: number | null = null;
+  private queuedEndTurn = false;
 
   private hudLayer!: Phaser.GameObjects.Container;
   private demonLayer!: Phaser.GameObjects.Container;
+  private detailLayer!: Phaser.GameObjects.Container;
   private handLayer!: Phaser.GameObjects.Container;
   private fxLayer!: Phaser.GameObjects.Container;
+  private introBanner?: Phaser.GameObjects.Container;
+  private introBannerTimer?: Phaser.Time.TimerEvent;
   private tutorialBubble?: Phaser.GameObjects.Container;
   private feedbackText!: Phaser.GameObjects.BitmapText;
   private endTurnBg!: Phaser.GameObjects.Rectangle;
@@ -115,6 +143,13 @@ export class CardBattleScene extends Phaser.Scene {
     this.isAnimating = false;
     this.isEmptyDeck = false;
     this.feedbackMessage = '';
+    this.inspectedCardName = null;
+    this.handSlots = [];
+    this.playQueue = [];
+    this.inFlightSlotIndex = null;
+    this.queuedEndTurn = false;
+    this.introBanner = undefined;
+    this.introBannerTimer = undefined;
     this.tutorialBubble = undefined;
     this.save = data?.save ? { ...data.save, deck: [...data.save.deck] } : undefined;
     this.tutorial = data?.tutorial
@@ -176,7 +211,8 @@ export class CardBattleScene extends Phaser.Scene {
     // 测试钩子（仅供 E2E 自动化测试断言用，非正式功能）
     window.__BATTLE_DEBUG__ = {
       getState: () => ({
-        ...toBattleDebugSnapshot(this.state, this.isAnimating),
+        ...toBattleDebugSnapshot(this.state, this.isAnimating || this.playQueue.length > 0),
+        queuedCount: this.playQueue.length,
         day: this.save?.day ?? 1,
         shopLevel: this.save?.shopLevel ?? 1,
         tutorialActive: this.tutorial.active,
@@ -188,13 +224,58 @@ export class CardBattleScene extends Phaser.Scene {
 
     this.hudLayer = this.add.container(0, 0);
     this.demonLayer = this.add.container(0, 0);
+    this.detailLayer = this.add.container(0, 0);
     this.handLayer = this.add.container(0, 0);
-    this.fxLayer = this.add.container(0, 0);
+    this.fxLayer = this.add.container(0, 0).setDepth(50);
 
     this.createActionStrip();
     this.renderBattle();
+    this.showDemonIntroBanner();
     this.renderTutorialBubble();
     this.syncInputBounds();
+  }
+
+  private showDemonIntroBanner(): void {
+    this.dismissIntroBanner();
+    if (!this.state.demonIntroLine) {
+      return;
+    }
+
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const bannerY = 44;
+    const banner = this.add.container(0, 0).setDepth(90);
+
+    const bg = this.add
+      .rectangle(centerX, bannerY, 292, 36, PALETTE.nightBlack.num)
+      .setStrokeStyle(2, PALETTE.vermilion.num)
+      .setInteractive({ useHandCursor: true });
+    const title = addPixelText(this, centerX, bannerY - 8, `心魔「${this.state.demonName}」现身`, {
+      color: PALETTE.vermilion.hex,
+      origin: 0.5,
+    });
+    const line = addPixelText(this, centerX, bannerY + 8, this.state.demonIntroLine, {
+      color: PALETTE.paperWhite.hex,
+      origin: 0.5,
+    });
+
+    bg.on('pointerdown', () => this.dismissIntroBanner());
+    banner.add([bg, title, line]);
+    this.introBanner = banner;
+
+    this.introBannerTimer = this.time.delayedCall(INTRO_BANNER_MS, () => {
+      this.dismissIntroBanner();
+    });
+  }
+
+  private dismissIntroBanner(): void {
+    if (this.introBannerTimer) {
+      this.introBannerTimer.remove(false);
+      this.introBannerTimer = undefined;
+    }
+    if (this.introBanner) {
+      this.introBanner.destroy();
+      this.introBanner = undefined;
+    }
   }
 
   private renderTutorialBubble(): void {
@@ -228,31 +309,29 @@ export class CardBattleScene extends Phaser.Scene {
 
     // 左侧窗外夜色（夜黑 + 银蓝星月 + 夜蓝窗框）
     this.add
-      .rectangle(36, 48, 44, 38, PALETTE.nightBlack.num)
+      .rectangle(26, 44, 38, 34, PALETTE.nightBlack.num)
       .setStrokeStyle(1, PALETTE.nightBlue.num);
-    this.add.rectangle(26, 39, 6, 6, PALETTE.silverBlue.num);
-    this.add.rectangle(28, 39, 4, 4, PALETTE.nightBlack.num);
-    this.add.rectangle(46, 36, 2, 2, PALETTE.silverBlue.num);
-    this.add.rectangle(42, 46, 2, 2, PALETTE.mistBlue.num);
-    this.add.rectangle(36, 48, 2, 38, PALETTE.nightBlue.num);
-    this.add.rectangle(36, 48, 44, 2, PALETTE.nightBlue.num);
+    this.add.rectangle(18, 36, 5, 5, PALETTE.silverBlue.num);
+    this.add.rectangle(20, 36, 3, 3, PALETTE.nightBlack.num);
+    this.add.rectangle(34, 34, 2, 2, PALETTE.silverBlue.num);
+    this.add.rectangle(31, 42, 2, 2, PALETTE.mistBlue.num);
+    this.add.rectangle(26, 44, 2, 34, PALETTE.nightBlue.num);
+    this.add.rectangle(26, 44, 38, 2, PALETTE.nightBlue.num);
 
     // 右侧牌桌台灯（唯一暖色光源：黄铜灯罩 + 灯黄硬边色块光晕）
-    this.add.rectangle(288, 66, 28, 16, PALETTE.nightBlue.num);
-    this.add.rectangle(288, 56, 16, 4, PALETTE.lampYellow.num);
-    this.add.rectangle(288, 61, 22, 3, PALETTE.brass.num);
+    this.add.rectangle(292, 56, 26, 14, PALETTE.nightBlue.num);
+    this.add.rectangle(292, 48, 16, 4, PALETTE.lampYellow.num);
+    this.add.rectangle(292, 52, 20, 3, PALETTE.brass.num);
     this.add
-      .rectangle(288, 47, 22, 11, PALETTE.brass.num)
+      .rectangle(292, 39, 20, 10, PALETTE.brass.num)
       .setStrokeStyle(1, PALETTE.nightBlack.num);
-    this.add.rectangle(288, 44, 14, 3, PALETTE.lampYellow.num);
-    this.add.rectangle(288, 64, 4, 18, PALETTE.nightBlack.num);
-    this.add.rectangle(288, 74, 16, 4, PALETTE.brass.num);
+    this.add.rectangle(292, 36, 12, 3, PALETTE.lampYellow.num);
+    this.add.rectangle(292, 54, 4, 14, PALETTE.nightBlack.num);
+    this.add.rectangle(292, 62, 16, 4, PALETTE.brass.num);
 
     // 牌桌桌面（冷色深蓝/夜蓝/夜黑）
-    this.add.rectangle(centerX, 83, BASE_WIDTH, 3, PALETTE.nightBlue.num);
-    this.add.rectangle(centerX, 85, BASE_WIDTH, 1, PALETTE.nightBlack.num);
-    this.add.rectangle(centerX, 133, BASE_WIDTH, 94, PALETTE.deepBlue.num);
-    this.add.rectangle(centerX, 108, BASE_WIDTH, 1, PALETTE.nightBlue.num);
+    this.add.rectangle(centerX, 66, BASE_WIDTH, 2, PALETTE.nightBlue.num);
+    this.add.rectangle(centerX, 110, BASE_WIDTH, 1, PALETTE.nightBlue.num);
     this.add.rectangle(centerX, 178, BASE_WIDTH, 4, PALETTE.nightBlack.num);
   }
 
@@ -274,6 +353,7 @@ export class CardBattleScene extends Phaser.Scene {
         result: 'empty_deck',
         demonId: demon?.id ?? demonId,
         demonName: demon?.name ?? '',
+        demonIntroLine: demon?.introLine ?? '',
         intent: { current: null, next: null, upcomingSkill: null },
         isAnimating: false,
         day: this.save?.day ?? 1,
@@ -320,7 +400,7 @@ export class CardBattleScene extends Phaser.Scene {
   }
 
   private createActionStrip(): void {
-    this.feedbackText = addPixelText(this, 6, END_TURN_Y, '', {
+    this.feedbackText = addPixelText(this, 6, 104, '', {
       color: PALETTE.silverBlue.hex,
       origin: [0, 0.5],
     });
@@ -354,9 +434,14 @@ export class CardBattleScene extends Phaser.Scene {
     this.renderHud();
     this.renderDemonArea();
     this.renderHand();
+    this.renderCardDetailPanel();
     this.feedbackText.setText(this.feedbackMessage);
 
-    const canEnd = !this.isAnimating && this.state.phase === 'play' && this.state.result === 'ongoing';
+    const canEnd =
+      !this.isAnimating &&
+      this.playQueue.length === 0 &&
+      this.state.phase === 'play' &&
+      this.state.result === 'ongoing';
     this.endTurnBg.setFillStyle(canEnd ? PALETTE.nightBlack.num : PALETTE.deepBlue.num);
     this.endTurnLabel.setTint(canEnd ? PALETTE.paperWhite.num : PALETTE.mistBlue.num);
   }
@@ -417,10 +502,10 @@ export class CardBattleScene extends Phaser.Scene {
   private renderDemonArea(): void {
     this.demonLayer.removeAll(true);
 
-    // 心魔 32×32 真像素插画框（48x48，1 像素夜黑描边）
+    // 心魔 32×32 真像素插画框（40×40，1 像素夜蓝描边）
     this.demonLayer.add(
       this.add
-        .rectangle(DEMON_X, DEMON_Y, 48, 48, PALETTE.nightBlack.num)
+        .rectangle(DEMON_X, DEMON_Y, 40, 40, PALETTE.nightBlack.num)
         .setStrokeStyle(1, PALETTE.nightBlue.num),
     );
 
@@ -428,71 +513,70 @@ export class CardBattleScene extends Phaser.Scene {
     const demonTexKey = pixelRowsToTexture(this, `demon-art-${this.state.demonId}`, demonRows);
     this.demonLayer.add(this.add.image(DEMON_X, DEMON_Y, demonTexKey).setOrigin(0.5));
 
-    // 心魔信息与意图面板
-    const panelX = 190;
-    const panelY = 53;
+    // 心魔信息与意图面板（紧凑布局 y=23..65，为下方卡面故事与效果区留足空间）
+    const panelX = 186;
+    const panelY = 44;
     this.demonLayer.add(
       this.add
-        .rectangle(panelX, panelY, 128, 56, PALETTE.nightBlack.num)
+        .rectangle(panelX, panelY, 166, 42, PALETTE.nightBlack.num)
         .setStrokeStyle(1, PALETTE.nightBlue.num),
     );
 
     this.demonLayer.add(
-      addPixelText(this, 130, 29, `心魔:${this.state.demonName}`, {
+      addPixelText(this, 108, 25, `心魔:${this.state.demonName}`, {
         color: PALETTE.paperWhite.hex,
         origin: [0, 0],
       }),
     );
 
     this.demonLayer.add(
-      addPixelText(this, 250, 29, `血${this.state.demonHp}/${this.state.demonMaxHp}`, {
+      addPixelText(this, 264, 25, `血${this.state.demonHp}/${this.state.demonMaxHp}`, {
         color: PALETTE.lampYellow.hex,
         origin: [1, 0],
       }),
     );
 
     // 心魔血条
-    const barW = 118;
+    const barW = 156;
     const barRatio = this.state.demonMaxHp > 0 ? this.state.demonHp / this.state.demonMaxHp : 0;
     const fillW = Math.max(0, Math.round(barW * barRatio));
-    this.demonLayer.add(this.add.rectangle(190, 45, barW, 4, PALETTE.deepBlue.num));
+    this.demonLayer.add(this.add.rectangle(186, 39, barW, 3, PALETTE.deepBlue.num));
     if (fillW > 0) {
       this.demonLayer.add(
-        this.add.rectangle(131 + Math.floor(fillW / 2), 45, fillW, 4, PALETTE.vermilion.num),
+        this.add.rectangle(108 + Math.floor(fillW / 2), 39, fillW, 3, PALETTE.vermilion.num),
       );
     }
 
-    // 本回合意图（朱红 = 危险技能，雾蓝 = 普通攻击）
+    // 本回合意图（左）+ 预告/状态（右）
     const intent = getIntent(this.state);
     if (intent.current) {
       const isDanger = Boolean(intent.current.skill);
       const currentLabel = intent.current.skill
         ? `意图:${intent.current.skill}${intent.current.damage}伤`
-        : `意图:攻击${intent.current.damage}伤`;
+        : `意图:攻${intent.current.damage}伤`;
       this.demonLayer.add(
-        addPixelText(this, 130, 50, currentLabel, {
+        addPixelText(this, 108, 45, currentLabel, {
           color: isDanger ? PALETTE.vermilion.hex : PALETTE.mistBlue.hex,
           origin: [0, 0],
         }),
       );
     }
 
-    // 提前提示（车票第 3 回合“远行” 或 收音机 reveal）
     if (intent.upcomingSkill) {
       this.demonLayer.add(
-        addPixelText(this, 130, 65, `下回:${intent.upcomingSkill.skill}${intent.upcomingSkill.damage}伤`, {
+        addPixelText(this, 264, 45, `下回:${intent.upcomingSkill.skill}${intent.upcomingSkill.damage}`, {
           color: PALETTE.vermilion.hex,
-          origin: [0, 0],
+          origin: [1, 0],
         }),
       );
     } else if (intent.next) {
       const nextLabel = intent.next.skill
-        ? `下回:${intent.next.skill}${intent.next.damage}伤`
-        : `下回:攻击${intent.next.damage}伤`;
+        ? `下回:${intent.next.skill}${intent.next.damage}`
+        : `下回:攻${intent.next.damage}`;
       this.demonLayer.add(
-        addPixelText(this, 130, 65, nextLabel, {
+        addPixelText(this, 264, 45, nextLabel, {
           color: intent.next.skill ? PALETTE.vermilion.hex : PALETTE.mistBlue.hex,
-          origin: [0, 0],
+          origin: [1, 0],
         }),
       );
     } else {
@@ -508,17 +592,67 @@ export class CardBattleScene extends Phaser.Scene {
       }
       if (badges.length > 0) {
         this.demonLayer.add(
-          addPixelText(this, 130, 65, `状态:${badges.join(' ')}`, {
+          addPixelText(this, 264, 45, badges.join(' '), {
             color: PALETTE.jade.hex,
-            origin: [0, 0],
+            origin: [1, 0],
           }),
         );
       }
     }
   }
 
+  /**
+   * C1：牌局卡面故事 + 效果说明区（同时显示 story 与一行完整效果说明，倒转清晰写明双方回血）。
+   * 悬停任意手牌即时切换，默认展示手牌中首张（若含“倒转”优先便于一目了然）。
+   */
+  private renderCardDetailPanel(): void {
+    this.detailLayer.removeAll(true);
+
+    let cardName = this.inspectedCardName;
+    if (!cardName || !this.state.hand.includes(cardName)) {
+      cardName = this.state.hand[0] ?? null;
+      this.inspectedCardName = cardName;
+    }
+
+    if (!cardName) {
+      return;
+    }
+
+    const card = this.state.cardsByName.get(cardName);
+    if (!card) {
+      return;
+    }
+
+    // 上条（全宽 y=68..82，位于“结束回合”上方）：完整展示 story（所有 23 张均单行完整可见）
+    this.detailLayer.add(
+      this.add
+        .rectangle(Math.floor(BASE_WIDTH / 2), 75, BASE_WIDTH - 8, 14, PALETTE.nightBlack.num)
+        .setStrokeStyle(1, PALETTE.nightBlue.num),
+    );
+    this.detailLayer.add(
+      addPixelText(this, 8, 75, card.story, {
+        color: PALETTE.candle.hex,
+        origin: [0, 0.5],
+      }),
+    );
+
+    // 下左条（y=84..98，位于“结束回合”左侧）：牌名 + 完整效果说明
+    this.detailLayer.add(
+      this.add
+        .rectangle(126, 91, 244, 14, PALETTE.nightBlack.num)
+        .setStrokeStyle(1, PALETTE.brass.num),
+    );
+    this.detailLayer.add(
+      addPixelText(this, 8, 91, `${card.name}:${formatEffectDescription(card)}`, {
+        color: PALETTE.lampYellow.hex,
+        origin: [0, 0.5],
+      }),
+    );
+  }
+
   private renderHand(): void {
     this.handLayer.removeAll(true);
+    this.handSlots = [];
 
     const count = this.state.hand.length;
     this.state.hand.forEach((cardName, index) => {
@@ -529,7 +663,7 @@ export class CardBattleScene extends Phaser.Scene {
 
       const x = computeHandCardX(index, count);
       const y = HAND_Y;
-      const playable = !this.isAnimating && canPlayCard(this.state, index);
+      const playable = canPlayCard(this.state, index);
       const stripColor = card.color ? parseHexColor(card.color) : PALETTE.brass.num;
 
       const cardContainer = this.add.container(x, y);
@@ -543,7 +677,7 @@ export class CardBattleScene extends Phaser.Scene {
       // 顶部 2px 旧物主色条
       const strip = this.add.rectangle(0, -30, CARD_WIDTH - 2, 2, stripColor);
 
-      // 32×32 手绘像素插画（居中偏上，位于牌框 48×64 内）
+      // 32×32 手绘像素插画
       const cardRows = CARD_PIXEL_ART[card.id] ?? CARD_PIXEL_ART.old_book;
       const artKey = pixelRowsToTexture(this, `card-art-${card.id}`, cardRows);
       const artImage = this.add.image(0, -11, artKey).setOrigin(0.5);
@@ -560,7 +694,7 @@ export class CardBattleScene extends Phaser.Scene {
         origin: 0.5,
       });
 
-      // 下方牌名与效果文字区（12px 位图字体）
+      // 下方牌名与短效果
       const nameText = addPixelText(this, 0, 12, card.name, {
         color: playable ? PALETTE.ink.hex : PALETTE.nightBlack.hex,
         origin: 0.5,
@@ -574,38 +708,190 @@ export class CardBattleScene extends Phaser.Scene {
 
       cardContainer.add([frame, strip, artImage, costBg, costText, nameText, effectText]);
 
-      if (playable) {
-        frame.setInteractive({ useHandCursor: true });
-        frame.on('pointerover', () => {
-          if (!this.isAnimating) {
-            cardContainer.y = HAND_Y - 4;
-            frame.setStrokeStyle(1, PALETTE.lampYellow.num);
-          }
-        });
-        frame.on('pointerout', () => {
-          cardContainer.y = HAND_Y;
-          frame.setStrokeStyle(1, PALETTE.ink.num);
-        });
-        frame.on('pointerdown', () => {
-          this.handlePlayCard(index, x, y, card);
-        });
-      }
+      const slotView: HandSlotView = {
+        slotIndex: index,
+        currentHandIndex: index,
+        card,
+        x,
+        y,
+        container: cardContainer,
+        frame,
+        artImage,
+        costText,
+        nameText,
+        effectText,
+        consumed: false,
+        queued: false,
+      };
+      this.handSlots.push(slotView);
+
+      // 所有手牌均响应悬停以展示故事与效果说明（C1），点击走统一稳定槽位队列（A4）
+      frame.setInteractive({ useHandCursor: playable });
+      frame.on('pointerover', () => {
+        if (slotView.consumed) {
+          return;
+        }
+        this.inspectedCardName = card.name;
+        this.renderCardDetailPanel();
+        if (!slotView.queued && this.canQueueOrPlaySlot(slotView)) {
+          cardContainer.y = HAND_Y - 4;
+          frame.setStrokeStyle(1, PALETTE.lampYellow.num);
+        }
+      });
+      frame.on('pointerout', () => {
+        if (slotView.consumed || slotView.queued) {
+          return;
+        }
+        cardContainer.y = HAND_Y;
+        const canUse = this.canQueueOrPlaySlot(slotView);
+        frame.setStrokeStyle(1, canUse ? PALETTE.ink.num : PALETTE.nightBlack.num);
+      });
+      frame.on('pointerdown', () => {
+        this.handleSlotClick(slotView.slotIndex);
+      });
 
       this.handLayer.add(cardContainer);
     });
   }
 
-  private handlePlayCard(index: number, fromX: number, fromY: number, card: CardDef): void {
-    if (this.isAnimating || !canPlayCard(this.state, index)) {
+  /**
+   * Computes projected remaining renqing & hand size after currently in-flight + queued plays,
+   * so rapid consecutive clicks are validated accurately before queuing (A4).
+   */
+  private getProjectedResources(): { renqing: number; handCount: number } {
+    let renqing = this.state.renqing;
+    let handCount = this.state.hand.length;
+
+    const pendingIndices: number[] = [];
+    if (this.inFlightSlotIndex !== null) {
+      pendingIndices.push(this.inFlightSlotIndex);
+    }
+    for (const q of this.playQueue) {
+      pendingIndices.push(q);
+    }
+
+    for (const slotIdx of pendingIndices) {
+      const slot = this.handSlots[slotIdx];
+      if (!slot) {
+        continue;
+      }
+      renqing -= slot.card.cost;
+      handCount -= 1;
+      for (const eff of slot.card.effects) {
+        if (eff.type === 'renqing') {
+          renqing += eff.value ?? 0;
+        } else if (eff.type === 'discard_for_renqing') {
+          renqing += eff.value ?? 0;
+          handCount -= 1;
+        } else if (eff.type === 'draw') {
+          handCount += eff.value ?? 0;
+        }
+      }
+    }
+
+    return { renqing, handCount };
+  }
+
+  private canQueueOrPlaySlot(slot: HandSlotView): boolean {
+    if (slot.consumed || slot.queued || slot.currentHandIndex < 0) {
+      return false;
+    }
+    if (this.state.phase !== 'play' || this.state.result !== 'ongoing') {
+      return false;
+    }
+    if (!this.isAnimating) {
+      return canPlayCard(this.state, slot.currentHandIndex);
+    }
+    const projected = this.getProjectedResources();
+    if (projected.renqing < slot.card.cost) {
+      return false;
+    }
+    const requiresOther = slot.card.effects.some((e) => e.type === 'discard_for_renqing');
+    if (requiresOther && projected.handCount < 2) {
+      return false;
+    }
+    return true;
+  }
+
+  private refreshHandSlotsInPlace(): void {
+    for (const slot of this.handSlots) {
+      if (slot.consumed) {
+        slot.container.setVisible(false);
+        continue;
+      }
+      if (slot.queued) {
+        slot.container.y = HAND_Y - 5;
+        slot.frame.setFillStyle(PALETTE.candle.num);
+        slot.frame.setStrokeStyle(1, PALETTE.lampYellow.num);
+        continue;
+      }
+      const playable = this.canQueueOrPlaySlot(slot);
+      slot.container.y = HAND_Y;
+      slot.frame.setFillStyle(playable ? PALETTE.paperWhite.num : PALETTE.mistBlue.num);
+      slot.frame.setStrokeStyle(1, playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
+      if (playable) {
+        slot.artImage.clearTint();
+      } else {
+        slot.artImage.setTint(PALETTE.silverBlue.num);
+      }
+      slot.costText.setTint(playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
+      slot.nameText.setTint(playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
+      slot.effectText.setTint(playable ? PALETTE.deepWood.num : PALETTE.nightBlack.num);
+    }
+  }
+
+  private handleSlotClick(slotIndex: number): void {
+    const slot = this.handSlots[slotIndex];
+    if (!slot || slot.consumed || slot.queued) {
       return;
     }
+
+    this.dismissIntroBanner();
+    this.inspectedCardName = slot.card.name;
+    this.renderCardDetailPanel();
+
+    if (!this.canQueueOrPlaySlot(slot)) {
+      return;
+    }
+
+    if (this.isAnimating) {
+      // A4：动画进行中将第二次点击排队，给出抬起 + 灯黄描边反馈，且不破坏其他手牌坐标
+      slot.queued = true;
+      this.playQueue.push(slotIndex);
+      audio.unlock();
+      audio.playSfx('button_click');
+      this.refreshHandSlotsInPlace();
+      return;
+    }
+
+    this.launchSlotAnimation(slotIndex);
+  }
+
+  private launchSlotAnimation(slotIndex: number): void {
+    const slot = this.handSlots[slotIndex];
+    if (!slot || slot.currentHandIndex < 0 || !canPlayCard(this.state, slot.currentHandIndex)) {
+      this.drainNextQueuedPlay();
+      return;
+    }
+
+    const card = slot.card;
+    const fromX = slot.x;
+    const fromY = slot.y;
 
     audio.unlock();
     audio.playSfx('play_card');
     this.isAnimating = true;
-    this.renderBattle();
+    this.inFlightSlotIndex = slotIndex;
+    slot.consumed = true;
+    slot.queued = false;
+    slot.container.setVisible(false);
 
-    // 1 帧“残影牌”色块（旧纸色实心，无半透明，符合 ART_STYLE.md）
+    // 保持其余手牌原位不动（不重排、不销毁重建，消除连点移位与 Phaser 帧末输入丢弃）
+    this.refreshHandSlotsInPlace();
+    this.endTurnBg.setFillStyle(PALETTE.deepBlue.num);
+    this.endTurnLabel.setTint(PALETTE.mistBlue.num);
+
+    // 1 帧“残影牌”色块（旧纸色实心，无半透明）
     const afterimage = this.add
       .rectangle(fromX, fromY, CARD_WIDTH, CARD_HEIGHT, PALETTE.oldPaper.num)
       .setStrokeStyle(1, PALETTE.ink.num);
@@ -637,10 +923,19 @@ export class CardBattleScene extends Phaser.Scene {
       ease: 'Linear',
       onComplete: () => {
         flyingCard.destroy();
-        this.state = playCard(this.state, index);
-        this.feedbackMessage = `打出 ${card.name}（${formatEffectShort(card)}）`;
+        this.inFlightSlotIndex = null;
+
+        const actualIndex = slot.currentHandIndex;
+        if (actualIndex >= 0 && canPlayCard(this.state, actualIndex)) {
+          const hadDiscard = card.effects.some((e) => e.type === 'discard_for_renqing');
+          this.state = playCard(this.state, actualIndex);
+          this.syncSlotIndicesAfterPlay(slotIndex, actualIndex, hadDiscard);
+          this.feedbackMessage = `打出 ${card.name}（${formatEffectShort(card)}）`;
+        }
 
         if (this.state.result === 'win') {
+          this.playQueue = [];
+          this.queuedEndTurn = false;
           this.renderHud();
           this.renderHand();
           this.feedbackText.setText(`击败心魔「${this.state.demonName}」！`);
@@ -648,14 +943,73 @@ export class CardBattleScene extends Phaser.Scene {
           return;
         }
 
-        this.isAnimating = false;
-        this.renderBattle();
+        this.drainNextQueuedPlay();
       },
     });
   }
 
+  private syncSlotIndicesAfterPlay(
+    playedSlotIndex: number,
+    playedHandIndex: number,
+    hadDiscardForRenqing: boolean,
+  ): void {
+    for (const s of this.handSlots) {
+      if (s.slotIndex === playedSlotIndex) {
+        s.currentHandIndex = -1;
+      } else if (s.currentHandIndex > playedHandIndex) {
+        s.currentHandIndex -= 1;
+      }
+    }
+
+    if (hadDiscardForRenqing) {
+      // discard_for_renqing shifts hand[0] into discardPile
+      for (const s of this.handSlots) {
+        if (s.currentHandIndex === 0) {
+          s.currentHandIndex = -1;
+          s.consumed = true;
+          s.queued = false;
+          s.container.setVisible(false);
+          this.playQueue = this.playQueue.filter((q) => q !== s.slotIndex);
+        } else if (s.currentHandIndex > 0) {
+          s.currentHandIndex -= 1;
+        }
+      }
+    }
+  }
+
+  private drainNextQueuedPlay(): void {
+    while (this.playQueue.length > 0 && this.state.result === 'ongoing') {
+      const nextSlotIndex = this.playQueue.shift()!;
+      const nextSlot = this.handSlots[nextSlotIndex];
+      if (nextSlot && nextSlot.currentHandIndex >= 0 && canPlayCard(this.state, nextSlot.currentHandIndex)) {
+        this.renderHud();
+        this.renderDemonArea();
+        this.feedbackText.setText(this.feedbackMessage);
+        this.launchSlotAnimation(nextSlotIndex);
+        return;
+      }
+    }
+
+    this.isAnimating = false;
+    if (this.queuedEndTurn && this.state.phase === 'play' && this.state.result === 'ongoing') {
+      this.queuedEndTurn = false;
+      this.renderBattle();
+      this.handleEndTurn();
+      return;
+    }
+
+    this.renderBattle();
+  }
+
   private handleEndTurn(): void {
-    if (this.isAnimating || this.state.phase !== 'play' || this.state.result !== 'ongoing') {
+    if (this.state.phase !== 'play' || this.state.result !== 'ongoing') {
+      return;
+    }
+
+    this.dismissIntroBanner();
+
+    if (this.isAnimating) {
+      this.queuedEndTurn = true;
       return;
     }
 
@@ -669,7 +1023,7 @@ export class CardBattleScene extends Phaser.Scene {
 
     // 简短心魔行动反馈动画
     const flashColor = wasReflecting ? PALETTE.jade.num : PALETTE.vermilion.num;
-    const flash = this.add.rectangle(DEMON_X, DEMON_Y, 48, 48, flashColor);
+    const flash = this.add.rectangle(DEMON_X, DEMON_Y, 40, 40, flashColor);
     this.fxLayer.add(flash);
 
     this.time.delayedCall(DEMON_ACT_MS, () => {
@@ -708,6 +1062,7 @@ export class CardBattleScene extends Phaser.Scene {
 
   private playDemonShatterAndFinish(): void {
     // 隐藏心魔剪影，生成 8×8 像素块在 12 帧内散开，并配清脆“叮”声（GDD 第 95 行）
+    this.dismissIntroBanner();
     audio.playSfx('demon_defeated');
     this.demonLayer.removeAll(true);
 
@@ -786,6 +1141,7 @@ export class CardBattleScene extends Phaser.Scene {
     window.addEventListener('resize', refresh);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.dismissIntroBanner();
       if (this.handleWindowResize) {
         window.removeEventListener('resize', this.handleWindowResize);
         this.handleWindowResize = undefined;

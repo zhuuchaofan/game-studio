@@ -1,10 +1,17 @@
 import balanceJson from '../data/balance.json';
 import itemsJson from '../data/items.json';
 import { hashSeed, type RngFn } from '../utils/rng';
+import {
+  clonePawnPrices,
+  consumePawnPrice,
+  peekPawnPrice,
+  recordPawnPrice,
+  type PawnPriceLedger,
+} from './save';
 
 export type OfferTier = 'low' | 'fair' | 'high';
 
-export type PawnshopPhase = 'negotiating' | 'feedback' | 'summary';
+export type PawnshopPhase = 'redemption' | 'negotiating' | 'feedback' | 'summary';
 
 export type DebugPhase = 'title' | PawnshopPhase;
 
@@ -44,6 +51,14 @@ export interface OfferOutcome {
   message: string;
 }
 
+export interface RedemptionOffer {
+  item: PawnItem;
+  deckIndex: number;
+  cardName: string;
+  basePrice: number;
+  payout: number;
+}
+
 export interface PawnshopState {
   day: number;
   phase: PawnshopPhase;
@@ -54,6 +69,9 @@ export interface PawnshopState {
   log: string[];
   items: PawnItem[];
   lastOutcome: OfferOutcome | null;
+  redeemTickets?: number;
+  pawnPrices?: PawnPriceLedger;
+  redemptionOffer?: RedemptionOffer | null;
 }
 
 export interface PawnshopInitialOptions {
@@ -63,6 +81,9 @@ export interface PawnshopInitialOptions {
   deck?: readonly string[];
   items?: readonly PawnItem[];
   balance?: BalanceConfig;
+  redeemTickets?: number;
+  pawnPrices?: PawnPriceLedger;
+  redemptionOffer?: RedemptionOffer | null;
 }
 
 export interface PawnshopDebugSnapshot {
@@ -80,8 +101,20 @@ export interface PawnshopDebugSnapshot {
   hasSave?: boolean;
   /** 当前当客每档报价是否买得起（仅 negotiating 阶段由场景钩子提供）。 */
   tierAffordability?: Record<OfferTier, boolean>;
+  /** 当前口碑修正后的三档接受率（仅 negotiating 阶段由场景钩子提供）。 */
+  effectiveAcceptRates?: Record<OfferTier, number>;
   /** 当前当客是否允许跳过（仅 negotiating 阶段为 true）。 */
   canSkip?: boolean;
+  /** 最近一次界面轻提示文案（如钱不够，供 E2E 断言用）。 */
+  lastToast?: string | null;
+  /** 当前赎当事件信息（仅 redemption 阶段由场景钩子提供）。 */
+  redemptionOffer?: {
+    itemId: string;
+    itemName: string;
+    cardName: string;
+    basePrice: number;
+    payout: number;
+  } | null;
   /** 新手教程状态（供 E2E 测试断言用）。 */
   tutorialActive?: boolean;
   currentStep?: string | null;
@@ -142,6 +175,12 @@ export const BALANCE: BalanceConfig = {
 
 export const DAILY_CUSTOMER_COUNT = 3;
 
+/** 第 1 天当客池保底：至少 1 件出伤害牌的旧物（永久自行车→飞驰 / 二胡→余音，P6 B2）。 */
+export const DAY1_GUARANTEED_DAMAGE_ITEM_IDS: readonly string[] = ['bicycle', 'erhu'];
+
+/** P6 C4 赎当倍率：当价 × 1.2 */
+export const REDEMPTION_PRICE_MULTIPLIER = 1.2;
+
 export const ITEMS: readonly PawnItem[] = itemsJson.map((item) => ({ ...item }));
 
 /**
@@ -193,6 +232,47 @@ export function hasAnyAffordableTier(
 }
 
 /**
+ * Computes effective customer acceptance rate taking reputation into account (P6 C3):
+ * - low:  30% + 5% * reputation, clamped to [10%, 60%]
+ * - fair: 80% + 2% * reputation, clamped to [50%, 95%]
+ * - high: 100% (unchanged)
+ */
+export function getEffectiveAcceptRate(
+  tier: OfferTier,
+  reputation: number,
+  balance: BalanceConfig = BALANCE,
+): number {
+  const base = balance.tiers[tier].acceptRate;
+  if (tier === 'high') {
+    return base;
+  }
+  if (tier === 'low') {
+    const raw = base + 0.05 * reputation;
+    return Math.round(Math.min(0.6, Math.max(0.1, raw)) * 10000) / 10000;
+  }
+  const raw = base + 0.02 * reputation;
+  return Math.round(Math.min(0.95, Math.max(0.5, raw)) * 10000) / 10000;
+}
+
+/**
+ * Formats the daytime offer-area reputation modifier hint (P6 C3).
+ */
+export function formatReputationHint(
+  reputation: number,
+  balance: BalanceConfig = BALANCE,
+): string {
+  const lowPct = Math.round(getEffectiveAcceptRate('low', reputation, balance) * 100);
+  const fairPct = Math.round(getEffectiveAcceptRate('fair', reputation, balance) * 100);
+  if (reputation > 0) {
+    return `口碑${reputation}：当客更容易接受(低${lowPct}%/平${fairPct}%)`;
+  }
+  if (reputation < 0) {
+    return `口碑${reputation}：当客更难接受(低${lowPct}%/平${fairPct}%)`;
+  }
+  return `口碑0：正常接受率(低${lowPct}%/平${fairPct}%)`;
+}
+
+/**
  * Resolves whether a customer accepts an offer given the acceptance rate in [0, 1].
  */
 export function resolveOffer(rate: number, rng: RngFn): boolean {
@@ -213,6 +293,13 @@ export function deriveDaySeed(baseSeed: number, day: number): number {
 }
 
 /**
+ * Derives a deterministic seed for the daily redemption check (isolated from shuffle & offer RNG).
+ */
+export function deriveRedemptionSeed(baseSeed: number, day: number): number {
+  return hashSeed(`${baseSeed >>> 0}:redeem:${day}`);
+}
+
+/**
  * Pure Fisher-Yates shuffle returning a new array of cloned PawnItems.
  */
 export function shuffleItems(items: readonly PawnItem[], rng: RngFn): PawnItem[] {
@@ -224,6 +311,88 @@ export function shuffleItems(items: readonly PawnItem[], rng: RngFn): PawnItem[]
     result[j] = tmp;
   }
   return result;
+}
+
+/**
+ * Picks daily customers (default 3) via Fisher-Yates shuffle.
+ * On Day 1 (P6 B2), guarantees at least 1 damage-card item (bicycle/erhu) appears:
+ * if the top slice has none, swaps the last slot with the first damage item in the remainder.
+ */
+export function pickDailyItems(
+  items: readonly PawnItem[],
+  day: number,
+  rng: RngFn,
+  count: number = DAILY_CUSTOMER_COUNT,
+): PawnItem[] {
+  const shuffled = shuffleItems(items, rng);
+  const picked = shuffled.slice(0, count);
+
+  if (day === 1 && picked.length > 0) {
+    const hasDamageItem = picked.some((item) =>
+      DAY1_GUARANTEED_DAMAGE_ITEM_IDS.includes(item.id),
+    );
+    if (!hasDamageItem) {
+      const replacement = shuffled
+        .slice(count)
+        .find((item) => DAY1_GUARANTEED_DAMAGE_ITEM_IDS.includes(item.id));
+      if (replacement) {
+        picked[picked.length - 1] = replacement;
+      }
+    }
+  }
+
+  return picked;
+}
+
+/**
+ * Creates a redemption offer at the start of a day (P6 C4) if:
+ * - player holds >= 1 redeemTicket, AND
+ * - deck contains at least 1 card originating from a pawnshop item (items.json).
+ * Picks one eligible card uniformly via `rng`; basePrice uses recorded deal price if available,
+ * otherwise falls back to item's trueValue. Payout = round(basePrice * 1.2).
+ */
+export function createRedemptionOffer(
+  deck: readonly string[],
+  redeemTickets: number,
+  pawnPrices: PawnPriceLedger,
+  rng: RngFn,
+  items: readonly PawnItem[] = ITEMS,
+): RedemptionOffer | null {
+  if (redeemTickets < 1 || deck.length === 0) {
+    return null;
+  }
+
+  const itemByCard = new Map<string, PawnItem>();
+  for (const item of items) {
+    itemByCard.set(item.cardName, item);
+  }
+
+  const candidates: { deckIndex: number; cardName: string; item: PawnItem }[] = [];
+  for (let i = 0; i < deck.length; i += 1) {
+    const cardName = deck[i];
+    const matched = itemByCard.get(cardName);
+    if (matched) {
+      candidates.push({ deckIndex: i, cardName, item: matched });
+    }
+  }
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const pickedIdx = Math.floor(rng() * candidates.length);
+  const chosen = candidates[Math.min(pickedIdx, candidates.length - 1)];
+  const recorded = peekPawnPrice(pawnPrices, chosen.cardName);
+  const basePrice = recorded !== null ? recorded : chosen.item.trueValue;
+  const payout = Math.round(basePrice * REDEMPTION_PRICE_MULTIPLIER);
+
+  return {
+    item: { ...chosen.item },
+    deckIndex: chosen.deckIndex,
+    cardName: chosen.cardName,
+    basePrice,
+    payout,
+  };
 }
 
 function isBalanceConfig(value: unknown): value is BalanceConfig {
@@ -256,10 +425,11 @@ export function createInitialState(
   const opts = initialOrBalance ?? {};
   const balance = opts.balance ?? BALANCE;
   const items = opts.items ?? legacyItems ?? ITEMS.slice(0, DAILY_CUSTOMER_COUNT);
+  const redemptionOffer = opts.redemptionOffer ?? null;
 
   return {
     day: opts.day ?? 1,
-    phase: 'negotiating',
+    phase: redemptionOffer ? 'redemption' : 'negotiating',
     customerIndex: 0,
     money: opts.money ?? balance.startingMoney,
     reputation: opts.reputation ?? balance.startingReputation,
@@ -267,6 +437,71 @@ export function createInitialState(
     log: [],
     items: items.map((item) => ({ ...item })),
     lastOutcome: null,
+    ...(opts.redeemTickets !== undefined ? { redeemTickets: opts.redeemTickets } : {}),
+    ...(opts.pawnPrices !== undefined ? { pawnPrices: clonePawnPrices(opts.pawnPrices) } : {}),
+    ...(redemptionOffer !== null ? { redemptionOffer: { ...redemptionOffer, item: { ...redemptionOffer.item } } } : {}),
+  };
+}
+
+/**
+ * Resolves the pre-day redemption event (P6 C4), transitioning cleanly to negotiating.
+ * - Accept: card leaves deck, money += payout (basePrice * 1.2), reputation +1, redeemTickets -1.
+ * - Reject: nothing changes, redeemTickets preserved.
+ */
+export function resolveRedemption(state: PawnshopState, accept: boolean): PawnshopState {
+  const offer = state.redemptionOffer ?? null;
+  if (state.phase !== 'redemption' || !offer) {
+    return {
+      ...state,
+      deck: [...state.deck],
+      log: [...state.log],
+      items: state.items.map((item) => ({ ...item })),
+      lastOutcome: state.lastOutcome ? { ...state.lastOutcome } : null,
+      ...(state.pawnPrices ? { pawnPrices: clonePawnPrices(state.pawnPrices) } : {}),
+    };
+  }
+
+  const currentTickets = state.redeemTickets ?? 0;
+  const currentPrices = clonePawnPrices(state.pawnPrices);
+
+  if (!accept || currentTickets < 1) {
+    return {
+      ...state,
+      phase: 'negotiating',
+      deck: [...state.deck],
+      log: [...state.log, `赎当:${offer.item.name}->拒绝`],
+      items: state.items.map((item) => ({ ...item })),
+      lastOutcome: null,
+      redeemTickets: currentTickets,
+      pawnPrices: currentPrices,
+      redemptionOffer: null,
+    };
+  }
+
+  const nextDeck = [...state.deck];
+  if (offer.deckIndex >= 0 && offer.deckIndex < nextDeck.length && nextDeck[offer.deckIndex] === offer.cardName) {
+    nextDeck.splice(offer.deckIndex, 1);
+  } else {
+    const fallbackIdx = nextDeck.indexOf(offer.cardName);
+    if (fallbackIdx >= 0) {
+      nextDeck.splice(fallbackIdx, 1);
+    }
+  }
+
+  const nextPrices = consumePawnPrice(currentPrices, offer.cardName);
+
+  return {
+    ...state,
+    phase: 'negotiating',
+    money: state.money + offer.payout,
+    reputation: state.reputation + 1,
+    deck: nextDeck,
+    log: [...state.log, `赎当:${offer.item.name}(+${offer.payout},牌-${offer.cardName},口碑+1,券-1)`],
+    items: state.items.map((item) => ({ ...item })),
+    lastOutcome: null,
+    redeemTickets: currentTickets - 1,
+    pawnPrices: nextPrices,
+    redemptionOffer: null,
   };
 }
 
@@ -312,6 +547,12 @@ export function settle(
   const nextMoney = accepted ? state.money - price : state.money;
   const nextReputation = state.reputation + reputationDelta;
   const nextDeck = accepted ? [...state.deck, currentItem.cardName] : [...state.deck];
+  const nextPawnPrices =
+    state.pawnPrices !== undefined
+      ? accepted
+        ? recordPawnPrice(state.pawnPrices, currentItem.cardName, price)
+        : clonePawnPrices(state.pawnPrices)
+      : undefined;
   const message = accepted ? `成交！收下${currentItem.name}` : '当客走了，没谈成';
 
   const logEntry = accepted
@@ -335,6 +576,8 @@ export function settle(
       reputationDelta,
       message,
     },
+    ...(state.redeemTickets !== undefined ? { redeemTickets: state.redeemTickets } : {}),
+    ...(nextPawnPrices !== undefined ? { pawnPrices: nextPawnPrices } : {}),
   };
 }
 
@@ -367,6 +610,8 @@ export function skipCustomer(state: PawnshopState): PawnshopState {
     log: [...state.log, `${currentItem.name}:跳过`],
     items: state.items.map((item) => ({ ...item })),
     lastOutcome: null,
+    ...(state.redeemTickets !== undefined ? { redeemTickets: state.redeemTickets } : {}),
+    ...(state.pawnPrices !== undefined ? { pawnPrices: clonePawnPrices(state.pawnPrices) } : {}),
   };
 }
 
@@ -385,6 +630,7 @@ export function advanceCustomer(state: PawnshopState): PawnshopState {
     log: [...state.log],
     items: state.items.map((item) => ({ ...item })),
     lastOutcome: null,
+    ...(state.pawnPrices !== undefined ? { pawnPrices: clonePawnPrices(state.pawnPrices) } : {}),
   };
 }
 

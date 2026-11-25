@@ -4,7 +4,10 @@ import type { WinReward } from './battle';
 export const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 export const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
 export const AUDIO_STORAGE_KEY = 'pawnshop-cards-audio-v1';
+export const PAWN_PRICES_STORAGE_KEY = 'pawnshop-cards-pawn-prices-v1';
 export const SAVE_VERSION = 1 as const;
+
+export type PawnPriceLedger = Record<string, number[]>;
 
 export interface SaveData {
   version: 1;
@@ -261,6 +264,120 @@ export function saveAudioMuted(muted: boolean, storage?: StorageLike | null): vo
   } catch {
     // Ignore storage quota/access failures
   }
+}
+
+/**
+ * Loads historical pawn deal prices keyed by cardName (used by C4 redemption).
+ * Stored in a dedicated key to preserve strict SaveData v1 backward compatibility.
+ */
+export function loadPawnPrices(storage?: StorageLike | null): PawnPriceLedger {
+  const store = storage === undefined ? getDefaultStorage() : storage;
+  if (!store) {
+    return {};
+  }
+
+  try {
+    const raw = store.getItem(PAWN_PRICES_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return {};
+    }
+    const ledger: PawnPriceLedger = {};
+    for (const [key, val] of Object.entries(parsed as Record<string, unknown>)) {
+      if (
+        Array.isArray(val) &&
+        val.every((entry) => typeof entry === 'number' && Number.isFinite(entry) && entry >= 0)
+      ) {
+        ledger[key] = [...val];
+      }
+    }
+    return ledger;
+  } catch {
+    return {};
+  }
+}
+
+export function savePawnPrices(ledger: PawnPriceLedger, storage?: StorageLike | null): void {
+  const store = storage === undefined ? getDefaultStorage() : storage;
+  if (!store) {
+    return;
+  }
+
+  try {
+    const normalized: PawnPriceLedger = {};
+    for (const [key, list] of Object.entries(ledger)) {
+      if (list.length > 0) {
+        normalized[key] = [...list];
+      }
+    }
+    store.setItem(PAWN_PRICES_STORAGE_KEY, JSON.stringify(normalized));
+  } catch {
+    // Ignore storage quota/access failures
+  }
+}
+
+export function clearPawnPrices(storage?: StorageLike | null): void {
+  const store = storage === undefined ? getDefaultStorage() : storage;
+  if (!store) {
+    return;
+  }
+
+  try {
+    store.removeItem(PAWN_PRICES_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures
+  }
+}
+
+export function clonePawnPrices(ledger?: PawnPriceLedger): PawnPriceLedger {
+  const out: PawnPriceLedger = {};
+  if (!ledger) {
+    return out;
+  }
+  for (const [key, list] of Object.entries(ledger)) {
+    if (list.length > 0) {
+      out[key] = [...list];
+    }
+  }
+  return out;
+}
+
+export function recordPawnPrice(
+  ledger: PawnPriceLedger,
+  cardName: string,
+  price: number,
+): PawnPriceLedger {
+  const next = clonePawnPrices(ledger);
+  const list = next[cardName] ? [...next[cardName]] : [];
+  list.push(price);
+  next[cardName] = list;
+  return next;
+}
+
+export function peekPawnPrice(ledger: PawnPriceLedger, cardName: string): number | null {
+  const list = ledger[cardName];
+  if (!list || list.length === 0) {
+    return null;
+  }
+  return list[0];
+}
+
+export function consumePawnPrice(ledger: PawnPriceLedger, cardName: string): PawnPriceLedger {
+  const next = clonePawnPrices(ledger);
+  const list = next[cardName];
+  if (!list || list.length === 0) {
+    return next;
+  }
+  const rest = list.slice(1);
+  if (rest.length > 0) {
+    next[cardName] = rest;
+  } else {
+    delete next[cardName];
+  }
+  return next;
 }
 
 /**

@@ -12,7 +12,7 @@ interface SaveSnapshot {
 }
 
 interface PawnshopDebugState {
-  phase: 'title' | 'negotiating' | 'feedback' | 'summary';
+  phase: 'title' | 'redemption' | 'negotiating' | 'feedback' | 'summary';
   customerIndex: number;
   money: number;
   reputation: number;
@@ -25,6 +25,7 @@ interface PawnshopDebugState {
   itemsOrder?: string[];
   hasSave?: boolean;
   tierAffordability?: { low: boolean; fair: boolean; high: boolean };
+  lastToast?: string | null;
 }
 
 const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
@@ -172,6 +173,60 @@ test('unaffordable tiers are disabled: clicking them is a no-op and never consum
   expect(state.customerIndex).toBe(1);
   expect(state.money).toBe(0);
   expect(state.deck).toEqual(['余音']);
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('A3: money 50 with high price 60 disables high tier, shows "钱不够" toast on click, with no deal/deduction/state change', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+
+  await page.goto('/?seed=4');
+
+  // Seed Day 1 save with 50 money; seed=4 Day 1 customer 1 is watch (trueValue 40 -> low 20 / fair 40 / high 60)
+  await page.evaluate((key) => {
+    const save50: SaveSnapshot = {
+      version: 1,
+      day: 1,
+      money: 50,
+      reputation: 0,
+      deck: [],
+      shopLevel: 1,
+      redeemTickets: 0,
+    };
+    localStorage.setItem(key, JSON.stringify(save50));
+  }, SAVE_STORAGE_KEY);
+  await page.reload();
+
+  const canvas = page.locator('#game-container canvas');
+  await expect(canvas).toBeVisible();
+
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, BUTTONS.titleContinue);
+
+  const start = await waitForPawnshopPhase(page, 'negotiating');
+  expect(start.money).toBe(50);
+  expect(start.customerIndex).toBe(0);
+  expect(start.itemsOrder?.[0]).toBe('watch');
+  // Watch trueValue 40 -> low 20 (true), fair 40 (true), high 60 (false, > 50)
+  expect(start.tierAffordability).toEqual({ low: true, fair: true, high: false });
+  expect(start.lastToast).toBeNull();
+
+  // Click disabled High tier (60 > 50) -> shows "钱不够" toast, no deal, no deduction, no state change
+  await clickLogical(page, canvas, BUTTONS.tierHigh);
+  await expect
+    .poll(async () => (await getPawnshopState(page)).lastToast)
+    .toBe('钱不够');
+
+  const afterClick = await getPawnshopState(page);
+  expect(afterClick.phase).toBe('negotiating');
+  expect(afterClick.customerIndex).toBe(0);
+  expect(afterClick.money).toBe(50);
+  expect(afterClick.reputation).toBe(0);
+  expect(afterClick.deck).toEqual([]);
+  expect(afterClick.log).toEqual([]);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);

@@ -6,7 +6,7 @@ const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
 
 interface PawnshopDebugState {
-  phase: 'title' | 'negotiating' | 'feedback' | 'summary';
+  phase: 'title' | 'redemption' | 'negotiating' | 'feedback' | 'summary';
   customerIndex: number;
   money: number;
   reputation: number;
@@ -39,6 +39,7 @@ interface BattleDebugState {
 const BUTTONS = {
   titleStart: { x: 160, y: 122 },
   titleTutorial: { x: 266, y: 154 },
+  redeemReject: { x: 224, y: 151 },
   tierHigh: { x: 262, y: 151 },
   nextOrSummary: { x: 160, y: 151 },
   enterNightBattle: { x: 88, y: 151 },
@@ -350,8 +351,10 @@ test('first play walks all 6 Day 1 guide bubbles in order, persists completion, 
     })
     .toEqual({ active: false, step: null, done: true });
 
-  // Enter Day 2 -> no tutorial bubbles
+  // Enter Day 2 -> C4 redemption triggers first, reject to enter negotiating -> no tutorial bubbles
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'redemption');
+  await clickLogical(page, canvas, BUTTONS.redeemReject);
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2.day).toBe(2);
   expect(day2.tutorialActive).toBe(false);
