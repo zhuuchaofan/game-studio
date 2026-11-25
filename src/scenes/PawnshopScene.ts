@@ -79,6 +79,7 @@ const FEEDBACK_PANEL_HEIGHT = 64;
 const BUTTON_ROW_Y = 154;
 const FEEDBACK_NEXT_BUTTON_Y = 154;
 const STORY_WRAP_CHARS = 18;
+const FEEDBACK_STORY_WRAP_CHARS = 20;
 const SKIP_BUTTON_X = 270;
 const SKIP_BUTTON_Y = 107;
 const SKIP_BUTTON_WIDTH = 64;
@@ -632,7 +633,7 @@ export class PawnshopScene extends Phaser.Scene {
     const headlineColor = outcome.accepted ? PALETTE.jade.hex : PALETTE.vermilion.hex;
     const headline = outcome.accepted ? `成交！收下${outcome.item.name}` : '没谈成';
     this.contentLayer.add(
-      addPixelText(this, 60, 26, headline, {
+      addPixelText(this, 60, 25, headline, {
         color: headlineColor,
         origin: [0, 0],
       }),
@@ -643,7 +644,7 @@ export class PawnshopScene extends Phaser.Scene {
         addPixelText(
           this,
           BASE_WIDTH - 14,
-          26,
+          25,
           `${outcome.price}元 口碑${formatSignedDelta(outcome.reputationDelta)}`,
           {
             color: PALETTE.copperBrown.hex,
@@ -653,33 +654,40 @@ export class PawnshopScene extends Phaser.Scene {
       );
     }
 
-    this.contentLayer.add(this.add.rectangle(183, 39, 244, 1, PALETTE.oldPaper.num));
+    this.contentLayer.add(this.add.rectangle(183, 38, 244, 1, PALETTE.oldPaper.num));
 
-    // P7：当客同源白话还价反馈台词（置于 y=41..53，严格位于结算面板 y=24..88 内）
+    // P7：当客同源白话还价反馈台词（置于 y=39..50，严格位于结算面板 y=24..88 内）
     this.contentLayer.add(
-      addPixelText(this, 60, 41, `「${outcome.message}」`, {
+      addPixelText(this, 60, 39, `「${outcome.message}」`, {
         color: outcome.accepted ? PALETTE.ink.hex : PALETTE.vermilion.hex,
         origin: [0, 0],
       }),
     );
 
     if (outcome.accepted) {
-      // C1：收当结算显示卡牌效果说明
+      // C1：收当结算显示卡牌效果说明（y=51..62）
       const cardDef = CARDS_BY_NAME.get(outcome.item.cardName);
       const effectDesc = cardDef ? formatEffectDescription(cardDef) : '';
       this.contentLayer.add(
-        addPixelText(this, 60, 55, `${outcome.item.cardName}:${effectDesc}`, {
+        addPixelText(this, 60, 51, `${outcome.item.cardName}:${effectDesc}`, {
           color: PALETTE.copperBrown.hex,
           origin: [0, 0],
         }),
       );
 
-      // C2：成交后结算再出现一次该故事
+      // C2 + P8：成交后结算折行展示完整故事（y=63..86，至多两行，严格不超面板右边界 x=310 与底边界 y=88）
       this.contentLayer.add(
-        addPixelText(this, 60, 69, `你收下了：${outcome.item.story}`, {
-          color: PALETTE.deepWood.hex,
-          origin: [0, 0],
-        }),
+        addPixelText(
+          this,
+          60,
+          63,
+          wrapCjkText(`你收下了：${outcome.item.story}`, FEEDBACK_STORY_WRAP_CHARS),
+          {
+            color: PALETTE.deepWood.hex,
+            origin: [0, 0],
+            lineSpacing: 0,
+          },
+        ),
       );
     } else {
       this.contentLayer.add(

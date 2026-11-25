@@ -293,3 +293,15 @@
   - `npm run sim:check` 通过，`SIM_TUNE='{"demonAHp":22}' npm run sim` 验证生效；
   - `npm run test:e2e`（Playwright，localhost）27/27 全过（含新增 `tests/e2e/p7-features.spec.ts`）；
   - 浏览器实测截图存 `/tmp/p7-shots/`（7 张）并逐张人工核查通过（坏档隔离提示、三档性格像素徽章与实时接受率提示、1987 还价台词、当票自选弃牌高亮与非最左牌弃置验证、6 类 ZzFX 音效触发）。
+
+## 2026-11-25 — P8 小修（feature/p8-small-fixes）
+- **范围**：按 `proto-tasks/11-p8-small-fixes.md` 完成两处 320×180 逻辑像素排版修复，严格遵守红线（零文案改动、零玩法/数值改动、未触碰 `.github/workflows/` 与 `fix/custom-domain`）：
+  - **修 1（当票选牌提示行与卡牌详情条重叠，`src/scenes/CardBattleScene.ts`）**：`renderCardDetailPanel` 故事条由 `y=75` 上移至 `y=73`（`y=66..80`）、效果条由 `y=91` 上移至 `y=88`（`y=81..95`）；`createActionStrip` 中 `feedbackText` 由 `y=104` 调至 `y=103`（文本盒 `y=97..109`，实际字形像素 `y=98..108`），与效果条下边框之间保持 ≥2 逻辑像素清晰间隙，且不触碰选牌态抬起手牌（顶边 `y=109`）与右侧「取消选牌」按钮。
+  - **修 2（成交确认画面故事行溢出结算面板，`src/scenes/PawnshopScene.ts`）**：保持结算面板 `x=10..310, y=24..88` 不动，紧凑调整行纵坐标（标题 `y=25`、分割线 `y=38`、台词 `y=39`、卡牌效果 `y=51`、故事 `y=63`），使用既有 `wrapCjkText`（上限 20 字、`lineSpacing: 0`）对「你收下了：<故事>」折行，6 件旧物故事全部 ≤2 行完整显示于面板内，不顶出底边界 `y=88`，不遮挡 3/6 教程气泡（`y=92..136`）与「下一位」按钮（`y=154`）。
+  - **测试与文档**：`tests/unit/pawnshop.test.ts` 新增 6 件旧物成交故事折行不溢出且不改字单测；新增 `tests/e2e/p8-fixes.spec.ts` 覆盖当票选牌态与 6 件旧物全量成交结算（含 3/6 教程气泡同屏）；`docs/GAME_DESIGN.md` 增补 §16（v1.0 定稿核心未动）；同步更新本进度记录，任务书 `proto-tasks/11-p8-small-fixes.md` 随提交入库。
+- **验证证据**：
+  - `npx tsc --noEmit` 0 错误；
+  - `npm run build` 退出码 0（`dist/index.html` 1.53 kB、`index-*.js` 264.96 kB、`phaser-*.js` 1,194.42 kB）；
+  - `npx vitest run` 13/13 文件、112/112 单测全过；
+  - `npm run test:e2e`（Playwright，localhost）29/29 全过；
+  - 浏览器实测截图存 `/tmp/p8-shots/`（8 张：`01-battle-pending-choice.png`、`02-feedback-bicycle.png`、`03-feedback-stamp-album.png`、`04-feedback-stamp_album-with-tutorial-3of6.png` 及另外 4 件旧物 `05-feedback-{erhu,old_book,ring,watch}.png`），逐张核查通过：当票提示行与详情条之间间隙清晰无触碰，6 件旧物故事均完整可见、无截断、无出框，3/6 教程气泡与「下一位」按钮无遮挡。
