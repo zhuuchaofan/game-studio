@@ -283,7 +283,7 @@ test('beats Demon A (药费) with fixed seed=4 & deck=test, asserts HUD/state & 
   expect(startState.round).toBe(1);
   expect(startState.playerHp).toBe(30);
   expect(startState.renqing).toBe(3);
-  expect(startState.demonHp).toBe(24);
+  expect(startState.demonHp).toBe(20);
   expect(startState.hand).toHaveLength(5);
   expect(startState.deckCount).toBe(5);
   expect(startState.discardCount).toBe(0);
@@ -295,7 +295,7 @@ test('beats Demon A (药费) with fixed seed=4 & deck=test, asserts HUD/state & 
   expect(resultState.result).toBe('win');
   expect(resultState.demonHp).toBe(0);
   expect(resultState.reward).not.toBeNull();
-  expect(resultState.reward!.money).toBe(20);
+  expect(resultState.reward!.money).toBe(40);
   expect(resultState.reward!.redeemTicket).toBe(1);
   expect(resultState.reward!.cardName).toBeTruthy();
 
@@ -375,9 +375,9 @@ test('Rewind card (倒转) restores both playerHp and demonHp to previous round 
 
   let state = await navigateThroughDayToBattleLow(page, canvas);
   expect(state.playerHp).toBe(30);
-  expect(state.demonHp).toBe(24);
+  expect(state.demonHp).toBe(20);
 
-  // Round 1: deal damage to Demon A so demonHp < 24
+  // Round 1: deal damage to Demon A so demonHp < 20
   const dmgIdx = state.hand.findIndex((name) =>
     (DAMAGE_PRIORITY as readonly string[]).includes(name),
   );
@@ -387,12 +387,12 @@ test('Rewind card (倒转) restores both playerHp and demonHp to previous round 
   await expect
     .poll(async () => {
       const s = await getBattleState(page);
-      return !s.isAnimating && s.demonHp < 24;
+      return !s.isAnimating && s.demonHp < 20;
     })
     .toBe(true);
 
   const afterR1Dmg = await getBattleState(page);
-  expect(afterR1Dmg.demonHp).toBeLessThan(24);
+  expect(afterR1Dmg.demonHp).toBeLessThan(20);
 
   // End Round 1 -> Demon A deals 3 dmg (playerHp 30 -> 27)
   await clickLogical(page, canvas, BUTTONS.endTurn);
@@ -423,7 +423,7 @@ test('Rewind card (倒转) restores both playerHp and demonHp to previous round 
 
   // If still not in Round 2 hand, advance to Round 3 (snapshot target becomes Round 2 start)
   let expectedRewindPlayerHp = 30;
-  let expectedRewindDemonHp = 24;
+  let expectedRewindDemonHp = 20;
   if (!state.hand.includes('倒转')) {
     expectedRewindPlayerHp = state.playerHp;
     expectedRewindDemonHp = state.demonHp;
@@ -526,6 +526,71 @@ test('renders CardBattleScene and ResultScene cleanly on mobile portrait 390x844
   expect(resultState.phase).toBe('result_scene');
   expect(resultState.result).toBe('win');
   await page.screenshot({ path: 'test-results/battle-mobile-result.png' });
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('A4: rapid consecutive clicks on two playable cards in the same turn execute both without dropping input', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+
+  await page.goto('/?seed=4&demon=a&deck=test');
+  const canvas = page.locator('#game-container canvas');
+  await expect(canvas).toBeVisible();
+
+  const startState = await navigateThroughDayToBattleLow(page, canvas);
+  expect(startState.phase).toBe('play');
+  expect(startState.renqing).toBe(3);
+
+  // Pick two distinct 1-cost playable cards from initial hand (excluding 算盘/倒转 so renqing math is exact -2)
+  const oneCostIndices: number[] = [];
+  for (let i = 0; i < startState.hand.length; i += 1) {
+    const name = startState.hand[i];
+    if (CARD_COSTS[name] === 1 && name !== '算盘') {
+      oneCostIndices.push(i);
+      if (oneCostIndices.length === 2) {
+        break;
+      }
+    }
+  }
+  expect(oneCostIndices).toHaveLength(2);
+
+  const [idx1, idx2] = oneCostIndices;
+  const x1 = computeHandCardX(idx1, startState.hand.length);
+  const x2 = computeHandCardX(idx2, startState.hand.length);
+
+  // Compute exact client coordinates from the stable pre-play layout and fire BOTH clicks 25ms apart
+  // while the first card is still mid-flight (240ms animation) without waiting or shifting coordinates!
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const toClient = (pt: { x: number; y: number }) => ({
+    x: box!.x + (pt.x / LOGICAL_WIDTH) * box!.width,
+    y: box!.y + (pt.y / 180) * box!.height,
+  });
+
+  const p1 = toClient({ x: x1, y: HAND_Y });
+  const p2 = toClient({ x: x2, y: HAND_Y });
+
+  await page.evaluate(
+    () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+  );
+  await page.mouse.click(p1.x, p1.y);
+  await page.waitForTimeout(25);
+  await page.mouse.click(p2.x, p2.y);
+
+  // Wait for both animations in the queue to finish
+  await expect
+    .poll(async () => {
+      const s = await getBattleState(page);
+      return !s.isAnimating && s.discardCount >= 2;
+    })
+    .toBe(true);
+
+  const afterBoth = await getBattleState(page);
+  expect(afterBoth.discardCount).toBe(2);
+  expect(afterBoth.renqing).toBe(1);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);

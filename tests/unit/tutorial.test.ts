@@ -146,19 +146,25 @@ describe('Day 1 tutorial state machine', () => {
 describe('Tutorial bubble geometry (320x180 non-overlapping layout)', () => {
   it('fits every bubble inside 320x180 and never covers next-action buttons', () => {
     const pawnshopNegotiatingButtons: Rect[] = [
-      fromCenter(58, 151, 92, 36), // low
-      fromCenter(160, 151, 92, 36), // fair
-      fromCenter(262, 151, 92, 36), // high
+      fromCenter(58, 154, 92, 32), // low
+      fromCenter(160, 154, 92, 32), // fair
+      fromCenter(262, 154, 92, 32), // high
       fromCenter(270, 107, 64, 18), // skip customer
+      { left: 66, top: 27, right: 304, bottom: 79 }, // A2/C2: item title, story & effect area
     ];
-    const pawnshopFeedbackButtons: Rect[] = [fromCenter(160, 151, 118, 28)];
+    const pawnshopFeedbackButtons: Rect[] = [
+      fromCenter(160, 154, 118, 26), // next / summary
+      { left: 10, top: 24, right: 310, bottom: 88 }, // A2: entire feedback settlement panel
+    ];
     const battleButtons: Rect[] = [
       fromCenter(283, 95, 62, 21), // end turn
       { left: 6, top: 112, right: 314, bottom: 176 }, // hand cards band
+      { left: 14, top: 26, right: 306, bottom: 62 }, // C5: demon intro banner & demon area
     ];
     const resultButtons: Rect[] = [
       fromCenter(88, 148, 116, 24), // next day
       fromCenter(222, 148, 136, 24), // return title
+      { left: 12, top: 8, right: 308, bottom: 84 }, // A2/C5: result settlement & victory narrative
     ];
 
     const sceneTargets: Record<string, Rect[]> = {

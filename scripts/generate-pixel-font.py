@@ -28,16 +28,24 @@ LINE_HEIGHT = 12
 THRESHOLD = 128
 
 # Always include printable ASCII + common CJK punctuation & UI symbols
+# (omit U+2212 '−' which is missing in Fusion Pixel 12px and renders as .notdef box)
 BASE_CHARS = (
     "".join(chr(c) for c in range(0x20, 0x7F))
-    + "，。、；：？！“”‘’（）【】《》「」『』·—…×±−＋－／％￥"
+    + "，。、；：？！“”‘’（）【】《》「」『』·—…×±＋－／％￥"
     + "一二三四五六七八九十零第天回钱口碑牌组当客赢输负胜"
 )
 
-TS_STRING_RE = re.compile(
-    r"""'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`""",
-    re.DOTALL,
+# Lexer regex that skips JS/TS comments first so apostrophes inside comments
+# (e.g. "player's") never swallow subsequent Chinese string literals.
+TS_TOKEN_RE = re.compile(
+    r"//[^\n]*"
+    r"|/\*[\s\S]*?\*/"
+    r"|'((?:\\.|[^'\\\n])*)'"
+    r'|"((?:\\.|[^"\\\n])*)"'
+    r"|`((?:\\.|[^`\\])*)`",
 )
+
+TOFU_BOX_12 = ["111111111111"] + ["100000000001"] * 10 + ["111111111111"]
 
 
 def extract_json_strings(obj: object, out: set[str]) -> None:
@@ -49,6 +57,19 @@ def extract_json_strings(obj: object, out: set[str]) -> None:
     elif isinstance(obj, dict):
         for value in obj.values():
             extract_json_strings(value, out)
+
+
+def extract_ts_strings(source: str, out: set[str]) -> None:
+    for match in TS_TOKEN_RE.finditer(source):
+        single, double, template = match.groups()
+        if single is not None:
+            out.update(single.replace("\\n", "\n").replace("\\t", " "))
+        elif double is not None:
+            out.update(double.replace("\\n", "\n").replace("\\t", " "))
+        elif template is not None:
+            # Scan template text and recursively scan any nested string literals inside ${...}
+            out.update(template.replace("\\n", "\n").replace("\\t", " "))
+            extract_ts_strings(template, out)
 
 
 def collect_characters(repo_root: Path) -> list[str]:
@@ -65,16 +86,12 @@ def collect_characters(repo_root: Path) -> list[str]:
             with json_file.open("r", encoding="utf-8") as fh:
                 extract_json_strings(json.load(fh), chars)
 
-    # 2. Scan all src/**/*.ts string literals (excluding pixelart.ts raw grid literals)
+    # 2. Scan all src/**/*.ts string & template literals (skipping comments & pixelart.ts raw grids)
     for ts_file in sorted(src_dir.rglob("*.ts")):
         if ts_file.name == "pixelart.ts" and ts_file.parent == data_dir:
             continue
         content = ts_file.read_text(encoding="utf-8")
-        for match in TS_STRING_RE.finditer(content):
-            literal = next((g for g in match.groups() if g is not None), "")
-            # Strip simple escape markers without corrupting CJK text
-            literal = literal.replace("\\n", "\n").replace("\\t", " ")
-            chars.update(literal)
+        extract_ts_strings(content, chars)
 
     # Keep only printable characters (exclude control chars like \n, \r, \t)
     filtered = [ch for ch in chars if ord(ch) >= 0x20 and ch != "\uFEFF"]
@@ -109,8 +126,19 @@ def generate_font_json(
 ) -> dict[str, object]:
     font = ImageFont.truetype(str(ttf_path), FONT_SIZE)
     glyphs: dict[str, dict[str, object]] = {}
+    tofu_chars: list[str] = []
+
     for ch in chars:
-        glyphs[ch] = render_glyph(font, ch)
+        glyph = render_glyph(font, ch)
+        if glyph["rows"] == TOFU_BOX_12:
+            tofu_chars.append(ch)
+        glyphs[ch] = glyph
+
+    if tofu_chars:
+        raise ValueError(
+            f"Font rendered .notdef tofu box for characters: {tofu_chars!r}. "
+            "Replace unsupported symbols or provide a fallback glyph."
+        )
 
     return {
         "font": FONT_NAME,

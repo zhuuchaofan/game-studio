@@ -71,8 +71,8 @@ export function createTutorialBubble(
 
   // Two short lines of 1980s pawnshop keeper copy (12px bitmap pixel font)
   const textX = box.x + 6;
-  const line1Y = box.y + 6;
-  const line2Y = box.y + 21;
+  const line1Y = box.y + 4;
+  const line2Y = box.y + 17;
 
   container.add(
     addPixelText(scene, textX, line1Y, def.lines[0], {

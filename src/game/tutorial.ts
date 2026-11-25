@@ -87,10 +87,10 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：学徒，开张了！白天看清旧物，', '跟当客谈好价收进来。'],
     continueLabel: '1/6 点击继续',
     box: {
-      x: 78,
-      y: 24,
-      width: 230,
-      height: 56,
+      x: 6,
+      y: 80,
+      width: 226,
+      height: 44,
       theme: 'day',
     },
   },
@@ -101,10 +101,10 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：低价省钱怕谈崩，高价涨口碑，', '平价稳当，挑一档出价吧。'],
     continueLabel: '2/6 点击继续',
     box: {
-      x: 12,
-      y: 75,
-      width: 222,
-      height: 52,
+      x: 6,
+      y: 80,
+      width: 226,
+      height: 44,
       theme: 'day',
       pointer: { direction: 'down', x: 160 },
     },
@@ -116,10 +116,10 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：收下的旧物都变纸牌入牌组，', '留着夜里打心魔；没谈成不扣钱。'],
     continueLabel: '3/6 点击继续',
     box: {
-      x: 14,
-      y: 77,
-      width: 292,
-      height: 53,
+      x: 12,
+      y: 92,
+      width: 296,
+      height: 44,
       theme: 'day',
     },
   },
@@ -130,12 +130,12 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：天黑拉灯，心魔上门了！', '点下方手牌出招，三回合内打垮它。'],
     continueLabel: '4/6 点击继续',
     box: {
-      x: 14,
-      y: 24,
-      width: 292,
-      height: 55,
+      x: 6,
+      y: 64,
+      width: 242,
+      height: 46,
       theme: 'night',
-      pointer: { direction: 'down', x: 160 },
+      pointer: { direction: 'down', x: 126 },
     },
   },
   renqing: {
@@ -145,10 +145,10 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：顶上“人情”就是出牌本钱，', '每回合回满，用完点“结束回合”。'],
     continueLabel: '5/6 点击继续',
     box: {
-      x: 14,
-      y: 24,
-      width: 292,
-      height: 55,
+      x: 6,
+      y: 64,
+      width: 242,
+      height: 46,
       theme: 'night',
       pointer: { direction: 'up', x: 116 },
     },
@@ -160,19 +160,19 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：头一天算过关了！赢了得钱得新牌，', '账已记好，往后就靠你自己看铺子啦。'],
     continueLabel: '6/6 点击完成',
     box: {
-      x: 18,
-      y: 74,
-      width: 284,
-      height: 54,
+      x: 16,
+      y: 86,
+      width: 288,
+      height: 46,
       theme: 'night',
     },
   },
 };
 
 const SKIP_BUTTON_WIDTH = 54;
-const SKIP_BUTTON_HEIGHT = 14;
+const SKIP_BUTTON_HEIGHT = 13;
 const SKIP_MARGIN_RIGHT = 6;
-const SKIP_MARGIN_BOTTOM = 4;
+const SKIP_MARGIN_BOTTOM = 2;
 
 export function getTutorialStepDef(step: TutorialStepId | null): TutorialStepDef | null {
   return step ? TUTORIAL_STEPS[step] : null;
@@ -255,6 +255,11 @@ export function syncTutorialForPawnshop(
   }
 
   const next = cloneTutorialState(state);
+  if (phase === 'redemption') {
+    next.currentStep = null;
+    return next;
+  }
+
   if (phase === 'negotiating') {
     if (!next.completedSteps.includes('pawnshop_intro')) {
       next.currentStep = 'pawnshop_intro';

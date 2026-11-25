@@ -60,8 +60,11 @@ export interface BattleDebugSnapshot {
   result: BattleResult | 'empty_deck';
   demonId: string;
   demonName: string;
+  demonIntroLine?: string;
+  victoryLine?: string | null;
   intent: IntentInfo;
   isAnimating?: boolean;
+  queuedCount?: number;
   reward?: WinReward | null;
   loseReason?: string | null;
   day?: number;
@@ -141,6 +144,8 @@ export function createBattle(
     nextRoundRenqingBonus: 0,
     demonId: demon.id,
     demonName: demon.name,
+    demonIntroLine: demon.introLine ?? '',
+    demonVictoryLine: demon.victoryLine ?? '',
     demonHp: demon.hp,
     demonMaxHp: demon.hp,
     demonActions: demon.actions.map((a) => ({ ...a })),
@@ -380,6 +385,7 @@ export function toBattleDebugSnapshot(
     result: state.result,
     demonId: state.demonId,
     demonName: state.demonName,
+    demonIntroLine: state.demonIntroLine,
     intent: getIntent(state),
     isAnimating,
   };
@@ -406,7 +412,7 @@ export function formatEffectShort(card: CardDef): string {
       case 'renqing_next':
         return `下回+${e.value ?? 0}情`;
       case 'rewind':
-        return '倒转';
+        return '回上回';
       case 'illuminate':
         return '照亮';
       case 'reflect':
@@ -418,4 +424,39 @@ export function formatEffectShort(card: CardDef): string {
     }
   });
   return parts.join('');
+}
+
+/**
+ * Generates a clear single-line Chinese effect description from card effects (P6 C1).
+ */
+export function formatEffectDescription(card: CardDef): string {
+  const parts = card.effects.map((e) => {
+    switch (e.type) {
+      case 'damage':
+        return `造成${e.value ?? 0}点伤害`;
+      case 'damage_conditional':
+        return `造成${e.value ?? 0}点伤害，心魔行动过后改为${(e.value ?? 0) + (e.bonus ?? 0)}点`;
+      case 'shield':
+        return `获得${e.value ?? 0}点护盾`;
+      case 'draw':
+        return `抽${e.value ?? 0}张牌`;
+      case 'heal':
+        return `恢复${e.value ?? 0}点生命`;
+      case 'renqing':
+        return `获得${e.value ?? 0}点人情`;
+      case 'renqing_next':
+        return `下回合人情+${e.value ?? 0}`;
+      case 'rewind':
+        return '敌我双方回到上一回合开始时的状态';
+      case 'illuminate':
+        return '下次抽牌必为攻击牌';
+      case 'reflect':
+        return '反弹下一次受到的伤害';
+      case 'reveal':
+        return '查看心魔下回合意图';
+      case 'discard_for_renqing':
+        return `弃1张牌，获得${e.value ?? 0}点人情`;
+    }
+  });
+  return parts.join('，');
 }

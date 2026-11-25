@@ -10,7 +10,7 @@
   "renqingCap": 6,
   "drawFirst": 5,
   "drawPerRound": 2,
-  "winRewardMoney": 20,
+  "winRewardMoney": 40,
   "tiers": {
     "low": {
       "label": "低价",

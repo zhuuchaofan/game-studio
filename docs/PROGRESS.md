@@ -243,3 +243,27 @@
   - `npx vitest run` 11/11 文件、87/87 单测全部通过（新增 `tests/unit/audio.test.ts` 6 用例、扩展 `tests/unit/scale.test.ts` +2 用例与 `tests/unit/pixelart.test.ts` 字形覆盖）；
   - `npm run test:e2e`（Playwright，localhost）21/21 全部通过（新增 `tests/e2e/audio.spec.ts` 与 `tests/e2e/portrait.spec.ts`），无失败请求、无 `pageerror`；
   - 实测截图人工核查通过：`test-results/audio-title-volume.png`（标题左下「音量:开」清晰对称）、`test-results/portrait-hint-390x844.png`（390×844 竖屏下 1× 整数缩放画布 + 下方「↻ 横屏体验更佳」无遮挡）。
+
+## 2026-11-25 — P6 试玩反馈全修（feature/p6-playtest-fixes）
+- **范围**：按 `proto-tasks/09-p6-playtest-fixes.md` 全部完成子项 A1–A4（bug 修复）、B1–B3（经济与开局平衡）、C1–C5（主题进玩法）与文档同步，未触碰 `.github/workflows/` 与 `fix/custom-domain`：
+  - **A1（像素字体覆盖与防缺字自动化检查）**：修复 `scripts/generate-pixel-font.py` 的 TS 注释/模板字符串词法扫描并剔除 Fusion Pixel 12px 缺字方框符号 `−`（U+2212），加入 `.notdef` 方框拦截；重跑脚本补全全部新增文案汉字（`src/data/pixel-font.json` 511 → 532 字形，114.6 KB，零 `.notdef` 方框，临时 TTF 仅放 `/tmp` 未入库）；在 `tests/unit/pixelFont.test.ts` 新增自动化单测扫描全部 `src/data/*.json`、`src/scenes/*.ts`、`src/game/*.ts` 与 C5 8 句文案，断言零缺字、零空字形、零方框。
+  - **A2（引导气泡防遮挡）**：重排 `src/game/tutorial.ts`、`src/game/tutorialBubble.ts` 及 `PawnshopScene` / `CardBattleScene` / `ResultScene` 面板位置，使 1/6、2/6、3/6、4/6、5/6、6/6 均完整避开当客台词、收当结算、心魔出场横幅、夜里结算/胜利叙事句与全部交互按钮；`tests/unit/tutorial.test.ts` 补全内容区零重叠几何断言。
+  - **A3（钱不够档位根因查实与修复）**：查实原置灰使用亮银蓝底（`PALETTE.silverBlue` `#8FA8C8`）+ 墨黑字在深木柜台上形似“蓝高亮”且无点击反馈导致静默失效观感；改为深木底（`#2E2118`）+ 木棕边（`#5A3A22`）+ 铜棕字（`#8A5A33`）灰显，点击灰显档位弹出 16 色像素轻提示「钱不够」（不触发成交/扣钱/RNG）；`tests/e2e/affordability.spec.ts` 新增钱 50、高价 60 专项 E2E 用例。
+  - **A4（牌局出牌连点吞输入根因查实与修复）**：查实双根因——240ms 出牌飞行动画期间 `isAnimating` + 重绘销毁手牌容器导致点击被吞，且动画结束立即重排手牌造成点空；在 `CardBattleScene` 引入稳定槽位 `handSlots` 与连点排队 `playQueue`（飞行期间隐藏出飞牌但不移位/销毁其余手牌，第二次点击按预测剩余人情入队并抬起+灯黄描边反馈，前一张结算完自动出队执行）；`tests/e2e/battle.spec.ts` 新增同回合快速连点两张牌均生效 E2E 用例。
+  - **B1 / B2（经济与开局平衡）**：`src/data/balance.json` `winRewardMoney` 20 → 40（其余数值不动）；`src/data/demons.json` 心魔 A「药费」血量 24 → 20（B 22 / C 26 / D 20 及伤害全不动）；`src/game/pawnshop.ts` 新增 `pickDailyItems` 实现第 1 天当客池 3 位至少 1 件伤害牌旧物（永久自行车→飞驰 / 二胡→余音）保底。
+  - **B3（蒙特卡洛复验 + 7 天钱模拟）**：
+    - 蒙特卡洛（`TEST_DECK` 10 张，贪心，每种心魔 1000 局）：A「药费」（20 血）**91.3%**（原 P5 65.9%）、B「车票」（22 血）**82.1%**、C「房租」（26 血）**55.9%**、D「学费」（20 血）**91.3%**（四者血归零负均为 0）。
+    - 7 天钱模拟（`simulateSevenDayEconomy`，1000 局，策略“买得起平价、钱紧试低价、买不起跳过”，夜胜率取蒙特卡洛结果，常赢玩家 `wins >= 5` 占比 870/1000）：
+      - 直接花到平价线（`tightBuffer=0`）：P5（+20、无赎当）常赢均值 `101.1 → 43.3 → 23.2 → 27.7 → 29.0 → 28.6 → 23.2`（困在 20 金循环）；P6（+40、无赎当）升至 `120.0 → 69.5 → 41.0 → 49.9 → 50.4 → 48.7 → 38.2`；P6（+40 + 赎当）升至 `120.0 → 69.5 → 57.5 → 68.8 → 69.5 → 67.4 → 54.9`。
+      - 留底钱进低价（`tightBuffer=60`）：P5 常赢均值 `114.4 → 83.1 → 67.7 → 67.2 → 68.9 → 70.7 → 67.7`；P6（+40、无赎当）升至 `133.4 → 106.4 → 88.2 → 95.3 → 101.3 → 103.3 → 92.7`；P6（+40 + 赎当）升至 `133.4 → 106.4 → 99.3 → 115.8 → 121.4 → 120.9 → 107.1`（平均赎当 4.44 次），常赢玩家脱离 20 金循环、资金稳步积累。
+  - **C1–C5（主题进玩法）**：
+    - C1：`formatEffectDescription` 补齐 23 张牌中文效果说明（倒转写清「敌我双方回到上一回合开始时的状态」），牌局新增卡面详情双条（上条完整 `story`、下左条牌名+效果，悬停任意手牌切换），收当卡片与成交结算同步展示效果。
+    - C2：当客卡片谈价期间完整展示 `items.json` `story`（与 A2 避让联调），成交后结算显示「你收下了：……」。
+    - C3：`getEffectiveAcceptRate` 实现口碑修正接受率（低价 `30%+5%×口碑` 限 `[10%,60%]`、平价 `80%+2%×口碑` 限 `[50%,95%]`、高价 `100%`），报价区实时显示当前口碑修正提示；单测覆盖 0/正/负及上下限。
+    - C4：`PawnshopScene` 开局前新增 `redemption` 赎当事件（每天最多 1 次，需 ≥1 赎当券且牌库有旧物牌；成交价独立键持久化、无记录回退真值；接受得 `当价×1.2` + 口碑 +1 + 券 −1 + 牌离库；拒绝不变）；新增 `tests/e2e/redemption.spec.ts` 走通接受与拒绝双流程。
+    - C5：`src/data/demons.json` 补齐 4 心魔出场句与胜利叙事句（原文一字不改）；牌局开局展示出场横幅，胜利结算页展示叙事句。
+- **验证证据**：
+  - `npx tsc --noEmit` 0 错误；`npm run build` 退出码 0（JS `1,424.46 kB` ≤ 2 MB 预算）；
+  - `npx vitest run` 11/11 文件、97/97 单测全部通过；
+  - `npm run test:e2e`（Playwright，localhost）25/25 全部通过，无失败请求、无 `pageerror`；
+  - Playwright 实测截图已保存于 `/tmp/p6-shots/` 并逐张核查通过（A1 四场景零方框、A2 1/6/3/6/6/6 零遮挡、A3 灰显+钱不够提示、C1 倒转效果说明、C3 口碑提示、C4 赎当界面、C5 心魔出场横幅与胜利叙事句）。

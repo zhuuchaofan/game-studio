@@ -5,6 +5,7 @@ import demonsJson from '../../src/data/demons.json';
 import {
   createBattle,
   endTurn,
+  formatEffectDescription,
   getIntent,
   playCard,
   resolveWinReward,
@@ -37,7 +38,7 @@ describe('Battle state machine', () => {
     expect(state.drawPile).toHaveLength(5);
     expect(state.playerHp).toBe(30);
     expect(state.renqing).toBe(3);
-    expect(state.demonHp).toBe(24);
+    expect(state.demonHp).toBe(20);
 
     state = endTurn(state);
     expect(state.round).toBe(2);
@@ -130,7 +131,7 @@ describe('Battle state machine', () => {
     expect(state.phase).toBe('result');
     expect(state.result).toBe('lose_timeout');
     expect(state.playerHp).toBe(21);
-    expect(state.demonHp).toBe(24);
+    expect(state.demonHp).toBe(20);
   });
 
   it('loses by HP depletion when demon attack reduces playerHp to 0', () => {
@@ -169,11 +170,11 @@ describe('Battle state machine', () => {
     expect(state.result).toBe('lose_timeout');
   });
 
-  it('resolves victory rewards deterministically and grants +20 extra money when all 20 cards are owned', () => {
+  it('resolves victory rewards deterministically and grants +40 extra money when all cards are owned', () => {
     const reward1 = resolveWinReward(['倒转', '守诺'], CARDS, BALANCE, mulberry32(7));
     const reward2 = resolveWinReward(['倒转', '守诺'], CARDS, BALANCE, mulberry32(7));
     expect(reward1).toEqual(reward2);
-    expect(reward1.money).toBe(20);
+    expect(reward1.money).toBe(40);
     expect(reward1.redeemTicket).toBe(1);
     expect(reward1.cardName).not.toBeNull();
     expect(['倒转', '守诺']).not.toContain(reward1.cardName);
@@ -182,7 +183,7 @@ describe('Battle state machine', () => {
     const allCardNames = CARDS.map((c) => c.name);
     const fullDeckReward = resolveWinReward(allCardNames, CARDS, BALANCE, mulberry32(7));
     expect(fullDeckReward).toEqual({
-      money: 40,
+      money: 80,
       cardName: null,
       redeemTicket: 1,
       allOwnedBonus: true,
@@ -196,12 +197,12 @@ describe('Battle state machine', () => {
     // R1：心魔尚未行动，铁皮青蛙造成基础 3 点伤害
     expect(state.round).toBe(1);
     expect(state.demonHasActed).toBe(false);
-    expect(state.demonHp).toBe(24);
+    expect(state.demonHp).toBe(20);
     const frogIdxR1 = state.hand.indexOf('铁皮青蛙');
     expect(frogIdxR1).toBeGreaterThanOrEqual(0);
 
     state = playCard(state, frogIdxR1);
-    expect(state.demonHp).toBe(21);
+    expect(state.demonHp).toBe(17);
     expect(state.demonHasActed).toBe(false);
 
     // 结束 R1 -> 心魔行动并将 demonHasActed 置为 true，进入 R2 时不重置，且弃牌堆洗回抽到铁皮青蛙
@@ -214,7 +215,7 @@ describe('Battle state machine', () => {
 
     // R2：心魔此前回合已行动，铁皮青蛙触发条件分支造成 6 点伤害
     state = playCard(state, frogIdxR2);
-    expect(state.demonHp).toBe(15);
+    expect(state.demonHp).toBe(11);
 
     // 结束 R2 -> 进入 R3，demonHasActed 仍保持 true，再次打出仍为 6 点伤害
     state = endTurn(state);
@@ -224,7 +225,7 @@ describe('Battle state machine', () => {
     expect(frogIdxR3).toBeGreaterThanOrEqual(0);
 
     state = playCard(state, frogIdxR3);
-    expect(state.demonHp).toBe(9);
+    expect(state.demonHp).toBe(5);
   });
 
   it('plays P4 new cards (飞驰, 余音, 集邮) using existing effect types without introducing new mechanics', () => {
@@ -298,5 +299,33 @@ describe('Battle state machine', () => {
     stateD = endTurn(stateD);
     expect(stateD.playerHp).toBe(17);
     expect(stateD.result).toBe('lose_timeout');
+  });
+
+  it('provides clear effect descriptions for every card including 倒转 (C1) and intro/victory lines for all demons (C5)', () => {
+    const rewind = CARDS.find((c) => c.id === 'rewind')!;
+    expect(formatEffectDescription(rewind)).toBe('敌我双方回到上一回合开始时的状态');
+
+    for (const card of CARDS) {
+      const desc = formatEffectDescription(card);
+      expect(desc.length, `Card ${card.name} should have non-empty effect description`).toBeGreaterThan(2);
+    }
+
+    expect(DEMONS.find((d) => d.id === 'a')?.introLine).toBe('这个月的药费单，又来了。');
+    expect(DEMONS.find((d) => d.id === 'b')?.introLine).toBe('远行的车票攥在手里，舍不得放。');
+    expect(DEMONS.find((d) => d.id === 'c')?.introLine).toBe('房东在门口敲了三下。');
+    expect(DEMONS.find((d) => d.id === 'd')?.introLine).toBe('开学的日子，越来越近了。');
+
+    expect(DEMONS.find((d) => d.id === 'a')?.victoryLine).toBe(
+      '今晚，药费被扛过去了。当了手表的父亲，能睡个安稳觉了。',
+    );
+    expect(DEMONS.find((d) => d.id === 'b')?.victoryLine).toBe(
+      '今晚，车票被扛过去了。当了婚戒的新娘，离回家又近了一步。',
+    );
+    expect(DEMONS.find((d) => d.id === 'c')?.victoryLine).toBe(
+      '今晚，房租被扛过去了。当了旧书的学生，不用再为下个月发愁了。',
+    );
+    expect(DEMONS.find((d) => d.id === 'd')?.victoryLine).toBe(
+      '今晚，学费被扛过去了。骑永久自行车送儿子的父亲，值了。',
+    );
   });
 });

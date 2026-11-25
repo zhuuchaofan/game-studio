@@ -1,23 +1,30 @@
 import Phaser from 'phaser';
+import cardsJson from '../data/cards.json';
 import { ITEM_PIXEL_ART } from '../data/pixelart';
 import { audio, installAudioDebugHook } from '../game/audio';
+import { buildCardMap, formatEffectDescription, type CardDef } from '../game/battle';
 import {
   advanceCustomer,
   BALANCE,
   canAffordTier,
   createInitialState,
+  createRedemptionOffer,
   DAILY_CUSTOMER_COUNT,
   deriveDaySeed,
+  deriveRedemptionSeed,
+  formatReputationHint,
   formatSignedDelta,
+  getEffectiveAcceptRate,
   getTierAffordability,
   hasAnyAffordableTier,
   ITEMS,
   PALETTE,
   parseHexColor,
+  pickDailyItems,
   quotePrice,
   resolveOffer,
+  resolveRedemption,
   settle,
-  shuffleItems,
   skipCustomer,
   TIER_ORDER,
   toDebugSnapshot,
@@ -31,8 +38,11 @@ import { addPixelText } from '../game/pixelFont';
 import {
   createNewGame,
   demonIdForDay,
+  loadPawnPrices,
   loadTutorialDone,
   maxRenqingForLevel,
+  saveGame,
+  savePawnPrices,
   saveTutorialDone,
   type SaveData,
 } from '../game/save';
@@ -54,15 +64,24 @@ export interface PawnshopSceneData {
   forceTutorial?: boolean;
 }
 
+export const REDEMPTION_ACCEPT_BUTTON = { x: 96, y: 151, width: 124, height: 32 } as const;
+export const REDEMPTION_REJECT_BUTTON = { x: 224, y: 151, width: 124, height: 32 } as const;
+
+const CARDS_BY_NAME = buildCardMap(cardsJson as CardDef[]);
+
 const HUD_HEIGHT = 22;
-const PANEL_CENTER_Y = 75;
-const PANEL_HEIGHT = 92;
-const BUTTON_ROW_Y = 151;
-const STORY_WRAP_CHARS = 15;
+const NEGOTIATING_PANEL_CENTER_Y = 73;
+const NEGOTIATING_PANEL_HEIGHT = 96;
+const FEEDBACK_PANEL_CENTER_Y = 56;
+const FEEDBACK_PANEL_HEIGHT = 64;
+const BUTTON_ROW_Y = 154;
+const FEEDBACK_NEXT_BUTTON_Y = 154;
+const STORY_WRAP_CHARS = 18;
 const SKIP_BUTTON_X = 270;
 const SKIP_BUTTON_Y = 107;
 const SKIP_BUTTON_WIDTH = 64;
 const SKIP_BUTTON_HEIGHT = 18;
+const TOAST_DURATION_MS = 1400;
 
 export class PawnshopScene extends Phaser.Scene {
   private save!: SaveData;
@@ -71,6 +90,9 @@ export class PawnshopScene extends Phaser.Scene {
   private rng!: RngFn;
   private contentLayer!: Phaser.GameObjects.Container;
   private tutorialBubble?: Phaser.GameObjects.Container;
+  private toastContainer?: Phaser.GameObjects.Container;
+  private toastTimer?: Phaser.Time.TimerEvent;
+  private lastToast: string | null = null;
   private hudMoneyText!: Phaser.GameObjects.BitmapText;
   private hudRepText!: Phaser.GameObjects.BitmapText;
   private hudDeckText!: Phaser.GameObjects.BitmapText;
@@ -90,19 +112,36 @@ export class PawnshopScene extends Phaser.Scene {
     const { seed, rng } = createRngFromUrl();
     this.rng = rng;
 
-    // 每天开始时按 ?seed= + 天数洗牌当客池并取前 3 位（Fisher-Yates，固定种子可复现）
+    // 每天开始时按 ?seed= + 天数洗牌当客池并取前 3 位（第 1 天保底含 1 件伤害牌旧物，P6 B2）
     const shuffleRng = mulberry32(deriveDaySeed(seed, this.save.day));
-    const shuffledItems = shuffleItems(ITEMS, shuffleRng).slice(0, DAILY_CUSTOMER_COUNT);
+    const dailyItems = pickDailyItems(ITEMS, this.save.day, shuffleRng, DAILY_CUSTOMER_COUNT);
+
+    // 每天当客上门前检查赎当事件（P6 C4：有 ≥1 赎当券且牌库至少 1 张旧物牌，每天最多 1 次）
+    const pawnPrices = loadPawnPrices();
+    const redeemRng = mulberry32(deriveRedemptionSeed(seed, this.save.day));
+    const redemptionOffer = createRedemptionOffer(
+      this.save.deck,
+      this.save.redeemTickets,
+      pawnPrices,
+      redeemRng,
+      ITEMS,
+    );
 
     this.state = createInitialState({
       day: this.save.day,
       money: this.save.money,
       reputation: this.save.reputation,
       deck: this.save.deck,
-      items: shuffledItems,
+      items: dailyItems,
+      redeemTickets: this.save.redeemTickets,
+      pawnPrices,
+      redemptionOffer,
     });
 
     this.tutorialBubble = undefined;
+    this.toastContainer = undefined;
+    this.toastTimer = undefined;
+    this.lastToast = null;
     this.tutorial = createTutorialState({
       day: this.state.day,
       tutorialDone: loadTutorialDone(),
@@ -118,15 +157,35 @@ export class PawnshopScene extends Phaser.Scene {
           isNegotiating && currentItem
             ? getTierAffordability(this.state.money, currentItem.trueValue)
             : undefined;
+        const effectiveAcceptRates = isNegotiating
+          ? {
+              low: getEffectiveAcceptRate('low', this.state.reputation),
+              fair: getEffectiveAcceptRate('fair', this.state.reputation),
+              high: getEffectiveAcceptRate('high', this.state.reputation),
+            }
+          : undefined;
+        const activeRedemption =
+          this.state.phase === 'redemption' && this.state.redemptionOffer
+            ? {
+                itemId: this.state.redemptionOffer.item.id,
+                itemName: this.state.redemptionOffer.item.name,
+                cardName: this.state.redemptionOffer.cardName,
+                basePrice: this.state.redemptionOffer.basePrice,
+                payout: this.state.redemptionOffer.payout,
+              }
+            : null;
         return {
           ...toDebugSnapshot(this.state),
           day: this.state.day,
           shopLevel: this.save.shopLevel,
-          redeemTickets: this.save.redeemTickets,
+          redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
           maxRenqing: maxRenqingForLevel(this.save.shopLevel),
           itemsOrder: this.state.items.map((item) => item.id),
           canSkip: isNegotiating,
+          lastToast: this.lastToast,
+          redemptionOffer: activeRedemption,
           ...(tierAffordability ? { tierAffordability } : {}),
+          ...(effectiveAcceptRates ? { effectiveAcceptRates } : {}),
           tutorialActive: this.tutorial.active,
           currentStep: this.tutorial.currentStep,
           tutorialDone: this.tutorial.done || loadTutorialDone(),
@@ -158,7 +217,7 @@ export class PawnshopScene extends Phaser.Scene {
       PALETTE.woodBrown.num,
     );
 
-    // 墙面暖色窗格（置于卡片后方，避免在结算卡片外侧露出碎边）
+    // 墙面暖色窗格
     this.add
       .rectangle(BASE_WIDTH - 48, 48, 44, 34, PALETTE.candle.num)
       .setStrokeStyle(1, PALETTE.deepWood.num);
@@ -171,9 +230,9 @@ export class PawnshopScene extends Phaser.Scene {
     this.add.rectangle(centerX, 68, BASE_WIDTH, 2, PALETTE.deepWood.num);
 
     // 当铺木柜台与操作区底板
-    this.add.rectangle(centerX, 125, BASE_WIDTH, 4, PALETTE.copperBrown.num);
-    this.add.rectangle(centerX, 127, BASE_WIDTH, 1, PALETTE.ink.num);
-    this.add.rectangle(centerX, 154, BASE_WIDTH, 52, PALETTE.deepWood.num);
+    this.add.rectangle(centerX, 122, BASE_WIDTH, 3, PALETTE.copperBrown.num);
+    this.add.rectangle(centerX, 124, BASE_WIDTH, 1, PALETTE.ink.num);
+    this.add.rectangle(centerX, 152, BASE_WIDTH, 56, PALETTE.deepWood.num);
   }
 
   private createHud(): void {
@@ -219,7 +278,9 @@ export class PawnshopScene extends Phaser.Scene {
     this.hudDeckText.setText(`${this.state.deck.length}`);
     this.hudDayText.setText(`第${this.state.day}天`);
 
-    if (this.state.phase === 'summary') {
+    if (this.state.phase === 'redemption') {
+      this.hudProgressText.setText('旧客赎当');
+    } else if (this.state.phase === 'summary') {
       this.hudProgressText.setText('白天结束');
     } else {
       const current = Math.min(this.state.customerIndex + 1, this.state.items.length);
@@ -230,8 +291,11 @@ export class PawnshopScene extends Phaser.Scene {
   private renderCurrentPhase(): void {
     this.updateHud();
     this.contentLayer.removeAll(true);
+    this.clearToast(false);
 
-    if (this.state.phase === 'negotiating') {
+    if (this.state.phase === 'redemption') {
+      this.renderRedemption();
+    } else if (this.state.phase === 'negotiating') {
       this.renderNegotiating();
     } else if (this.state.phase === 'feedback') {
       this.renderFeedback();
@@ -266,42 +330,204 @@ export class PawnshopScene extends Phaser.Scene {
     });
   }
 
-  private renderNegotiating(): void {
-    const item = this.state.items[this.state.customerIndex];
-    if (!item) {
+  private showToast(message: string): void {
+    this.clearToast(false);
+    this.lastToast = message;
+
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    // 轻提示置于当客卡片下半部空白处（y=107），不遮住 y=130 的口碑修正条
+    //（原 y=126 会短暂盖住口碑条中间几字，P6 协调员验收时发现并修正）。
+    const toastY = 107;
+    const width = Math.max(76, message.length * 12 + 20);
+    const height = 18;
+
+    const container = this.add.container(0, 0).setDepth(120);
+    const bg = this.add
+      .rectangle(centerX, toastY, width, height, PALETTE.ink.num)
+      .setStrokeStyle(1, PALETTE.vermilion.num);
+    const text = addPixelText(this, centerX, toastY, message, {
+      color: PALETTE.paperWhite.hex,
+      origin: 0.5,
+    });
+    container.add([bg, text]);
+    this.toastContainer = container;
+
+    this.toastTimer = this.time.delayedCall(TOAST_DURATION_MS, () => {
+      this.clearToast(false);
+    });
+  }
+
+  private clearToast(resetRecord = false): void {
+    if (this.toastTimer) {
+      this.toastTimer.remove(false);
+      this.toastTimer = undefined;
+    }
+    if (this.toastContainer) {
+      this.toastContainer.destroy();
+      this.toastContainer = undefined;
+    }
+    if (resetRecord) {
+      this.lastToast = null;
+    }
+  }
+
+  private renderRedemption(): void {
+    const offer = this.state.redemptionOffer;
+    if (!offer) {
       return;
     }
 
-    this.addTicketPanel(item);
+    this.addTicketPanel(offer.item, NEGOTIATING_PANEL_CENTER_Y, NEGOTIATING_PANEL_HEIGHT, 38, 56);
 
-    // 物品名与对应牌信息
+    const tickets = this.state.redeemTickets ?? this.save.redeemTickets;
     this.contentLayer.add(
-      addPixelText(this, 82, 37, item.name, {
+      addPixelText(this, 66, 28, '有人回来赎当！', {
+        color: PALETTE.vermilion.hex,
+        origin: [0, 0],
+      }),
+    );
+
+    this.contentLayer.add(
+      addPixelText(this, BASE_WIDTH - 16, 28, `赎当券:${tickets}`, {
+        color: PALETTE.copperBrown.hex,
+        origin: [1, 0],
+      }),
+    );
+
+    this.contentLayer.add(this.add.rectangle(185, 42, 238, 1, PALETTE.oldPaper.num));
+
+    this.contentLayer.add(
+      addPixelText(this, 66, 45, `赎回「${offer.item.name}」（牌：${offer.cardName}）`, {
         color: PALETTE.ink.hex,
         origin: [0, 0],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, BASE_WIDTH - 18, 37, `牌:${item.cardName}(${item.cardCost}费)`, {
+      addPixelText(this, 66, 60, wrapCjkText(offer.item.story, STORY_WRAP_CHARS), {
+        color: PALETTE.deepWood.hex,
+        origin: [0, 0],
+        lineSpacing: 2,
+      }),
+    );
+
+    this.contentLayer.add(
+      addPixelText(
+        this,
+        66,
+        90,
+        `接受:牌离库 钱+${offer.payout} 口碑+1 券-1`,
+        {
+          color: PALETTE.jade.hex,
+          origin: [0, 0],
+        },
+      ),
+    );
+
+    this.contentLayer.add(
+      addPixelText(this, 66, 104, '拒绝:牌与赎当券均保留', {
+        color: PALETTE.copperBrown.hex,
+        origin: [0, 0],
+      }),
+    );
+
+    this.addActionButton(
+      REDEMPTION_ACCEPT_BUTTON.x,
+      REDEMPTION_ACCEPT_BUTTON.y,
+      REDEMPTION_ACCEPT_BUTTON.width,
+      REDEMPTION_ACCEPT_BUTTON.height,
+      '接受赎当',
+      `+${offer.payout}元`,
+      () => this.handleRedemption(true),
+      false,
+      PALETTE.candle.num,
+      PALETTE.lampYellow.num,
+    );
+
+    this.addActionButton(
+      REDEMPTION_REJECT_BUTTON.x,
+      REDEMPTION_REJECT_BUTTON.y,
+      REDEMPTION_REJECT_BUTTON.width,
+      REDEMPTION_REJECT_BUTTON.height,
+      '拒绝赎当',
+      '保留纸牌',
+      () => this.handleRedemption(false),
+      false,
+      PALETTE.oldPaper.num,
+      PALETTE.lampYellow.num,
+    );
+  }
+
+  private handleRedemption(accept: boolean): void {
+    if (this.state.phase !== 'redemption') {
+      return;
+    }
+
+    audio.unlock();
+    audio.playSfx(accept ? 'deal_closed' : 'button_click');
+    this.state = resolveRedemption(this.state, accept);
+
+    this.save = {
+      ...this.save,
+      money: this.state.money,
+      reputation: this.state.reputation,
+      deck: [...this.state.deck],
+      redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
+    };
+    saveGame(this.save);
+    if (this.state.pawnPrices) {
+      savePawnPrices(this.state.pawnPrices);
+    }
+
+    this.renderCurrentPhase();
+  }
+
+  private renderNegotiating(): void {
+    const item = this.state.items[this.state.customerIndex];
+    if (!item) {
+      return;
+    }
+
+    this.addTicketPanel(item, NEGOTIATING_PANEL_CENTER_Y, NEGOTIATING_PANEL_HEIGHT, 38, 52);
+
+    // 物品名与对应牌信息（置于 y=27..39，保证不被教程气泡遮挡）
+    this.contentLayer.add(
+      addPixelText(this, 66, 27, item.name, {
+        color: PALETTE.ink.hex,
+        origin: [0, 0],
+      }),
+    );
+
+    this.contentLayer.add(
+      addPixelText(this, BASE_WIDTH - 16, 27, `牌:${item.cardName}(${item.cardCost}费)`, {
         color: PALETTE.copperBrown.hex,
         origin: [1, 0],
       }),
     );
 
-    this.contentLayer.add(this.add.rectangle(191, 55, 218, 1, PALETTE.oldPaper.num));
+    this.contentLayer.add(this.add.rectangle(185, 40, 238, 1, PALETTE.oldPaper.num));
 
-    // 一句故事
+    // 当客故事（C2：谈价期间完整可见，位于 y=41..66，严格高于教程气泡 y=80）
     this.contentLayer.add(
-      addPixelText(this, 82, 62, wrapCjkText(item.story, STORY_WRAP_CHARS), {
+      addPixelText(this, 66, 41, wrapCjkText(item.story, STORY_WRAP_CHARS), {
         color: PALETTE.deepWood.hex,
         origin: [0, 0],
-        lineSpacing: 5,
+        lineSpacing: 1,
       }),
     );
 
-    // 当客卡片右下角：跳过当客按钮（不成交、不扣钱、不改口碑、不给牌，直接进入下一位；
-    // 三档全买不起时以灯黄底高亮提示可用出口，其余情况为旧纸底，均为 16 色板 + 1px 墨黑描边）
+    // 卡牌效果说明（C1：收当卡片同步写清效果，位于 y=67..79，高于教程气泡 y=80）
+    const cardDef = CARDS_BY_NAME.get(item.cardName);
+    if (cardDef) {
+      this.contentLayer.add(
+        addPixelText(this, 66, 67, `效果:${formatEffectDescription(cardDef)}`, {
+          color: PALETTE.copperBrown.hex,
+          origin: [0, 0],
+        }),
+      );
+    }
+
+    // 当客卡片右下角：跳过当客按钮
     const noneAffordable = !hasAnyAffordableTier(this.state.money, item.trueValue);
     this.addActionButton(
       SKIP_BUTTON_X,
@@ -316,11 +542,25 @@ export class PawnshopScene extends Phaser.Scene {
       noneAffordable ? PALETTE.paperWhite.num : PALETTE.lampYellow.num,
     );
 
-    // 三档报价按钮：低价 / 平价 / 高价
+    // 报价区顶部：口碑接受率修正提示（C3）
     const centerX = Math.floor(BASE_WIDTH / 2);
+    const repColor =
+      this.state.reputation > 0
+        ? PALETTE.lampYellow.hex
+        : this.state.reputation < 0
+          ? PALETTE.vermilion.hex
+          : PALETTE.oldPaper.hex;
+    this.contentLayer.add(
+      addPixelText(this, centerX, 130, formatReputationHint(this.state.reputation), {
+        color: repColor,
+        origin: 0.5,
+      }),
+    );
+
+    // 三档报价按钮：低价 / 平价 / 高价
     const buttonXs = [58, centerX, BASE_WIDTH - 58];
     const buttonWidth = 92;
-    const buttonHeight = 36;
+    const buttonHeight = 32;
 
     TIER_ORDER.forEach((tier, index) => {
       const x = buttonXs[index];
@@ -337,6 +577,9 @@ export class PawnshopScene extends Phaser.Scene {
         `${price}元`,
         () => this.handleOffer(tier),
         !affordable,
+        PALETTE.candle.num,
+        PALETTE.lampYellow.num,
+        () => this.handleUnaffordableClick(),
       );
     });
   }
@@ -347,38 +590,73 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
-    this.addTicketPanel(outcome.item);
+    // 紧凑结算面板（y=24..88），确保 3/6 教程气泡（y=92..136）与底部按钮完全不遮挡结算内容
+    this.addTicketPanel(outcome.item, FEEDBACK_PANEL_CENTER_Y, FEEDBACK_PANEL_HEIGHT, 36, 56);
 
     const headlineColor = outcome.accepted ? PALETTE.jade.hex : PALETTE.vermilion.hex;
     this.contentLayer.add(
-      addPixelText(this, 82, 37, outcome.message, {
+      addPixelText(this, 60, 26, outcome.message, {
         color: headlineColor,
         origin: [0, 0],
       }),
     );
 
-    this.contentLayer.add(this.add.rectangle(191, 55, 218, 1, PALETTE.oldPaper.num));
+    if (outcome.accepted) {
+      this.contentLayer.add(
+        addPixelText(
+          this,
+          BASE_WIDTH - 14,
+          26,
+          `${outcome.price}元 口碑${formatSignedDelta(outcome.reputationDelta)}`,
+          {
+            color: PALETTE.copperBrown.hex,
+            origin: [1, 0],
+          },
+        ),
+      );
+    }
 
-    const detailLines = outcome.accepted
-      ? [
-          `出价 ${outcome.price}元 · 口碑 ${formatSignedDelta(outcome.reputationDelta)}`,
-          `牌组加入：${outcome.item.cardName}（${outcome.item.cardCost}费）`,
-        ]
-      : ['钱、口碑、牌组均无变化', `未收下${outcome.item.name}`];
+    this.contentLayer.add(this.add.rectangle(183, 39, 244, 1, PALETTE.oldPaper.num));
 
-    this.contentLayer.add(
-      addPixelText(this, 82, 63, detailLines.join('\n'), {
-        color: PALETTE.ink.hex,
-        origin: [0, 0],
-        lineSpacing: 6,
-      }),
-    );
+    if (outcome.accepted) {
+      // C1：收当结算显示卡牌效果说明
+      const cardDef = CARDS_BY_NAME.get(outcome.item.cardName);
+      const effectDesc = cardDef ? formatEffectDescription(cardDef) : '';
+      this.contentLayer.add(
+        addPixelText(this, 60, 41, `${outcome.item.cardName}:${effectDesc}`, {
+          color: PALETTE.ink.hex,
+          origin: [0, 0],
+        }),
+      );
+
+      // C2：成交后结算再出现一次该故事（“你收下了……”）
+      this.contentLayer.add(
+        addPixelText(this, 60, 55, wrapCjkText(`你收下了：${outcome.item.story}`, 20), {
+          color: PALETTE.deepWood.hex,
+          origin: [0, 0],
+          lineSpacing: 1,
+        }),
+      );
+    } else {
+      this.contentLayer.add(
+        addPixelText(this, 60, 44, '钱、口碑、牌组均无变化', {
+          color: PALETTE.ink.hex,
+          origin: [0, 0],
+        }),
+      );
+      this.contentLayer.add(
+        addPixelText(this, 60, 60, `未收下${outcome.item.name}`, {
+          color: PALETTE.deepWood.hex,
+          origin: [0, 0],
+        }),
+      );
+    }
 
     const isLastCustomer = this.state.customerIndex >= this.state.items.length - 1;
     const nextLabel = isLastCustomer ? '白天结束' : '下一位';
     const centerX = Math.floor(BASE_WIDTH / 2);
 
-    this.addActionButton(centerX, BUTTON_ROW_Y, 118, 28, nextLabel, null, () => {
+    this.addActionButton(centerX, FEEDBACK_NEXT_BUTTON_Y, 118, 26, nextLabel, null, () => {
       audio.unlock();
       audio.playSfx('button_click');
       this.state = advanceCustomer(this.state);
@@ -511,7 +789,7 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     // 进入夜里牌局按钮（经 6 帧拉灯转场）+ 返回标题按钮（保留 (160, 151) 在“返回标题”命中区内兼容既有 E2E）
-    this.addActionButton(88, BUTTON_ROW_Y, 122, 26, '进入夜里牌局', null, () => {
+    this.addActionButton(88, 151, 122, 26, '进入夜里牌局', null, () => {
       audio.unlock();
       audio.playSfx('button_click');
       const updatedSave: SaveData = {
@@ -520,6 +798,7 @@ export class PawnshopScene extends Phaser.Scene {
         money: this.state.money,
         reputation: this.state.reputation,
         deck: [...this.state.deck],
+        redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
       };
 
       this.scene.start('TransitionScene', {
@@ -534,28 +813,32 @@ export class PawnshopScene extends Phaser.Scene {
       });
     });
 
-    this.addActionButton(224, BUTTON_ROW_Y, 138, 26, '返回标题', null, () => {
+    this.addActionButton(224, 151, 138, 26, '返回标题', null, () => {
       audio.unlock();
       audio.playSfx('button_click');
       this.scene.start('TitleScene');
     });
   }
 
-  private addTicketPanel(item: PawnItem): void {
+  private addTicketPanel(
+    item: PawnItem,
+    panelCenterY: number,
+    panelHeight: number,
+    boxX: number,
+    boxY: number,
+  ): void {
     const centerX = Math.floor(BASE_WIDTH / 2);
 
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, PANEL_CENTER_Y, BASE_WIDTH - 24, PANEL_HEIGHT, PALETTE.candle.num)
+        .rectangle(centerX, panelCenterY, BASE_WIDTH - 20, panelHeight, PALETTE.candle.num)
         .setStrokeStyle(1, PALETTE.ink.num),
     );
 
-    // 左侧旧物 32×32 真像素插画框
-    const boxX = 48;
-    const boxY = PANEL_CENTER_Y;
+    // 左侧旧物 32×32 真像素插画框（40×40）
     this.contentLayer.add(
       this.add
-        .rectangle(boxX, boxY, 48, 48, PALETTE.paperWhite.num)
+        .rectangle(boxX, boxY, 40, 40, PALETTE.paperWhite.num)
         .setStrokeStyle(1, PALETTE.ink.num),
     );
 
@@ -576,13 +859,19 @@ export class PawnshopScene extends Phaser.Scene {
     disabled = false,
     fillColor: number = PALETTE.candle.num,
     hoverColor: number = PALETTE.lampYellow.num,
+    onDisabledClick?: () => void,
   ): void {
-    // 买不起的档位：置灰禁用——银蓝底（16 色板内），与可点的烛光底明显区分，
-    // 不设 interactive、无 hover 变色、不可点击。
+    // A3：买不起的档位采用深木灰显样式（16 色板内：深木底 + 木棕边 + 铜棕字，避免原银蓝底像“蓝高亮”），
+    // 点击时绝不触发成交/扣钱/RNG，仅给出“钱不够”轻提示。
+    const textColor = disabled ? PALETTE.copperBrown.hex : PALETTE.ink.hex;
     if (disabled) {
       const bg = this.add
-        .rectangle(x, y, width, height, PALETTE.silverBlue.num)
-        .setStrokeStyle(1, PALETTE.ink.num);
+        .rectangle(x, y, width, height, PALETTE.deepWood.num)
+        .setStrokeStyle(1, PALETTE.woodBrown.num);
+      if (onDisabledClick) {
+        bg.setInteractive({ useHandCursor: false });
+        bg.on('pointerdown', onDisabledClick);
+      }
       this.contentLayer.add(bg);
     } else {
       const bg = this.add
@@ -604,7 +893,7 @@ export class PawnshopScene extends Phaser.Scene {
     if (bottomText === null) {
       this.contentLayer.add(
         addPixelText(this, x, y, topText, {
-          color: PALETTE.ink.hex,
+          color: textColor,
           origin: 0.5,
         }),
       );
@@ -612,18 +901,25 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     this.contentLayer.add(
-      addPixelText(this, x, y - 8, topText, {
-        color: PALETTE.ink.hex,
+      addPixelText(this, x, y - 7, topText, {
+        color: textColor,
         origin: 0.5,
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, x, y + 8, bottomText, {
-        color: PALETTE.ink.hex,
+      addPixelText(this, x, y + 7, bottomText, {
+        color: textColor,
         origin: 0.5,
       }),
     );
+  }
+
+  private handleUnaffordableClick(): void {
+    if (this.state.phase !== 'negotiating') {
+      return;
+    }
+    this.showToast('钱不够');
   }
 
   private handleSkip(): void {
@@ -642,18 +938,23 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
-    // 钱不能变负数：买不起的档位直接 return，且必须在 resolveOffer 之前，
+    // 钱不能变负数：买不起的档位直接 return（并提示“钱不够”），且必须在 resolveOffer 之前，
     // 否则会消耗 RNG、固定种子下的接受序列会漂移。
     const item = this.state.items[this.state.customerIndex];
     if (!item || !canAffordTier(this.state.money, item.trueValue, tier)) {
+      this.showToast('钱不够');
       return;
     }
 
     audio.unlock();
-    const rate = BALANCE.tiers[tier].acceptRate;
+    // C3：口碑影响低价与平价接受率，高价 100% 不变
+    const rate = getEffectiveAcceptRate(tier, this.state.reputation);
     const accepted = resolveOffer(rate, this.rng);
     this.state = settle(this.state, tier, accepted);
     if (accepted) {
+      if (this.state.pawnPrices) {
+        savePawnPrices(this.state.pawnPrices);
+      }
       audio.playSfx('deal_closed');
       this.time.delayedCall(140, () => {
         if (this.scene.isActive()) {
@@ -679,6 +980,7 @@ export class PawnshopScene extends Phaser.Scene {
     window.addEventListener('resize', refresh);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.clearToast(false);
       if (this.handleWindowResize) {
         window.removeEventListener('resize', this.handleWindowResize);
         this.handleWindowResize = undefined;

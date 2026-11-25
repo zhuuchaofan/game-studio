@@ -12,7 +12,7 @@ interface SaveSnapshot {
 }
 
 interface PawnshopDebugState {
-  phase: 'title' | 'negotiating' | 'feedback' | 'summary';
+  phase: 'title' | 'redemption' | 'negotiating' | 'feedback' | 'summary';
   customerIndex: number;
   money: number;
   reputation: number;
@@ -41,6 +41,7 @@ const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 const BUTTONS = {
   titleStart: { x: 160, y: 122 },
   titleContinue: { x: 160, y: 156 },
+  redeemReject: { x: 224, y: 151 },
   tierLow: { x: 58, y: 151 },
   tierFair: { x: 160, y: 151 },
   tierHigh: { x: 262, y: 151 },
@@ -224,6 +225,10 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
 
+  // Day 4 save has 1 redeemTicket -> reject pre-day redemption to keep 35 money & deck unchanged
+  await waitForPawnshopPhase(page, 'redemption');
+  await clickLogical(page, canvas, BUTTONS.redeemReject);
+
   // Day 4 with seed=4: watch (20/40/60) -> bicycle (40/80/120) -> erhu (25/50/75)
   const c1 = await waitForPawnshopPhase(page, 'negotiating');
   expect(c1.day).toBe(4);
@@ -267,7 +272,7 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   expect(summary.money).toBe(35);
   expect(summary.reputation).toBe(4);
   expect(summary.deck).toEqual(['倒转', '守诺', '旧书', '余音', '守诺']);
-  expect(summary.log).toEqual(['旧手表:跳过', '永久自行车:跳过', '二胡:跳过']);
+  expect(summary.log.slice(-3)).toEqual(['旧手表:跳过', '永久自行车:跳过', '二胡:跳过']);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);

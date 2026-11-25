@@ -2,7 +2,14 @@ import Phaser from 'phaser';
 import { audio, installAudioDebugHook } from '../game/audio';
 import { BALANCE, PALETTE } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
-import { createNewGame, loadSave, loadTutorialDone, maxRenqingForLevel, saveGame } from '../game/save';
+import {
+  clearPawnPrices,
+  createNewGame,
+  loadSave,
+  loadTutorialDone,
+  maxRenqingForLevel,
+  saveGame,
+} from '../game/save';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
 export const TITLE_START_BUTTON = { x: 160, y: 122, width: 96, height: 24 } as const;
@@ -88,6 +95,7 @@ export class TitleScene extends Phaser.Scene {
       '开始',
       () => {
         const fresh = createNewGame();
+        clearPawnPrices();
         saveGame(fresh);
         this.scene.start('PawnshopScene', { save: fresh });
       },
@@ -119,6 +127,7 @@ export class TitleScene extends Phaser.Scene {
       '教程',
       () => {
         const fresh = createNewGame();
+        clearPawnPrices();
         this.scene.start('PawnshopScene', { save: fresh, forceTutorial: true });
       },
       PALETTE.oldPaper.num,
