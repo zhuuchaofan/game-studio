@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "sim": "node scripts/sim.mjs",
+    "sim:check": "node scripts/sim.mjs --check"
   },
   "dependencies": {
     "phaser": "3.90.0"

@@ -5,11 +5,13 @@ import demonsJson from '../../src/data/demons.json';
 import {
   applyEffect,
   buildCardMap,
+  cancelPendingChoice,
   canPlayCard,
   createBattle,
   endTurn,
   getIntent,
   playCard,
+  resolvePendingChoice,
   type BattleBalanceConfig,
   type BattleState,
   type CardDef,
@@ -55,7 +57,7 @@ describe('cards.json integrity', () => {
   });
 });
 
-describe('EffectRunner (applyEffect)', () => {
+describe('EffectRunner (applyEffect) & PendingChoice', () => {
   it('damage reduces demonHp immutably and clamps at 0', () => {
     const initial = makeState({ demonHp: 10 });
     const ctx = { cardsByName: CARDS_BY_NAME, rng: mulberry32(1) };
@@ -139,7 +141,6 @@ describe('EffectRunner (applyEffect)', () => {
     const rewound = applyEffect(initial, { type: 'rewind' }, ctx);
     expect(rewound.playerHp).toBe(30);
     expect(rewound.demonHp).toBe(20);
-    // 人情、手牌、护盾均不回溯
     expect(rewound.renqing).toBe(1);
     expect(rewound.hand).toEqual(['钢笔', '旧书']);
     expect(rewound.shield).toBe(5);
@@ -156,17 +157,15 @@ describe('EffectRunner (applyEffect)', () => {
       drawPile: ['守诺', '旧书', '钢笔', '秤砣'],
     });
 
-    const afterPlay = playCard(initial, 0);
+    const afterPlay = playCard(initial, 0).state;
     expect(afterPlay.reflectNextDamage).toBe(true);
 
-    const afterR1 = endTurn(afterPlay);
-    // 心魔 A 第 1 回合 3 伤反弹给心魔
+    const afterR1 = endTurn(afterPlay).state;
     expect(afterR1.playerHp).toBe(30);
     expect(afterR1.demonHp).toBe(17);
     expect(afterR1.reflectNextDamage).toBe(false);
 
-    // 第 2 回合不再反弹
-    const afterR2 = endTurn(afterR1);
+    const afterR2 = endTurn(afterR1).state;
     expect(afterR2.playerHp).toBe(27);
     expect(afterR2.demonHp).toBe(17);
   });
@@ -187,7 +186,6 @@ describe('EffectRunner (applyEffect)', () => {
     expect(afterFirstDraw.illuminateNextDraw).toBe(false);
     expect(afterFirstDraw.drawPile).toEqual(['守诺', '旧书', '暖水瓶']);
 
-    // 无攻击牌时正常抽牌并清除标志
     const noAttackState = makeState({
       hand: [],
       drawPile: ['守诺', '旧书'],
@@ -208,41 +206,69 @@ describe('EffectRunner (applyEffect)', () => {
     expect(getIntent(revealed).next).toEqual({ round: 2, damage: 3 });
   });
 
-  it('damage_conditional (铁皮青蛙) deals base 3 when demon has not acted and 6 when demon has acted in a prior round', () => {
+  it('damage_conditional (铁皮青蛙) deals base 3 when demon has not acted and 6 when demon has acted', () => {
     const ctx = { cardsByName: CARDS_BY_NAME, rng: mulberry32(1) };
 
-    // 心魔尚未行动
     const beforeAct = makeState({ demonHp: 20, demonHasActed: false });
     const dmgBefore = applyEffect(beforeAct, { type: 'damage_conditional', value: 3, bonus: 3 }, ctx);
     expect(dmgBefore.demonHp).toBe(17);
 
-    // 此前回合已行动
     const afterAct = makeState({ demonHp: 20, demonHasActed: true });
     const dmgAfter = applyEffect(afterAct, { type: 'damage_conditional', value: 3, bonus: 3 }, ctx);
     expect(dmgAfter.demonHp).toBe(14);
   });
 
-  it('discard_for_renqing (当票) discards leftmost non-self card for +2 renqing and is unplayable when alone in hand', () => {
-    // 只有当票本身：不可打出
+  it('discard_for_renqing (当票) pauses with serializable PendingChoice so player chooses exact card to discard', () => {
+    // 1. Alone in hand -> unplayable (no selectable discard targets)
     const solo = makeState({ hand: ['当票'], renqing: 1, discardPile: [] });
     expect(canPlayCard(solo, 0)).toBe(false);
     const soloAttempt = playCard(solo, 0);
-    expect(soloAttempt.hand).toEqual(['当票']);
-    expect(soloAttempt.renqing).toBe(1);
+    expect(soloAttempt.state.hand).toEqual(['当票']);
+    expect(soloAttempt.state.pendingChoice).toBeNull();
+    expect(soloAttempt.events).toEqual([]);
 
-    // 当票在最左：弃掉剩余手牌最左一张（钢笔），两张均进弃牌堆，人情 +2
-    const atLeft = makeState({ hand: ['当票', '钢笔', '旧书'], renqing: 1, discardPile: [] });
-    expect(canPlayCard(atLeft, 0)).toBe(true);
-    const afterLeft = playCard(atLeft, 0);
-    expect(afterLeft.hand).toEqual(['旧书']);
-    expect(afterLeft.discardPile).toEqual(['钢笔', '当票']);
-    expect(afterLeft.renqing).toBe(3);
+    // 2. Play 当票 with ['当票', '钢笔', '旧书'] -> enters PendingChoice; cannot play/endTurn until resolved
+    const initial = makeState({ hand: ['当票', '钢笔', '旧书'], renqing: 1, discardPile: [] });
+    expect(canPlayCard(initial, 0)).toBe(true);
 
-    // 当票在中间：弃掉最左的守诺
-    const inMiddle = makeState({ hand: ['守诺', '当票', '旧书'], renqing: 2, discardPile: [] });
-    const afterMiddle = playCard(inMiddle, 1);
-    expect(afterMiddle.hand).toEqual(['旧书']);
-    expect(afterMiddle.discardPile).toEqual(['守诺', '当票']);
-    expect(afterMiddle.renqing).toBe(4);
+    const played = playCard(initial, 0);
+    expect(played.state.pendingChoice).not.toBeNull();
+    expect(played.state.pendingChoice?.kind).toBe('discard');
+    expect(played.state.pendingChoice?.sourceCardName).toBe('当票');
+    // Must be JSON-serializable cleanly
+    expect(JSON.parse(JSON.stringify(played.state.pendingChoice))).toEqual(played.state.pendingChoice);
+    expect(played.state.hand).toEqual(['钢笔', '旧书']);
+    expect(played.state.renqing).toBe(1); // Not granted until discard choice resolves!
+    expect(canPlayCard(played.state, 0)).toBe(false);
+    expect(endTurn(played.state).events).toEqual([]);
+
+    // 3. Choose index 1 ('旧书', NOT leftmost '钢笔') -> discards '旧书' and grants +2 renqing!
+    const resolved = resolvePendingChoice(played.state, 1);
+    expect(resolved.state.pendingChoice).toBeNull();
+    expect(resolved.state.hand).toEqual(['钢笔']);
+    expect(resolved.state.discardPile).toEqual(['当票', '旧书']);
+    expect(resolved.state.renqing).toBe(3);
+    expect(resolved.events).toContainEqual({ type: 'CARD_DISCARDED', cardName: '旧书', handIndex: 1 });
+    expect(resolved.events).toContainEqual({
+      type: 'RENQING_GAINED',
+      amount: 2,
+      renqingAfter: 3,
+      source: '当票',
+    });
+
+    // 4. Cancel PendingChoice returns 当票 to hand & leaves other cards intact
+    const cancelled = cancelPendingChoice(played.state);
+    expect(cancelled.state.pendingChoice).toBeNull();
+    expect(cancelled.state.hand).toEqual(['钢笔', '旧书', '当票']);
+    expect(cancelled.state.discardPile).toEqual([]);
+    expect(cancelled.state.renqing).toBe(1);
+
+    // 5. Defensive: direct applyEffect with empty hand does not stall into an unresolvable PendingChoice
+    const emptyHand = makeState({ hand: [], renqing: 1 });
+    const safe = applyEffect(emptyHand, { type: 'discard_for_renqing', value: 2 }, {
+      cardsByName: CARDS_BY_NAME,
+      rng: mulberry32(1),
+    });
+    expect(safe.pendingChoice).toBeNull();
   });
 });

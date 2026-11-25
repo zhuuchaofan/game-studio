@@ -15,6 +15,7 @@ import {
   formatReputationHint,
   formatSignedDelta,
   getEffectiveAcceptRate,
+  getTemperamentLabel,
   getTierAffordability,
   hasAnyAffordableTier,
   ITEMS,
@@ -29,6 +30,7 @@ import {
   TIER_ORDER,
   toDebugSnapshot,
   wrapCjkText,
+  type CustomerTemperament,
   type OfferTier,
   type PawnItem,
   type PawnshopState,
@@ -157,13 +159,17 @@ export class PawnshopScene extends Phaser.Scene {
           isNegotiating && currentItem
             ? getTierAffordability(this.state.money, currentItem.trueValue)
             : undefined;
-        const effectiveAcceptRates = isNegotiating
-          ? {
-              low: getEffectiveAcceptRate('low', this.state.reputation),
-              fair: getEffectiveAcceptRate('fair', this.state.reputation),
-              high: getEffectiveAcceptRate('high', this.state.reputation),
-            }
-          : undefined;
+        const effectiveAcceptRates =
+          isNegotiating && currentItem
+            ? {
+                low: getEffectiveAcceptRate('low', this.state.reputation, BALANCE, currentItem.temperament),
+                fair: getEffectiveAcceptRate('fair', this.state.reputation, BALANCE, currentItem.temperament),
+                high: getEffectiveAcceptRate('high', this.state.reputation, BALANCE, currentItem.temperament),
+              }
+            : undefined;
+        const currentTemperament: CustomerTemperament | null =
+          isNegotiating && currentItem?.temperament ? currentItem.temperament : null;
+        const currentTemperamentLabel = getTemperamentLabel(currentTemperament ?? undefined);
         const activeRedemption =
           this.state.phase === 'redemption' && this.state.redemptionOffer
             ? {
@@ -181,6 +187,9 @@ export class PawnshopScene extends Phaser.Scene {
           redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
           maxRenqing: maxRenqingForLevel(this.save.shopLevel),
           itemsOrder: this.state.items.map((item) => item.id),
+          currentTemperament,
+          currentTemperamentLabel,
+          lastMessage: this.state.lastOutcome?.message ?? null,
           canSkip: isNegotiating,
           lastToast: this.lastToast,
           redemptionOffer: activeRedemption,
@@ -464,7 +473,7 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     audio.unlock();
-    audio.playSfx(accept ? 'deal_closed' : 'button_click');
+    audio.playSfx(accept ? 'redeem_deal' : 'button_click');
     this.state = resolveRedemption(this.state, accept);
 
     this.save = {
@@ -490,13 +499,40 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.addTicketPanel(item, NEGOTIATING_PANEL_CENTER_Y, NEGOTIATING_PANEL_HEIGHT, 38, 52);
 
-    // 物品名与对应牌信息（置于 y=27..39，保证不被教程气泡遮挡）
+    // 物品名、性格像素徽章（P7）与对应牌信息（置于 y=27..39，保证不被教程气泡遮挡）
     this.contentLayer.add(
       addPixelText(this, 66, 27, item.name, {
         color: PALETTE.ink.hex,
         origin: [0, 0],
       }),
     );
+
+    const tempLabel = getTemperamentLabel(item.temperament);
+    if (tempLabel && item.temperament) {
+      const badgeW = tempLabel.length * 12 + 6;
+      const badgeX = 66 + item.name.length * 12 + 4 + Math.floor(badgeW / 2);
+      const badgeY = 33;
+      const badgeFill =
+        item.temperament === 'urgent'
+          ? PALETTE.vermilion.num
+          : item.temperament === 'proud'
+            ? PALETTE.deepBlue.num
+            : PALETTE.jade.num;
+      const badgeTextColor =
+        item.temperament === 'proud' ? PALETTE.lampYellow.hex : PALETTE.paperWhite.hex;
+
+      this.contentLayer.add(
+        this.add
+          .rectangle(badgeX, badgeY, badgeW, 13, badgeFill)
+          .setStrokeStyle(1, PALETTE.ink.num),
+      );
+      this.contentLayer.add(
+        addPixelText(this, badgeX, badgeY, tempLabel, {
+          color: badgeTextColor,
+          origin: 0.5,
+        }),
+      );
+    }
 
     this.contentLayer.add(
       addPixelText(this, BASE_WIDTH - 16, 27, `牌:${item.cardName}(${item.cardCost}费)`, {
@@ -551,7 +587,7 @@ export class PawnshopScene extends Phaser.Scene {
           ? PALETTE.vermilion.hex
           : PALETTE.oldPaper.hex;
     this.contentLayer.add(
-      addPixelText(this, centerX, 130, formatReputationHint(this.state.reputation), {
+      addPixelText(this, centerX, 130, formatReputationHint(this.state.reputation, BALANCE, item.temperament), {
         color: repColor,
         origin: 0.5,
       }),
@@ -594,8 +630,9 @@ export class PawnshopScene extends Phaser.Scene {
     this.addTicketPanel(outcome.item, FEEDBACK_PANEL_CENTER_Y, FEEDBACK_PANEL_HEIGHT, 36, 56);
 
     const headlineColor = outcome.accepted ? PALETTE.jade.hex : PALETTE.vermilion.hex;
+    const headline = outcome.accepted ? `成交！收下${outcome.item.name}` : '没谈成';
     this.contentLayer.add(
-      addPixelText(this, 60, 26, outcome.message, {
+      addPixelText(this, 60, 26, headline, {
         color: headlineColor,
         origin: [0, 0],
       }),
@@ -618,34 +655,41 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.contentLayer.add(this.add.rectangle(183, 39, 244, 1, PALETTE.oldPaper.num));
 
+    // P7：当客同源白话还价反馈台词（置于 y=41..53，严格位于结算面板 y=24..88 内）
+    this.contentLayer.add(
+      addPixelText(this, 60, 41, `「${outcome.message}」`, {
+        color: outcome.accepted ? PALETTE.ink.hex : PALETTE.vermilion.hex,
+        origin: [0, 0],
+      }),
+    );
+
     if (outcome.accepted) {
       // C1：收当结算显示卡牌效果说明
       const cardDef = CARDS_BY_NAME.get(outcome.item.cardName);
       const effectDesc = cardDef ? formatEffectDescription(cardDef) : '';
       this.contentLayer.add(
-        addPixelText(this, 60, 41, `${outcome.item.cardName}:${effectDesc}`, {
-          color: PALETTE.ink.hex,
+        addPixelText(this, 60, 55, `${outcome.item.cardName}:${effectDesc}`, {
+          color: PALETTE.copperBrown.hex,
           origin: [0, 0],
         }),
       );
 
-      // C2：成交后结算再出现一次该故事（“你收下了……”）
+      // C2：成交后结算再出现一次该故事
       this.contentLayer.add(
-        addPixelText(this, 60, 55, wrapCjkText(`你收下了：${outcome.item.story}`, 20), {
+        addPixelText(this, 60, 69, `你收下了：${outcome.item.story}`, {
           color: PALETTE.deepWood.hex,
           origin: [0, 0],
-          lineSpacing: 1,
         }),
       );
     } else {
       this.contentLayer.add(
-        addPixelText(this, 60, 44, '钱、口碑、牌组均无变化', {
+        addPixelText(this, 60, 58, '钱、口碑、牌组均无变化', {
           color: PALETTE.ink.hex,
           origin: [0, 0],
         }),
       );
       this.contentLayer.add(
-        addPixelText(this, 60, 60, `未收下${outcome.item.name}`, {
+        addPixelText(this, 60, 72, `未收下${outcome.item.name}`, {
           color: PALETTE.deepWood.hex,
           origin: [0, 0],
         }),
@@ -919,6 +963,8 @@ export class PawnshopScene extends Phaser.Scene {
     if (this.state.phase !== 'negotiating') {
       return;
     }
+    audio.unlock();
+    audio.playSfx('insufficient_funds');
     this.showToast('钱不够');
   }
 
@@ -942,13 +988,15 @@ export class PawnshopScene extends Phaser.Scene {
     // 否则会消耗 RNG、固定种子下的接受序列会漂移。
     const item = this.state.items[this.state.customerIndex];
     if (!item || !canAffordTier(this.state.money, item.trueValue, tier)) {
+      audio.unlock();
+      audio.playSfx('insufficient_funds');
       this.showToast('钱不够');
       return;
     }
 
     audio.unlock();
-    // C3：口碑影响低价与平价接受率，高价 100% 不变
-    const rate = getEffectiveAcceptRate(tier, this.state.reputation);
+    // C3 + P7：口碑与性格共同修正低价与平价接受率，高价 100% 不变
+    const rate = getEffectiveAcceptRate(tier, this.state.reputation, BALANCE, item.temperament);
     const accepted = resolveOffer(rate, this.rng);
     this.state = settle(this.state, tier, accepted);
     if (accepted) {
@@ -962,7 +1010,7 @@ export class PawnshopScene extends Phaser.Scene {
         }
       });
     } else {
-      audio.playSfx('button_click');
+      audio.playSfx('offer_rejected');
     }
     this.renderCurrentPhase();
   }

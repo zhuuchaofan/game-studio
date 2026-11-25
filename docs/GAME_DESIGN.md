@@ -246,3 +246,39 @@
   - 车票：「今晚，车票被扛过去了。当了婚戒的新娘，离回家又近了一步。」
   - 房租：「今晚，房租被扛过去了。当了旧书的学生，不用再为下个月发愁了。」
   - 学费：「今晚，学费被扛过去了。骑永久自行车送儿子的父亲，值了。」
+
+---
+
+## 15. P7 开源对照落地增补（2026-11-25）
+
+> 本节为 P7 工程底座、音画演出与当铺经济深化增补；不改动原型 v1.0 定稿核心规则与 20 张基础牌表，所有设计均为自研实现（唯一引入的第三方代码为 MIT 协议的 ZzFX 核心合成函数，已登记于 `docs/ASSET_LEDGER.md`）。
+
+### 15.1 数据完整性校验与 `npm run sim` 平衡护栏
+- **静态数据校验（`src/game/validate.ts`）**：在常规 `npm test` 中自动执行，断言：
+  - `cards.json` 全部 `id` / `name` 唯一、费用为非负整数、效果类型合法且数值参数非负、可选颜色属于定稿 16 色调色板；
+  - `items.json` 每件旧物的 `cardName` 均存在于 `cards.json` 且费用一致、`color` 属于 16 色调色板、可选 `temperament` 合法；
+  - `demons.json` 血量 > 0、回合动作连续且至少覆盖 1/2/3 回合。
+- **CLI 平衡模拟与护栏（`npm run sim` / `npm run sim:check`）**：
+  - 支持环境变量热覆盖（如 `SIM_TUNE='{"demonAHp":22}' npm run sim`），单命令输出 4 心魔 1,000 局胜率、平均结束回合、7 天中位现金流与平均赎当次数。
+  - **护栏区间**：每心魔胜率须在 **40%–95%** 之间，7 天常赢玩家（`≥ 5 胜`）第 7 天中位现金流 **≥ 30**。
+
+### 15.2 音频升级：Lookahead 时钟 + ZzFX（MIT）
+- 保留 `AudioEngine` 既有工程外壳（首次交互手势解锁、`localStorage` 静音持久化、无音频环境静默降级、`__AUDIO_DEBUG__` 断言钩子）。
+- BGM 调度从 `setInterval` 即时发声升级为基于 `ctx.currentTime` 的轻量 Lookahead（提前 **100 ms** 排程，25 ms 轮询并在长时切后台后自动重同步），消除掉帧/切后台导致的节拍抖动。
+- 内联 MIT 协议 **ZzFX v1.4.0** 核心 `buildSamples` 合成函数（< 1 KB，登记于 `docs/ASSET_LEDGER.md`），零外部音频文件补齐 6 类新音效：`hit_demon`（心魔受击）、`shield_block`（护盾格挡）、`player_hurt`（玩家受伤）、`offer_rejected`（当客拒收）、`insufficient_funds`（钱不够）、`redeem_deal`（赎当成交）。
+
+### 15.3 牌局结构化事件流与可暂停选牌续体（`PendingChoice`）
+- `playCard` / `endTurn` / `resolvePendingChoice` / `cancelPendingChoice` 统一返回 `{ state, events: BattleEvent[] }`，核心事件包含 `CARD_PLAYED`、`DAMAGE_DEALT`、`SHIELD_GAINED`、`REFLECT_TRIGGERED`、`REWIND_APPLIED`、`DEMON_ACT`、`BATTLE_ENDED`（及辅助事件 `CARD_DISCARDED`、`CHOICE_REQUIRED`、`RENQING_GAINED` 等）；`CardBattleScene.ts` 按事件驱动飞牌、飘字、受击闪红/微震屏与音效，不再在场景层反向猜状态差值。
+- `BattleState` 新增可 JSON 序列化的 `pendingChoice`；「当票」（`discard_for_renqing`）由强制弃最左一张升级为暂停结算、由玩家在手牌中点选具体要弃的 1 张牌（支持取消退回手牌），选定后再续跑获得 `+2` 人情。
+
+### 15.4 当客性格标签与 1987 老街还价反馈
+- `src/data/items.json` 为 6 件旧物新增可选性格 `temperament`，在白天当客卡片顶部用 2–4 字 16 色像素徽章明示，让玩家“看人报价”：
+  - **`urgent`（急用钱）** — 旧手表、旧书：低价接受率 **+10%**，低价成交口碑 **−2**（原 −1）；
+  - **`proud`（爱面子）** — 永久自行车、邮票册：低价接受率 **−10%**，高价成交口碑 **+2**（原 +1）；
+  - **`sentimental`（念旧）** — 婚戒、二胡：平价接受率 **+5%**，每日赎当事件优先选取念旧者的旧物牌。
+- `src/game/pawnshop.ts` 新增纯函数 `formatOfferDialogue(item, tier, accepted, reputation)`，结合口碑、报价档位与性格生成 1987 老街人情味成交/拒绝台词（如高口碑低价成交「听街坊说你家公道，少点我也认了」、低价被拒「这价连药费零头都不够」）。
+- `tests/unit/pawnshop.test.ts` 增加经济不变量属性测试：任意口碑与合法档位下，钱永不为负、单次高价收当再赎当净收益严格有界（≤ 真值 30% 且消耗有限赎当券与牌库卡牌）、不存在刷口碑/刷钱闭环。
+
+### 15.5 正式版扩容底座：战斗 Hook 注册表与存档迁移/坏档隔离
+- **战斗 Hook 注册表（`src/game/hooks.ts`）**：建立 7 个生命周期钩子（`battleStart`、`cardPlayed`、`turnStart`、`turnEnd`、`onDiscard`、`onReflect`、`battleWon`），设置递归深度上限 `MAX_HOOK_DEPTH = 32`（超限熔断并记入日志，防死循环），为正式版货架传家宝与当铺永久升级预留扩展槽，默认不挂载新效果。
+- **存档版本迁移与坏档隔离（`src/game/save.ts`）**：升级至 `SAVE_VERSION = 2`，新增顺序迁移表 `MIGRATIONS`（本次含 `v1 → v2` 兼容占位迁移与版本号写入，旧 v1 存档无损读入）；读档解析或校验失败时将原始损坏内容备份至 `pawnshop-cards-save-corrupt-v1` 并在标题画面提示玩家，游戏不崩溃。

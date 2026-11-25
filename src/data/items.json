@@ -6,7 +6,8 @@
     "story": "当掉手表换药费的父亲，想把时间倒回去",
     "cardName": "倒转",
     "cardCost": 2,
-    "color": "#C9973F"
+    "color": "#C9973F",
+    "temperament": "urgent"
   },
   {
     "id": "ring",
@@ -15,7 +16,8 @@
     "story": "当掉婚戒换车票的新娘，说“等我回来赎它”",
     "cardName": "守诺",
     "cardCost": 1,
-    "color": "#8FA8C8"
+    "color": "#8FA8C8",
+    "temperament": "sentimental"
   },
   {
     "id": "old_book",
@@ -24,7 +26,8 @@
     "story": "当掉一整箱旧书换一顿饭的穷学生",
     "cardName": "旧书",
     "cardCost": 1,
-    "color": "#5A3A22"
+    "color": "#5A3A22",
+    "temperament": "urgent"
   },
   {
     "id": "bicycle",
@@ -33,7 +36,8 @@
     "story": "骑了十年的永久牌自行车，儿子考上大学那天骑去送的",
     "cardName": "飞驰",
     "cardCost": 2,
-    "color": "#4E7A5A"
+    "color": "#4E7A5A",
+    "temperament": "proud"
   },
   {
     "id": "erhu",
@@ -42,7 +46,8 @@
     "story": "街头拉琴老人的二胡，琴弦断了也舍不得扔",
     "cardName": "余音",
     "cardCost": 1,
-    "color": "#8A5A33"
+    "color": "#8A5A33",
+    "temperament": "sentimental"
   },
   {
     "id": "stamp_album",
@@ -51,6 +56,7 @@
     "story": "攒了二十年的邮票册，最后一页还空着",
     "cardName": "集邮",
     "cardCost": 1,
-    "color": "#4E739E"
+    "color": "#4E739E",
+    "temperament": "proud"
   }
 ]

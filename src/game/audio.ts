@@ -7,9 +7,32 @@ export type SfxName =
   | 'receive_card'
   | 'deal_closed'
   | 'demon_defeated'
-  | 'button_click';
+  | 'button_click'
+  | 'hit_demon'
+  | 'shield_block'
+  | 'player_hurt'
+  | 'offer_rejected'
+  | 'insufficient_funds'
+  | 'redeem_deal';
+
+export const ALL_SFX_NAMES: readonly SfxName[] = [
+  'play_card',
+  'receive_card',
+  'deal_closed',
+  'demon_defeated',
+  'button_click',
+  'hit_demon',
+  'shield_block',
+  'player_hurt',
+  'offer_rejected',
+  'insufficient_funds',
+  'redeem_deal',
+] as const;
 
 export const DEFAULT_MASTER_VOLUME = 0.2;
+export const BGM_LOOKAHEAD_SEC = 0.1;
+export const BGM_SCHEDULER_INTERVAL_MS = 25;
+export const ZZFX_SAMPLE_RATE = 44100;
 
 export interface AudioParamLike {
   value: number;
@@ -36,12 +59,30 @@ export interface OscillatorNodeLike extends AudioNodeLike {
   onended?: (() => void) | null;
 }
 
+export interface AudioBufferLike {
+  getChannelData(channel: number): Float32Array;
+}
+
+export interface AudioBufferSourceNodeLike extends AudioNodeLike {
+  buffer: AudioBufferLike | null;
+  start(when?: number): void;
+  stop?: (when?: number) => void;
+  onended?: (() => void) | null;
+}
+
 export interface AudioContextLike {
   readonly currentTime: number;
   readonly state: string;
+  readonly sampleRate?: number;
   readonly destination: AudioNodeLike;
   createGain(): GainNodeLike;
   createOscillator(): OscillatorNodeLike;
+  createBuffer?: (
+    numberOfChannels: number,
+    length: number,
+    sampleRate: number,
+  ) => AudioBufferLike;
+  createBufferSource?: () => AudioBufferSourceNodeLike;
   resume(): Promise<void> | void;
   close?: () => Promise<void> | void;
 }
@@ -88,6 +129,146 @@ export interface AudioEngineOptions {
   createAudioContext?: () => AudioContextLike | null;
   timers?: TimerLike;
   defaultVolume?: number;
+}
+
+/**
+ * ZzFX - Zuper Zmall Zound Zynth v1.4.0 (buildSamples core)
+ * Source: https://github.com/KilledByAPixel/ZzFX
+ * License: MIT License — Copyright (c) 2019 Frank Force (see docs/licenses/ZzFX-LICENSE.txt)
+ */
+export type ZzfxParams = readonly (number | undefined)[];
+
+export function zzfxBuildSamples(
+  p: ZzfxParams,
+  sampleRate = ZZFX_SAMPLE_RATE,
+  rng: () => number = Math.random,
+): Float32Array {
+  let [
+    volume = 1,
+    randomness = 0.05,
+    frequency = 220,
+    attack = 0,
+    sustain = 0,
+    release = 0.1,
+    shape = 0,
+    shapeCurve = 1,
+    slide = 0,
+    deltaSlide = 0,
+    pitchJump = 0,
+    pitchJumpTime = 0,
+    repeatTime = 0,
+    noise = 0,
+    modulation = 0,
+    bitCrush = 0,
+    delay = 0,
+    sustainVolume = 1,
+    decay = 0,
+    tremolo = 0,
+    filter = 0,
+  ] = p;
+
+  const PI2 = Math.PI * 2;
+  const abs = Math.abs;
+  const sign = (v: number) => (v < 0 ? -1 : 1);
+  const startSlide = (slide *= (500 * PI2) / sampleRate / sampleRate);
+  let startFrequency = (frequency *= ((1 + randomness * 2 * rng() - randomness) * PI2) / sampleRate);
+  let modOffset = 0;
+  let repeat = 0;
+  let crush = 0;
+  let jump = 1;
+  let t = 0;
+  let i = 0;
+  let s = 0;
+
+  const w = (PI2 * abs(filter) * 2) / sampleRate;
+  const cos = Math.cos(w);
+  const alpha = Math.sin(w) / 4;
+  const a0 = 1 + alpha;
+  const a1 = (-2 * cos) / a0;
+  const a2 = (1 - alpha) / a0;
+  const b0 = (1 + sign(filter) * cos) / 2 / a0;
+  const b1 = -(sign(filter) + cos) / a0;
+  const b2 = b0;
+  let x2 = 0;
+  let x1 = 0;
+  let y2 = 0;
+  let y1 = 0;
+
+  attack = attack * sampleRate || 9;
+  decay *= sampleRate;
+  sustain *= sampleRate;
+  release *= sampleRate;
+  delay *= sampleRate;
+  deltaSlide *= (500 * PI2) / sampleRate ** 3;
+  modulation *= PI2 / sampleRate;
+  pitchJump *= PI2 / sampleRate;
+  pitchJumpTime *= sampleRate;
+  repeatTime = (repeatTime * sampleRate) | 0;
+
+  const length = (attack + decay + sustain + release + delay) | 0;
+  const b = new Float32Array(length > 0 ? length : 0);
+
+  for (; i < length; b[i++] = s * volume) {
+    if (!(++crush % ((bitCrush * 100) | 0))) {
+      s = shape
+        ? shape > 1
+          ? shape > 2
+            ? shape > 3
+              ? shape > 4
+                ? (t / PI2) % 1 < shapeCurve / 2
+                  ? 1
+                  : -1
+                : Math.sin(t ** 3)
+              : Math.max(Math.min(Math.tan(t), 1), -1)
+            : 1 - ((((2 * t) / PI2) % 2) + 2) % 2
+          : 1 - 4 * abs(Math.round(t / PI2) - t / PI2)
+        : Math.sin(t);
+
+      s =
+        (repeatTime ? 1 - tremolo + tremolo * Math.sin((PI2 * i) / repeatTime) : 1) *
+        (shape > 4 ? s : sign(s) * abs(s) ** shapeCurve) *
+        (i < attack
+          ? i / attack
+          : i < attack + decay
+            ? 1 - ((i - attack) / decay) * (1 - sustainVolume)
+            : i < attack + decay + sustain
+              ? sustainVolume
+              : i < length - delay
+                ? ((length - i - delay) / release) * sustainVolume
+                : 0);
+
+      s = delay
+        ? s / 2 +
+          (delay > i ? 0 : (i < length - delay ? 1 : (length - i) / delay) * (b[(i - delay) | 0] / 2 / (volume || 1)))
+        : s;
+
+      if (filter) {
+        const prevX1 = x1;
+        x1 = s;
+        const prevY1 = y1;
+        s = y1 = b2 * x2 + b1 * prevX1 + b0 * s - a2 * y2 - a1 * prevY1;
+        x2 = prevX1;
+        y2 = prevY1;
+      }
+    }
+
+    const f = (frequency += slide += deltaSlide) * Math.cos(modulation * modOffset++);
+    t += f + f * noise * (((i * i * PI2) % 2) - 1);
+
+    if (jump && ++jump > pitchJumpTime) {
+      frequency += pitchJump;
+      startFrequency += pitchJump;
+      jump = 0;
+    }
+
+    if (repeatTime && !(++repeat % repeatTime)) {
+      frequency = startFrequency;
+      slide = startSlide;
+      jump ||= 1;
+    }
+  }
+
+  return b;
 }
 
 // Note frequencies in Hz (equal temperament, 0 = rest)
@@ -187,6 +368,12 @@ function createEmptySfxCounts(): Record<SfxName, number> {
     deal_closed: 0,
     demon_defeated: 0,
     button_click: 0,
+    hit_demon: 0,
+    shield_block: 0,
+    player_hurt: 0,
+    offer_rejected: 0,
+    insufficient_funds: 0,
+    redeem_deal: 0,
   };
 }
 
@@ -199,30 +386,25 @@ interface SynthNoteSpec {
   gain: number;
 }
 
-const SFX_RECIPES: Record<SfxName, readonly SynthNoteSpec[]> = {
-  // 点按钮：短促清脆 8-bit 按钮滴答
+const SFX_RECIPES: Partial<Record<SfxName, readonly SynthNoteSpec[]>> = {
   button_click: [
     { type: 'square', freq: 660, endFreq: 880, offsetSec: 0, durationSec: 0.045, gain: 0.35 },
   ],
-  // 出牌：牌飞向目标的 8-bit 上扬音阶
   play_card: [
     { type: 'square', freq: 330, offsetSec: 0, durationSec: 0.045, gain: 0.32 },
     { type: 'square', freq: 493.88, offsetSec: 0.04, durationSec: 0.05, gain: 0.34 },
     { type: 'triangle', freq: 659.25, offsetSec: 0.08, durationSec: 0.075, gain: 0.4 },
   ],
-  // 收牌：获得新牌的柔和三音上行琶音
   receive_card: [
     { type: 'triangle', freq: N.C5, offsetSec: 0, durationSec: 0.06, gain: 0.42 },
     { type: 'square', freq: N.E5, offsetSec: 0.055, durationSec: 0.06, gain: 0.28 },
     { type: 'triangle', freq: N.G5, offsetSec: 0.11, durationSec: 0.11, gain: 0.44 },
   ],
-  // 成交：当铺落槌收钱的温暖双音叮当
   deal_closed: [
     { type: 'square', freq: N.E5, offsetSec: 0, durationSec: 0.065, gain: 0.32 },
     { type: 'square', freq: N.B5, offsetSec: 0.06, durationSec: 0.075, gain: 0.34 },
     { type: 'triangle', freq: N.E6, offsetSec: 0.125, durationSec: 0.13, gain: 0.42 },
   ],
-  // 击败：GDD 第 95 行心魔碎成像素点配清脆“叮”声
   demon_defeated: [
     { type: 'square', freq: N.E5, offsetSec: 0, durationSec: 0.055, gain: 0.28 },
     { type: 'square', freq: N.A5, offsetSec: 0.05, durationSec: 0.06, gain: 0.3 },
@@ -232,10 +414,35 @@ const SFX_RECIPES: Record<SfxName, readonly SynthNoteSpec[]> = {
 };
 
 /**
+ * 6 P7 ZzFX recipes adding white-noise, bitcrush, and retro distortion texture.
+ * Format: ZzFX 21-parameter tuple (volume, randomness, freq, attack, sustain, release,
+ * shape, shapeCurve, slide, deltaSlide, pitchJump, pitchJumpTime, repeatTime, noise,
+ * modulation, bitCrush, delay, sustainVolume, decay, tremolo, filter).
+ */
+export const ZZFX_SFX_RECIPES: Record<
+  'hit_demon' | 'shield_block' | 'player_hurt' | 'offer_rejected' | 'insufficient_funds' | 'redeem_deal',
+  ZzfxParams
+> = {
+  // 受击：带白噪声与失真的复古打击声
+  hit_demon: [0.85, 0.05, 190, 0.005, 0.03, 0.11, 4, 1.8, -6, 0, 0, 0, 0, 0.7, 0, 0.35, 0, 0.65, 0.02],
+  // 格挡：清脆木铜格挡共振声
+  shield_block: [0.75, 0.04, 520, 0.004, 0.03, 0.12, 1, 1.4, 3, 0, 140, 0.03, 0, 0.2, 0, 0.15, 0.02, 0.7, 0.02],
+  // 玩家受伤：低频重击 + 噪声碎裂感
+  player_hurt: [0.9, 0.05, 130, 0.01, 0.04, 0.18, 3, 2.2, -5, 0, -35, 0.04, 0, 0.9, 0, 0.45, 0, 0.55, 0.04],
+  // 拒收：双段下行否定嗡鸣
+  offer_rejected: [0.7, 0.03, 260, 0.01, 0.05, 0.14, 2, 1.6, -2, 0, -70, 0.06, 0, 0.18, 0, 0.2, 0, 0.75, 0.03],
+  // 钱不够：短促非法低音蜂鸣
+  insufficient_funds: [0.65, 0.02, 175, 0.005, 0.03, 0.08, 5, 0.9, 0, 0, -30, 0.035, 0, 0.12, 0, 0.15, 0, 0.8, 0.02],
+  // 赎当成交：清亮暖调双跳金铃声
+  redeem_deal: [0.8, 0.03, 587, 0.008, 0.05, 0.2, 1, 1.2, 1.5, 0, 293, 0.06, 0, 0.06, 0, 0, 0.04, 0.75, 0.03],
+};
+
+/**
  * Self-contained WebAudio 8-bit chiptune BGM & SFX engine.
- * - Zero external audio files, zero third-party dependencies.
- * - Respects browser autoplay policy: AudioContext is created/resumed only on user gesture.
- * - Degrades silently when AudioContext is unavailable (headless / legacy / Node environments).
+ * - Zero external audio files.
+ * - Lookahead BGM scheduler anchored to ctx.currentTime (100ms lookahead).
+ * - ZzFX (MIT) procedural synth for textured retro SFX (noise/bitcrush/distortion).
+ * - Respects browser autoplay policy & degrades silently when WebAudio is unavailable.
  */
 export class AudioEngine {
   private readonly storage: StorageLike | null | undefined;
@@ -251,6 +458,7 @@ export class AudioEngine {
   private currentTrack: BgmTrack | null = null;
   private bgmTimer: ReturnType<typeof setInterval> | null = null;
   private stepIndex = 0;
+  private nextNoteTime = 0;
 
   private sfxLog: SfxName[] = [];
   private audibleSfxCount = 0;
@@ -293,10 +501,6 @@ export class AudioEngine {
     return this.bgmTimer !== null;
   }
 
-  /**
-   * Installs capture-phase user-gesture listeners on window so the very first click
-   * or key press unlocks WebAudio before scene click handlers play SFX/BGM.
-   */
   installGestureUnlock(): void {
     if (this.gestureListenersInstalled || typeof window === 'undefined') {
       return;
@@ -313,10 +517,6 @@ export class AudioEngine {
     window.addEventListener('keydown', handleGesture, true);
   }
 
-  /**
-   * Must be called inside or after a user gesture to satisfy browser autoplay policy.
-   * Safe to call repeatedly; silently degrades when WebAudio is unavailable.
-   */
   unlock(): void {
     this.unlocked = true;
     this.ensureContext();
@@ -365,11 +565,6 @@ export class AudioEngine {
     this.syncMasterGain();
   }
 
-  /**
-   * Switches to the specified looping chiptune BGM track ('day' or 'night').
-   * If audio is not yet unlocked or is muted, remembers the target track so it starts
-   * cleanly once unlocked and unmuted.
-   */
   playBgm(track: BgmTrack): void {
     if (this.currentTrack === track && this.bgmTimer !== null) {
       return;
@@ -391,13 +586,10 @@ export class AudioEngine {
   stopBgm(): void {
     this.currentTrack = null;
     this.stepIndex = 0;
+    this.nextNoteTime = 0;
     this.clearBgmTimer();
   }
 
-  /**
-   * Plays a short synthesized 8-bit sound effect.
-   * Always records the trigger in debug state; emits zero audio when muted or unavailable.
-   */
   playSfx(name: SfxName): void {
     this.sfxLog.push(name);
     if (this.sfxLog.length > 100) {
@@ -421,16 +613,22 @@ export class AudioEngine {
       return;
     }
 
+    const zzfxParams = ZZFX_SFX_RECIPES[name as keyof typeof ZZFX_SFX_RECIPES];
+    if (zzfxParams) {
+      this.playZzfxBuffer(zzfxParams);
+      return;
+    }
+
     const recipe = SFX_RECIPES[name];
+    if (!recipe) {
+      return;
+    }
     const baseTime = this.ctx.currentTime;
     for (const note of recipe) {
       this.scheduleNote(note, baseTime);
     }
   }
 
-  /**
-   * Stops playback and clears timers. Primarily useful in tests or full teardown.
-   */
   dispose(): void {
     this.clearBgmTimer();
     this.currentTrack = null;
@@ -514,28 +712,48 @@ export class AudioEngine {
     if (!this.currentTrack || this.muted || !this.unlocked) {
       return;
     }
-    const score = BGM_SCORES[this.currentTrack];
-    this.playCurrentBgmStep();
+    this.ensureContext();
+    this.nextNoteTime = this.ctx ? this.ctx.currentTime : 0;
+    this.scheduleBgmLookahead();
     this.bgmTimer = this.timers.setInterval(() => {
-      this.playCurrentBgmStep();
-    }, score.stepMs);
+      this.scheduleBgmLookahead();
+    }, BGM_SCHEDULER_INTERVAL_MS);
   }
 
-  private playCurrentBgmStep(): void {
+  /**
+   * Lookahead scheduler anchored to ctx.currentTime (ahead by BGM_LOOKAHEAD_SEC = 100ms).
+   * Eliminates interval drift/jitter on frame drops or background tab throttling.
+   */
+  private scheduleBgmLookahead(): void {
     if (!this.currentTrack || this.muted || !this.unlocked) {
       return;
     }
-
-    const score = BGM_SCORES[this.currentTrack];
-    const idx = this.stepIndex % score.lead.length;
-    this.stepIndex = (idx + 1) % score.lead.length;
 
     this.ensureContext();
     if (!this.ctx || !this.masterGain) {
       return;
     }
 
+    const score = BGM_SCORES[this.currentTrack];
+    const stepSec = score.stepMs / 1000;
     const now = this.ctx.currentTime;
+
+    // Resync if audio clock jumped forward (e.g. after returning from a backgrounded tab)
+    if (this.nextNoteTime < now - stepSec * 2) {
+      this.nextNoteTime = now;
+    }
+
+    const horizon = now + BGM_LOOKAHEAD_SEC;
+    while (this.nextNoteTime < horizon) {
+      this.scheduleBgmStepAt(score, this.nextNoteTime);
+      this.nextNoteTime += stepSec;
+    }
+  }
+
+  private scheduleBgmStepAt(score: BgmTrackScore, scheduledTime: number): void {
+    const idx = this.stepIndex % score.lead.length;
+    this.stepIndex = (idx + 1) % score.lead.length;
+
     const stepSec = score.stepMs / 1000;
     const leadFreq = score.lead[idx];
     const bassFreq = score.bass[idx];
@@ -549,7 +767,7 @@ export class AudioEngine {
           durationSec: stepSec * 0.72,
           gain: 0.2,
         },
-        now,
+        scheduledTime,
       );
     }
 
@@ -562,8 +780,51 @@ export class AudioEngine {
           durationSec: stepSec * 0.82,
           gain: 0.36,
         },
-        now,
+        scheduledTime,
       );
+    }
+  }
+
+  private playZzfxBuffer(params: ZzfxParams): void {
+    if (!this.ctx || !this.masterGain || this.muted) {
+      return;
+    }
+
+    try {
+      const sampleRate = this.ctx.sampleRate ?? ZZFX_SAMPLE_RATE;
+      const samples = zzfxBuildSamples(params, sampleRate);
+      if (samples.length === 0) {
+        return;
+      }
+
+      if (this.ctx.createBuffer && this.ctx.createBufferSource) {
+        const buffer = this.ctx.createBuffer(1, samples.length, sampleRate);
+        buffer.getChannelData(0).set(samples);
+        const source = this.ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.masterGain);
+        source.onended = () => {
+          source.disconnect?.();
+        };
+        source.start(this.ctx.currentTime);
+        return;
+      }
+
+      // Fallback for minimal WebAudio mocks without createBuffer/createBufferSource
+      const freq = typeof params[2] === 'number' ? params[2] : 220;
+      const dur = Math.max(0.05, (params[3] ?? 0) + (params[4] ?? 0) + (params[5] ?? 0.1));
+      this.scheduleNote(
+        {
+          type: 'square',
+          freq,
+          offsetSec: 0,
+          durationSec: dur,
+          gain: Math.min(0.45, (params[0] ?? 0.7) * 0.5),
+        },
+        this.ctx.currentTime,
+      );
+    } catch {
+      // Never crash on WebAudio buffer quirks
     }
   }
 

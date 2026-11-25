@@ -1,3 +1,6 @@
+import balanceJson from '../data/balance.json';
+import cardsJson from '../data/cards.json';
+import demonsJson from '../data/demons.json';
 import { mulberry32 } from '../utils/rng';
 import {
   canPlayCard,
@@ -5,6 +8,7 @@ import {
   endTurn,
   getIntent,
   playCard,
+  resolvePendingChoice,
   type BattleBalanceConfig,
   type BattleState,
   type CardDef,
@@ -17,6 +21,7 @@ import {
   deriveDaySeed,
   deriveRedemptionSeed,
   getEffectiveAcceptRate,
+  getReputationDelta,
   ITEMS,
   pickDailyItems,
   quotePrice,
@@ -42,6 +47,10 @@ export const TEST_DECK: readonly string[] = [
   '暖水瓶',
 ];
 
+export const SIM_WIN_RATE_MIN = 0.4;
+export const SIM_WIN_RATE_MAX = 0.95;
+export const SIM_FREQUENT_WINNER_MEDIAN_MIN = 30;
+
 export interface MonteCarloStats {
   demonId: string;
   demonName: string;
@@ -52,6 +61,33 @@ export interface MonteCarloStats {
   winRate: number;
   avgEndRound: number;
   avgWinRemainingHp: number;
+}
+
+export interface SimTuneOverrides {
+  demonAHp?: number;
+  demonBHp?: number;
+  demonCHp?: number;
+  demonDHp?: number;
+  startingHp?: number;
+  startingRenqing?: number;
+  maxRenqing?: number;
+  drawFirst?: number;
+  drawPerRound?: number;
+  winRewardMoney?: number;
+  startingMoney?: number;
+  runs?: number;
+  days?: number;
+}
+
+export interface BalanceSimulationReport {
+  overrides: SimTuneOverrides;
+  demons: MonteCarloStats[];
+  economy: SevenDayEconomyStats;
+}
+
+export interface SimGuardrailCheckResult {
+  passed: boolean;
+  errors: string[];
 }
 
 const MAX_PLAYS_PER_ROUND = 30;
@@ -84,16 +120,8 @@ function isRewindCard(card: CardDef): boolean {
   return card.effects.some((effect) => effect.type === 'rewind');
 }
 
-/**
- * 蒙特卡洛贪心策略（写死规则，便于复现与平衡评估）：
- * 1. 若心魔本回合将造成的伤害对玩家致命（incoming - shield >= playerHp），优先出护盾量最高的可用护盾牌保命；
- * 2. 否则按“伤害 / 人情费用”从高到低打出能出的伤害牌（0 费按 0.5 计防除零）；
- * 3. 无可用伤害牌时，出其余非纯护盾牌（如抽牌、人情、功能牌）按费用从低到高打出；
- *    注：倒转牌（rewind）若会回复心魔已损失血量且玩家并非濒死，则不出，避免撤销自身输出；
- * 4. 无牌可出时结束回合。
- */
 export function pickGreedyCardIndex(state: BattleState): number | null {
-  if (state.phase !== 'play' || state.result !== 'ongoing') {
+  if (state.phase !== 'play' || state.result !== 'ongoing' || state.pendingChoice !== null) {
     return null;
   }
 
@@ -115,7 +143,6 @@ export function pickGreedyCardIndex(state: BattleState): number | null {
   const incoming = intent.current?.damage ?? 0;
   const isLethalIncoming = !state.reflectNextDamage && incoming - state.shield >= state.playerHp;
 
-  // 1. 致命伤时优先出护盾牌
   if (isLethalIncoming) {
     const shieldCards = playable
       .filter((p) => getCardShield(p.card) > 0)
@@ -125,7 +152,6 @@ export function pickGreedyCardIndex(state: BattleState): number | null {
     }
   }
 
-  // 2. 按“伤害/人情比”从高到低出伤害牌
   const damageCards = playable
     .filter((p) => getCardDamage(p.card, state) > 0)
     .sort((a, b) => {
@@ -140,14 +166,12 @@ export function pickGreedyCardIndex(state: BattleState): number | null {
     return damageCards[0].index;
   }
 
-  // 3. 其余非护盾牌按费用从低到高出（避免非致命时倒转回满心魔血）
   const otherCards = playable
     .filter((p) => {
       if (getCardShield(p.card) > 0) {
         return false;
       }
       if (isRewindCard(p.card)) {
-        // 仅在玩家血量危急且倒转能回血时才考虑打出
         const snapIndex = Math.min(Math.max(0, state.round - 2), state.roundSnapshots.length - 1);
         const snap = state.roundSnapshots[snapIndex];
         return isLethalIncoming && snap !== undefined && snap.playerHp > state.playerHp;
@@ -180,16 +204,32 @@ export function simulateSingleBattle(
   while (state.result === 'ongoing') {
     let playsThisRound = 0;
     while (state.phase === 'play' && state.result === 'ongoing' && playsThisRound < MAX_PLAYS_PER_ROUND) {
+      if (state.pendingChoice && state.hand.length > 0) {
+        // Greedy discard: drop the lowest-damage card in hand
+        let discardIdx = 0;
+        let lowestDmg = Infinity;
+        for (let i = 0; i < state.hand.length; i += 1) {
+          const card = state.cardsByName.get(state.hand[i]);
+          const dmg = card ? getCardDamage(card, state) : 0;
+          if (dmg < lowestDmg) {
+            lowestDmg = dmg;
+            discardIdx = i;
+          }
+        }
+        state = resolvePendingChoice(state, discardIdx).state;
+        continue;
+      }
+
       const choice = pickGreedyCardIndex(state);
       if (choice === null) {
         break;
       }
-      state = playCard(state, choice);
+      state = playCard(state, choice).state;
       playsThisRound += 1;
     }
 
     if (state.result === 'ongoing') {
-      state = endTurn(state);
+      state = endTurn(state).state;
     }
   }
 
@@ -246,12 +286,9 @@ export interface EconomySimOptions {
   demonWinRates: Record<DemonId, number>;
   runs?: number;
   days?: number;
-  /** Minimum reserve to keep when choosing fair tier; when tight (money < fairPrice + tightBuffer), try low tier. */
   tightBuffer?: number;
-  /** Whether player uses C4 redemption when holding >= 1 ticket and >= minDeckForRedeem cards. */
   enableRedemption?: boolean;
   minDeckForRedeem?: number;
-  /** If true, force every night to win (models a frequent/consistent winner). */
   forceWinAllNights?: boolean;
   balance?: BalanceConfig;
   items?: readonly PawnItem[];
@@ -261,12 +298,10 @@ export interface SevenDayEconomyStats {
   runs: number;
   days: number;
   winRewardMoney: number;
-  /** Average end-of-day money for days 1..7 (index 0 = Day 1 after night reward). */
   avgMoneyByDay: number[];
-  /** Median end-of-day money for days 1..7. */
   medianMoneyByDay: number[];
-  /** Average end-of-day money among frequent winners (>= 5 wins in 7 nights). */
   frequentWinnerAvgByDay: number[];
+  frequentWinnerMedianByDay: number[];
   frequentWinnerCount: number;
   avgTotalWins: number;
   avgFinalDeckSize: number;
@@ -282,12 +317,6 @@ function median(values: readonly number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-/**
- * 7-day daytime + nighttime economy simulation (P6 B3):
- * Strategy: offer fair if comfortably affordable (money >= fairPrice + tightBuffer),
- * try low when money is tight (money >= lowPrice), skip if unaffordable;
- * night battle win probability is taken from Monte Carlo results per demon.
- */
 export function simulateSevenDayEconomy(opts: EconomySimOptions): SevenDayEconomyStats {
   const runs = opts.runs ?? 1000;
   const days = opts.days ?? 7;
@@ -318,7 +347,6 @@ export function simulateSevenDayEconomy(opts: EconomySimOptions): SevenDayEconom
     const trajectory: number[] = [];
 
     for (let day = 1; day <= days; day += 1) {
-      // Optional C4 pre-day redemption
       if (enableRedemption && redeemTickets >= 1 && deck.length >= minDeckForRedeem) {
         const redeemRng = mulberry32(deriveRedemptionSeed(seed, day));
         const offer = createRedemptionOffer(deck, redeemTickets, pawnPrices, redeemRng, items);
@@ -351,16 +379,15 @@ export function simulateSevenDayEconomy(opts: EconomySimOptions): SevenDayEconom
         }
 
         const price = quotePrice(item.trueValue, chosenTier, balance);
-        const rate = getEffectiveAcceptRate(chosenTier, reputation, balance);
+        const rate = getEffectiveAcceptRate(chosenTier, reputation, balance, item.temperament);
         if (resolveOffer(rate, offerRng)) {
           money -= price;
-          reputation += balance.tiers[chosenTier].reputationOnAccept;
+          reputation += getReputationDelta(chosenTier, true, item.temperament, balance);
           deck.push(item.cardName);
           pawnPrices = recordPawnPrice(pawnPrices, item.cardName, price);
         }
       }
 
-      // Night battle outcome using Monte Carlo demon win rate
       const demonId = demonIdForDay(day);
       const winRate = opts.demonWinRates[demonId];
       const won = forceWinAllNights || nightRng() < winRate;
@@ -398,9 +425,185 @@ export function simulateSevenDayEconomy(opts: EconomySimOptions): SevenDayEconom
     frequentWinnerAvgByDay: moneyPerDayWinners.map((arr) =>
       arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0,
     ),
+    frequentWinnerMedianByDay: moneyPerDayWinners.map((arr) => median(arr)),
     frequentWinnerCount: moneyPerDayWinners[0]?.length ?? 0,
     avgTotalWins: totalWinsSum / runs,
     avgFinalDeckSize: totalDeckSizeSum / runs,
     avgRedemptionsAccepted: totalRedemptionsSum / runs,
   };
+}
+
+const ALLOWED_SIM_TUNE_KEYS = new Set<keyof SimTuneOverrides>([
+  'demonAHp',
+  'demonBHp',
+  'demonCHp',
+  'demonDHp',
+  'startingHp',
+  'startingRenqing',
+  'maxRenqing',
+  'drawFirst',
+  'drawPerRound',
+  'winRewardMoney',
+  'startingMoney',
+  'runs',
+  'days',
+]);
+
+/**
+ * Parses SIM_TUNE JSON env override (e.g. SIM_TUNE='{"demonAHp":22}').
+ */
+export function parseSimTuneEnv(raw?: string | null): SimTuneOverrides {
+  if (!raw || raw.trim() === '') {
+    return {};
+  }
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('SIM_TUNE must be a JSON object');
+  }
+  const overrides: SimTuneOverrides = {};
+  for (const [key, val] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!ALLOWED_SIM_TUNE_KEYS.has(key as keyof SimTuneOverrides)) {
+      throw new Error(`Unknown SIM_TUNE key: "${key}"`);
+    }
+    if (typeof val !== 'number' || !Number.isFinite(val)) {
+      throw new Error(`SIM_TUNE.${key} must be a finite number`);
+    }
+    overrides[key as keyof SimTuneOverrides] = val;
+  }
+  return overrides;
+}
+
+/**
+ * Runs the full CLI balance simulation (4 demons + 7-day economy with redemption)
+ * with optional SIM_TUNE hot overrides.
+ */
+export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceSimulationReport {
+  const cards = cardsJson as CardDef[];
+  const baseDemons = demonsJson as DemonDef[];
+  const demons: DemonDef[] = baseDemons.map((d) => {
+    const hpOverride =
+      d.id === 'a'
+        ? overrides.demonAHp
+        : d.id === 'b'
+          ? overrides.demonBHp
+          : d.id === 'c'
+            ? overrides.demonCHp
+            : d.id === 'd'
+              ? overrides.demonDHp
+              : undefined;
+    return {
+      ...d,
+      hp: hpOverride ?? d.hp,
+      actions: d.actions.map((a) => ({ ...a })),
+    };
+  });
+
+  const battleBalance: BattleBalanceConfig = {
+    startingHp: overrides.startingHp ?? balanceJson.startingHp,
+    startingRenqing: overrides.startingRenqing ?? balanceJson.startingRenqing,
+    maxRenqing: overrides.maxRenqing ?? balanceJson.maxRenqing,
+    drawFirst: overrides.drawFirst ?? balanceJson.drawFirst,
+    drawPerRound: overrides.drawPerRound ?? balanceJson.drawPerRound,
+    winRewardMoney: overrides.winRewardMoney ?? balanceJson.winRewardMoney,
+  };
+
+  const pawnBalance: BalanceConfig = {
+    ...BALANCE,
+    startingMoney: overrides.startingMoney ?? BALANCE.startingMoney,
+    startingHp: battleBalance.startingHp,
+    startingRenqing: battleBalance.startingRenqing,
+    maxRenqing: battleBalance.maxRenqing,
+  };
+
+  const runs = overrides.runs ?? 1000;
+  const days = overrides.days ?? 7;
+
+  const demonStats: MonteCarloStats[] = (['a', 'b', 'c', 'd'] as const).map((id) =>
+    runMonteCarlo(cards, demons, battleBalance, TEST_DECK, id, runs),
+  );
+
+  const demonWinRates: Record<DemonId, number> = {
+    a: demonStats[0].winRate,
+    b: demonStats[1].winRate,
+    c: demonStats[2].winRate,
+    d: demonStats[3].winRate,
+  };
+
+  const economy = simulateSevenDayEconomy({
+    winRewardMoney: battleBalance.winRewardMoney,
+    demonWinRates,
+    runs,
+    days,
+    tightBuffer: 0,
+    enableRedemption: true,
+    minDeckForRedeem: 4,
+    balance: pawnBalance,
+    items: ITEMS,
+  });
+
+  return {
+    overrides,
+    demons: demonStats,
+    economy,
+  };
+}
+
+/**
+ * Balance guardrails for `npm run sim:check`:
+ * - Every demon win rate must be within [40%, 95%].
+ * - 7-day frequent winner median cash flow (Day 7) must be >= 30.
+ */
+export function checkSimGuardrails(report: BalanceSimulationReport): SimGuardrailCheckResult {
+  const errors: string[] = [];
+
+  for (const d of report.demons) {
+    if (d.winRate < SIM_WIN_RATE_MIN || d.winRate > SIM_WIN_RATE_MAX) {
+      errors.push(
+        `Demon ${d.demonId.toUpperCase()} (${d.demonName}) winRate ${(d.winRate * 100).toFixed(1)}% out of [${(SIM_WIN_RATE_MIN * 100).toFixed(0)}%, ${(SIM_WIN_RATE_MAX * 100).toFixed(0)}%]`,
+      );
+    }
+  }
+
+  const lastDayIdx = report.economy.days - 1;
+  const freqMedian = report.economy.frequentWinnerMedianByDay[lastDayIdx] ?? 0;
+  if (freqMedian < SIM_FREQUENT_WINNER_MEDIAN_MIN) {
+    errors.push(
+      `7-day frequent-winner median cash flow ${freqMedian.toFixed(1)} is below guardrail ${SIM_FREQUENT_WINNER_MEDIAN_MIN}`,
+    );
+  }
+
+  return {
+    passed: errors.length === 0,
+    errors,
+  };
+}
+
+export function formatSimReport(report: BalanceSimulationReport): string {
+  const lines: string[] = ['=== 《当铺纸牌》蒙特卡洛平衡模拟报告 ==='];
+  const tuneEntries = Object.entries(report.overrides);
+  if (tuneEntries.length > 0) {
+    lines.push(`SIM_TUNE: ${JSON.stringify(report.overrides)}`);
+  }
+
+  lines.push('\n[4 心魔战斗胜率 (1000 局/心魔)]');
+  for (const d of report.demons) {
+    lines.push(
+      `  心魔 ${d.demonId.toUpperCase()} (${d.demonName}): 胜率 ${(d.winRate * 100).toFixed(1)}% (${d.wins}/${d.runs}) | 平均结束回合 ${d.avgEndRound.toFixed(2)} | 胜场残血 ${d.avgWinRemainingHp.toFixed(1)}`,
+    );
+  }
+
+  const eco = report.economy;
+  const lastIdx = eco.days - 1;
+  const medTrail = eco.medianMoneyByDay.map((v) => v.toFixed(1)).join(' -> ');
+  const fwMedTrail = eco.frequentWinnerMedianByDay.map((v) => v.toFixed(1)).join(' -> ');
+  lines.push('\n[7 天经济现金流与赎当]');
+  lines.push(`  全体第 ${eco.days} 天中位现金流: ${eco.medianMoneyByDay[lastIdx].toFixed(1)} (逐日: ${medTrail})`);
+  lines.push(
+    `  常赢玩家(>=5胜, n=${eco.frequentWinnerCount})第 ${eco.days} 天中位现金流: ${eco.frequentWinnerMedianByDay[lastIdx].toFixed(1)} (逐日: ${fwMedTrail})`,
+  );
+  lines.push(
+    `  常赢玩家第 ${eco.days} 天均值现金流: ${eco.frequentWinnerAvgByDay[lastIdx].toFixed(1)} | 平均赎当次数: ${eco.avgRedemptionsAccepted.toFixed(2)} | 平均胜场: ${eco.avgTotalWins.toFixed(2)}`,
+  );
+
+  return lines.join('\n');
 }

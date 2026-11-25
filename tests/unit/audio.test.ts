@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  ALL_SFX_NAMES,
   AudioEngine,
+  BGM_LOOKAHEAD_SEC,
   BGM_SCORES,
   DEFAULT_MASTER_VOLUME,
+  ZZFX_SFX_RECIPES,
+  zzfxBuildSamples,
+  type AudioBufferLike,
+  type AudioBufferSourceNodeLike,
   type AudioContextLike,
   type GainNodeLike,
   type OscillatorNodeLike,
@@ -29,13 +35,18 @@ interface MockAudioEnv {
   ctx: AudioContextLike;
   masterGain: GainNodeLike;
   oscillators: OscillatorNodeLike[];
+  bufferSources: AudioBufferSourceNodeLike[];
   resumeSpy: ReturnType<typeof vi.fn>;
   setState: (state: string) => void;
+  setTime: (sec: number) => void;
 }
 
 function createMockAudioEnv(initialState = 'suspended'): MockAudioEnv {
   let state = initialState;
+  let manualTime: number | null = null;
+  const startNow = Date.now();
   const oscillators: OscillatorNodeLike[] = [];
+  const bufferSources: AudioBufferSourceNodeLike[] = [];
   const gains: GainNodeLike[] = [];
   const resumeSpy = vi.fn(() => {
     state = 'running';
@@ -53,8 +64,9 @@ function createMockAudioEnv(initialState = 'suspended'): MockAudioEnv {
   });
 
   const ctx: AudioContextLike = {
+    sampleRate: 44100,
     get currentTime() {
-      return 1.0;
+      return manualTime !== null ? manualTime : 1.0 + (Date.now() - startNow) / 1000;
     },
     get state() {
       return state;
@@ -82,6 +94,24 @@ function createMockAudioEnv(initialState = 'suspended'): MockAudioEnv {
       oscillators.push(osc);
       return osc;
     },
+    createBuffer: (_channels: number, length: number): AudioBufferLike => {
+      const data = new Float32Array(length);
+      return {
+        getChannelData: () => data,
+      };
+    },
+    createBufferSource: () => {
+      const src: AudioBufferSourceNodeLike = {
+        buffer: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        onended: null,
+      };
+      bufferSources.push(src);
+      return src;
+    },
     resume: resumeSpy,
     close: vi.fn(() => Promise.resolve()),
   };
@@ -92,14 +122,18 @@ function createMockAudioEnv(initialState = 'suspended'): MockAudioEnv {
       return gains[0];
     },
     oscillators,
+    bufferSources,
     resumeSpy,
     setState: (next: string) => {
       state = next;
     },
+    setTime: (sec: number) => {
+      manualTime = sec;
+    },
   };
 }
 
-describe('AudioEngine state machine & WebAudio synthesis', () => {
+describe('AudioEngine state machine, Lookahead BGM & ZzFX synthesis', () => {
   it('defaults to unmuted with quiet master volume and persists mute state in storage', () => {
     const storage = createMemoryStorage();
     const env = createMockAudioEnv();
@@ -116,7 +150,6 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
     expect(engine.isUnlocked()).toBe(false);
     expect(engine.getCurrentTrack()).toBeNull();
 
-    // Toggling mute unlocks and persists muted=true
     const afterFirstToggle = engine.toggleMute();
     expect(afterFirstToggle).toBe(true);
     expect(engine.isMuted()).toBe(true);
@@ -125,7 +158,6 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
     expect(storage.store.get(AUDIO_STORAGE_KEY)).toBe('1');
     expect(loadAudioMuted(storage)).toBe(true);
 
-    // Reloading a fresh engine reads persisted muted=true
     const reloaded = new AudioEngine({
       storage,
       createAudioContext: () => null,
@@ -133,7 +165,6 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
     expect(reloaded.isMuted()).toBe(true);
     expect(reloaded.getEffectiveGain()).toBe(0);
 
-    // Toggling back ON restores master gain and persists '0'
     const afterSecondToggle = engine.toggleMute();
     expect(afterSecondToggle).toBe(false);
     expect(engine.isMuted()).toBe(false);
@@ -155,7 +186,6 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
       createAudioContext: createSpy,
     });
 
-    // Requesting BGM or SFX before user gesture must NOT create AudioContext
     engine.playBgm('day');
     engine.playSfx('button_click');
     expect(createSpy).not.toHaveBeenCalled();
@@ -163,7 +193,6 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
     expect(engine.isBgmPlaying()).toBe(false);
     expect(engine.getDebugState().sfxLog).toEqual(['button_click']);
 
-    // Once user gesture calls unlock(), AudioContext is created, resumed, and queued BGM starts
     engine.unlock();
     expect(createSpy).toHaveBeenCalledTimes(1);
     expect(engine.isUnlocked()).toBe(true);
@@ -194,7 +223,6 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
     expect(engine.getVolume()).toBe(0);
     expect(env.masterGain.gain.value).toBe(0);
 
-    // Muting keeps stored volume while driving effective gain & AudioNode gain to 0
     engine.setVolume(0.22);
     engine.setMuted(true);
     expect(engine.getVolume()).toBe(0.22);
@@ -202,6 +230,43 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
     expect(env.masterGain.gain.value).toBe(0);
 
     engine.dispose();
+  });
+
+  it('schedules BGM with 100ms ctx.currentTime lookahead without timing drift', () => {
+    vi.useFakeTimers();
+    try {
+      const storage = createMemoryStorage();
+      const env = createMockAudioEnv('running');
+      env.setTime(10.0);
+
+      const engine = new AudioEngine({
+        storage,
+        createAudioContext: () => env.ctx,
+      });
+
+      expect(BGM_LOOKAHEAD_SEC).toBe(0.1);
+      engine.unlock();
+      engine.playBgm('day');
+
+      // Step 0 starts at exact 10.0
+      const stepSec = BGM_SCORES.day.stepMs / 1000;
+      const startTimes = (): number[] =>
+        env.oscillators.map((osc) => (osc.start as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as number);
+      expect(startTimes()[0]).toBeCloseTo(10.0, 5);
+
+      // Advance audio clock into the lookahead window for step 2 (10.0 + 2*stepSec = 10.52; at 10.45 it is within 100ms lookahead!)
+      env.setTime(10.45);
+      vi.advanceTimersByTime(30);
+
+      const uniqueStarts = [...new Set(startTimes().map((t) => Number(t.toFixed(4))))].sort((a, b) => a - b);
+      // Step 0 (10.00) and Step 2 (10.52) both have notes; spacing is exact multiple of stepSec despite irregular tick at 10.45
+      expect(uniqueStarts).toContain(10);
+      expect(uniqueStarts).toContain(Number((10 + stepSec * 2).toFixed(4)));
+
+      engine.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('switches between day and night BGM tracks cleanly and silences all output when muted', () => {
@@ -221,11 +286,9 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
       const dayStartOscCount = env.oscillators.length;
       expect(dayStartOscCount).toBeGreaterThan(0);
 
-      // Stepping forward schedules more day chiptune notes
       vi.advanceTimersByTime(BGM_SCORES.day.stepMs * 2);
       expect(env.oscillators.length).toBeGreaterThan(dayStartOscCount);
 
-      // Switch to night track
       engine.playBgm('night');
       expect(engine.getCurrentTrack()).toBe('night');
       expect(engine.isBgmPlaying()).toBe(true);
@@ -233,21 +296,21 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
       vi.advanceTimersByTime(BGM_SCORES.night.stepMs * 2);
       expect(env.oscillators.length).toBeGreaterThan(nightOscCount);
 
-      // Muting silences master gain, halts BGM loop, and blocks SFX synthesis
       engine.setMuted(true);
       expect(env.masterGain.gain.value).toBe(0);
       expect(engine.isBgmPlaying()).toBe(false);
       const mutedOscSnapshot = env.oscillators.length;
+      const mutedBufSnapshot = env.bufferSources.length;
 
       vi.advanceTimersByTime(2000);
       engine.playSfx('play_card');
-      engine.playSfx('demon_defeated');
+      engine.playSfx('hit_demon');
       expect(env.oscillators.length).toBe(mutedOscSnapshot);
+      expect(env.bufferSources.length).toBe(mutedBufSnapshot);
       expect(engine.getDebugState().audibleSfxCount).toBe(0);
       expect(engine.getDebugState().sfxCounts.play_card).toBe(1);
-      expect(engine.getDebugState().sfxCounts.demon_defeated).toBe(1);
+      expect(engine.getDebugState().sfxCounts.hit_demon).toBe(1);
 
-      // Unmuting resumes the remembered night track and re-enables SFX
       engine.setMuted(false);
       expect(env.masterGain.gain.value).toBe(DEFAULT_MASTER_VOLUME);
       expect(engine.isBgmPlaying()).toBe(true);
@@ -257,7 +320,6 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
       expect(env.oscillators.length).toBeGreaterThan(beforeSfx);
       expect(engine.getDebugState().audibleSfxCount).toBe(1);
 
-      // Stopping BGM clears current track and interval
       engine.stopBgm();
       expect(engine.getCurrentTrack()).toBeNull();
       expect(engine.isBgmPlaying()).toBe(false);
@@ -268,7 +330,7 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
     }
   });
 
-  it('synthesizes all 5 SFX recipes when unlocked and unmuted', () => {
+  it('synthesizes all 11 SFX recipes (5 classic + 6 ZzFX) with non-silent PCM buffers', () => {
     const storage = createMemoryStorage();
     const env = createMockAudioEnv('running');
     const engine = new AudioEngine({
@@ -278,24 +340,41 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
 
     engine.unlock();
 
-    const sfxList = [
-      'button_click',
-      'play_card',
-      'receive_card',
-      'deal_closed',
-      'demon_defeated',
+    const newZzfxNames = [
+      'hit_demon',
+      'shield_block',
+      'player_hurt',
+      'offer_rejected',
+      'insufficient_funds',
+      'redeem_deal',
     ] as const;
 
-    for (const name of sfxList) {
-      const before = env.oscillators.length;
-      engine.playSfx(name);
-      expect(env.oscillators.length, `SFX "${name}" should synthesize notes`).toBeGreaterThan(before);
+    // Verify ZzFX sample synthesis produces valid finite non-zero waveforms for all 6 new recipes
+    for (const name of newZzfxNames) {
+      const samples = zzfxBuildSamples(ZZFX_SFX_RECIPES[name], 44100, () => 0.5);
+      expect(samples.length, `ZzFX "${name}" must have non-empty samples`).toBeGreaterThan(500);
+      let maxAbs = 0;
+      for (let i = 0; i < samples.length; i += 1) {
+        expect(Number.isFinite(samples[i])).toBe(true);
+        const a = Math.abs(samples[i]);
+        if (a > maxAbs) maxAbs = a;
+      }
+      expect(maxAbs, `ZzFX "${name}" must not be silent`).toBeGreaterThan(0.05);
     }
 
+    for (const name of ALL_SFX_NAMES) {
+      const beforeTotal = env.oscillators.length + env.bufferSources.length;
+      engine.playSfx(name);
+      expect(
+        env.oscillators.length + env.bufferSources.length,
+        `SFX "${name}" should emit audio nodes`,
+      ).toBeGreaterThan(beforeTotal);
+    }
+
+    expect(env.bufferSources.length).toBe(newZzfxNames.length);
     const debug = engine.getDebugState();
-    expect(debug.sfxLog).toEqual([...sfxList]);
-    expect(debug.lastSfx).toBe('demon_defeated');
-    expect(debug.audibleSfxCount).toBe(5);
+    expect(debug.sfxLog).toEqual([...ALL_SFX_NAMES]);
+    expect(debug.audibleSfxCount).toBe(ALL_SFX_NAMES.length);
 
     engine.dispose();
   });
@@ -305,7 +384,6 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
     try {
       const storage = createMemoryStorage();
 
-      // Case 1: AudioContext returns null (Node / headless / unsupported browser)
       const noCtxEngine = new AudioEngine({
         storage,
         createAudioContext: () => null,
@@ -317,11 +395,9 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
         vi.advanceTimersByTime(1000);
         noCtxEngine.playBgm('night');
         vi.advanceTimersByTime(1000);
-        noCtxEngine.playSfx('button_click');
-        noCtxEngine.playSfx('play_card');
-        noCtxEngine.playSfx('receive_card');
-        noCtxEngine.playSfx('deal_closed');
-        noCtxEngine.playSfx('demon_defeated');
+        for (const sfx of ALL_SFX_NAMES) {
+          noCtxEngine.playSfx(sfx);
+        }
         noCtxEngine.setVolume(0.3);
         noCtxEngine.toggleMute();
         noCtxEngine.toggleMute();
@@ -330,9 +406,8 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
       }).not.toThrow();
 
       expect(noCtxEngine.getDebugState().contextAvailable).toBe(false);
-      expect(noCtxEngine.getDebugState().sfxCounts.demon_defeated).toBe(1);
+      expect(noCtxEngine.getDebugState().sfxCounts.redeem_deal).toBe(1);
 
-      // Case 2: AudioContext constructor throws
       const throwingEngine = new AudioEngine({
         storage,
         createAudioContext: () => {
@@ -343,7 +418,7 @@ describe('AudioEngine state machine & WebAudio synthesis', () => {
       expect(() => {
         throwingEngine.unlock();
         throwingEngine.playBgm('day');
-        throwingEngine.playSfx('deal_closed');
+        throwingEngine.playSfx('hit_demon');
         throwingEngine.toggleMute();
         throwingEngine.dispose();
       }).not.toThrow();
