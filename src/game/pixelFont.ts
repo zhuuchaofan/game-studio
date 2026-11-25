@@ -151,22 +151,31 @@ export function buildBitmapFontData(
   };
 }
 
+function formatHexTint(tint: number): string {
+  return `#${(tint & 0xffffff).toString(16).padStart(6, '0').toUpperCase()}`;
+}
+
 /**
- * Generates the white-pixel bitmap font atlas on an in-memory canvas and registers it
- * into Phaser's texture & bitmapFont caches (idempotent).
+ * Generates a 1-bit pixel bitmap font atlas filled with `fillHex` and registers it
+ * under `fontKey` / `textureKey` (idempotent). Used both for the default white WebGL
+ * atlas and for per-color Canvas2D fallback atlases (Phaser's Canvas BitmapText renderer
+ * ignores WebGL `setTint`, which otherwise causes white-on-light-background text).
  */
-export function loadPixelFont(
+function ensureColoredPixelFont(
   scene: Phaser.Scene,
+  fontKey: string,
+  textureKey: string,
+  fillHex: string,
   fontJson: PixelFontJson = PIXEL_FONT_DATA,
 ): void {
-  if (scene.cache.bitmapFont.exists(PIXEL_FONT_KEY)) {
+  if (scene.cache.bitmapFont.exists(fontKey)) {
     return;
   }
 
   const layout = computeAtlasLayout(fontJson);
   const data = buildBitmapFontData(fontJson, layout);
 
-  if (!scene.textures.exists(PIXEL_FONT_TEXTURE_KEY)) {
+  if (!scene.textures.exists(textureKey)) {
     const canvas = document.createElement('canvas');
     canvas.width = layout.width;
     canvas.height = layout.height;
@@ -176,7 +185,7 @@ export function loadPixelFont(
     }
 
     ctx.clearRect(0, 0, layout.width, layout.height);
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = fillHex;
 
     for (const p of layout.placements) {
       const { rows } = p.glyph;
@@ -190,21 +199,41 @@ export function loadPixelFont(
       }
     }
 
-    const texture = scene.textures.addCanvas(PIXEL_FONT_TEXTURE_KEY, canvas);
+    const texture = scene.textures.addCanvas(textureKey, canvas);
     // Phaser.Textures.FilterMode.NEAREST === 1
     texture?.setFilter(1);
   }
 
-  scene.cache.bitmapFont.add(PIXEL_FONT_KEY, {
+  scene.cache.bitmapFont.add(fontKey, {
     data,
-    texture: PIXEL_FONT_TEXTURE_KEY,
+    texture: textureKey,
     frame: '__BASE',
     fromAtlas: false,
   });
 }
 
+function isCanvasRenderer(scene: Phaser.Scene): boolean {
+  // Phaser.CANVAS === 1; Phaser.WEBGL === 2
+  const renderer = scene.game?.renderer as { type?: number } | undefined;
+  return renderer?.type === 1;
+}
+
+/**
+ * Generates the white-pixel bitmap font atlas on an in-memory canvas and registers it
+ * into Phaser's texture & bitmapFont caches (idempotent).
+ */
+export function loadPixelFont(
+  scene: Phaser.Scene,
+  fontJson: PixelFontJson = PIXEL_FONT_DATA,
+): void {
+  ensureColoredPixelFont(scene, PIXEL_FONT_KEY, PIXEL_FONT_TEXTURE_KEY, '#FFFFFF', fontJson);
+}
+
 /**
  * Helper to create crisp pixel BitmapText tinted to the 16-color palette.
+ * In Canvas2D fallback mode (where Phaser BitmapText ignores setTint), transparently
+ * uses a pre-baked palette-colored 1-bit atlas and wires setTint() to swap atlases
+ * so light-background text never degrades to white-on-light.
  */
 export function addPixelText(
   scene: Phaser.Scene,
@@ -217,11 +246,38 @@ export function addPixelText(
 
   const size = opts.size ?? 12;
   const align = opts.align ?? 0;
-  const bmText = scene.add.bitmapText(Math.round(x), Math.round(y), PIXEL_FONT_KEY, text, size, align);
+  const canvasMode = isCanvasRenderer(scene);
+  const initialTint =
+    opts.color !== undefined
+      ? typeof opts.color === 'number'
+        ? opts.color
+        : parseHexColor(opts.color)
+      : undefined;
 
-  if (opts.color !== undefined) {
-    const tint = typeof opts.color === 'number' ? opts.color : parseHexColor(opts.color);
-    bmText.setTint(tint);
+  let initialFontKey = PIXEL_FONT_KEY;
+  if (canvasMode && initialTint !== undefined) {
+    const hex = formatHexTint(initialTint);
+    initialFontKey = `${PIXEL_FONT_KEY}-${hex.slice(1)}`;
+    ensureColoredPixelFont(scene, initialFontKey, `${PIXEL_FONT_TEXTURE_KEY}-${hex.slice(1)}`, hex);
+  }
+
+  const bmText = scene.add.bitmapText(Math.round(x), Math.round(y), initialFontKey, text, size, align);
+
+  if (canvasMode) {
+    const origSetTint = bmText.setTint.bind(bmText);
+    bmText.setTint = ((topLeft?: number, topRight?: number, bottomLeft?: number, bottomRight?: number) => {
+      if (typeof topLeft === 'number') {
+        const hex = formatHexTint(topLeft);
+        const key = `${PIXEL_FONT_KEY}-${hex.slice(1)}`;
+        ensureColoredPixelFont(scene, key, `${PIXEL_FONT_TEXTURE_KEY}-${hex.slice(1)}`, hex);
+        bmText.setFont(key, bmText.fontSize, bmText.align);
+      }
+      return origSetTint(topLeft, topRight, bottomLeft, bottomRight);
+    }) as typeof bmText.setTint;
+  }
+
+  if (initialTint !== undefined) {
+    bmText.setTint(initialTint);
   }
 
   if (opts.origin !== undefined) {

@@ -19,12 +19,16 @@ import {
 import {
   advanceCustomer,
   BALANCE,
+  BRIDE_RING_CARD_NAME,
+  BRIDE_RING_ITEM_ID,
   canAffordTier,
+  createBrideRedemptionOffer,
   createInitialState,
   createRedemptionOffer,
   DAILY_CUSTOMER_COUNT,
   deriveDaySeed,
   deriveRedemptionSeed,
+  formatDay3Rumor,
   formatReputationHint,
   formatSignedDelta,
   getEffectiveAcceptRate,
@@ -155,11 +159,29 @@ export class PawnshopScene extends Phaser.Scene {
     this.trimPage = 0;
     this.pendingSideQuestItem = null;
 
-    // 每天开始时按 ?seed= + 天数洗牌当客池并取前 3 位（第 1 天保底含 1 件伤害牌旧物，P6 B2）
+    // 每天开始时按 ?seed= + 天数洗牌当客池并取前 3 位
+    // （第 1 天保底含 1 件伤害牌旧物，P6 B2；输首夜后第 2 天保底 1 件可负担伤害牌旧物，P10 子项 3）
     const shuffleRng = mulberry32(deriveDaySeed(seed, this.save.day));
-    const dailyItems = pickDailyItems(ITEMS, this.save.day, shuffleRng, DAILY_CUSTOMER_COUNT);
+    const lostNight1 =
+      this.save.day === 2 &&
+      this.save.chapter.daysVisited.includes(1) &&
+      !this.save.chapter.daysCleared.includes(1);
+    const dailyItems = pickDailyItems(
+      ITEMS,
+      this.save.day,
+      shuffleRng,
+      DAILY_CUSTOMER_COUNT,
+      lostNight1
+        ? {
+            recoverDamageAfterDay1Loss: {
+              money: this.save.money,
+              deck: this.save.deck,
+            },
+          }
+        : undefined,
+    );
 
-    // 每天当客上门前检查赎当事件（P6 C4 + P9 契约倍率）
+    // 每天当客上门前检查事件：P10 第 2 天新娘剧本化赎当（独立分支）优先于随机赎当（P6 C4 + P9 契约倍率）
     const pawnPrices = loadPawnPrices();
     const needsDay4Pact =
       this.save.chapter.dayInChapter === 4 && this.save.chapter.pactChoice === null;
@@ -169,13 +191,26 @@ export class PawnshopScene extends Phaser.Scene {
       !this.save.chapter.day4TrimDone &&
       this.save.deck.length > 0;
 
+    const brideOffer =
+      needsDay4Pact || needsDay4Trim
+        ? null
+        : createBrideRedemptionOffer(
+            this.save.day,
+            this.save.deck,
+            pawnPrices,
+            Boolean(this.save.chapter.day1RingPawned),
+            Boolean(this.save.chapter.day2BrideRedemptionDone),
+            ITEMS,
+          );
+
     const redeemMultiplier = getRedemptionMultiplier(
       this.save.chapter.pactChoice,
       this.save.chapter.currentChapter,
     );
     const redeemRng = mulberry32(deriveRedemptionSeed(seed, this.save.day));
     const redemptionOffer =
-      needsDay4Pact || needsDay4Trim
+      brideOffer ??
+      (needsDay4Pact || needsDay4Trim
         ? null
         : createRedemptionOffer(
             this.save.deck,
@@ -184,7 +219,7 @@ export class PawnshopScene extends Phaser.Scene {
             redeemRng,
             ITEMS,
             redeemMultiplier,
-          );
+          ));
 
     this.state = createInitialState({
       day: this.save.day,
@@ -263,6 +298,7 @@ export class PawnshopScene extends Phaser.Scene {
                 cardName: this.state.redemptionOffer.cardName,
                 basePrice: this.state.redemptionOffer.basePrice,
                 payout: this.state.redemptionOffer.payout,
+                ...(this.state.redemptionOffer.isBrideScripted ? { isBrideScripted: true } : {}),
               }
             : null;
         const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
@@ -583,7 +619,7 @@ export class PawnshopScene extends Phaser.Scene {
       });
 
       const benefitTitle = addPixelText(this, slot.x, slot.y - 33, '收益', {
-        color: PALETTE.jade.hex,
+        color: PALETTE.ink.hex,
         origin: 0.5,
       });
       const benefitBody = addPixelText(this, slot.x, slot.y - 14, formatPactTwoLines(pact.benefit), {
@@ -721,7 +757,7 @@ export class PawnshopScene extends Phaser.Scene {
         origin: 0.5,
       });
       const effTxt = addPixelText(this, slot.x, slot.y + 9, shortEff, {
-        color: PALETTE.copperBrown.hex,
+        color: PALETTE.deepWood.hex,
         origin: 0.5,
       });
 
@@ -869,7 +905,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.contentLayer.add(
       addPixelText(this, 66, 62, '接受：多收1件未拥有旧物(三档报价)', {
-        color: PALETTE.jade.hex,
+        color: PALETTE.ink.hex,
         origin: [0, 0],
       }),
     );
@@ -883,7 +919,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.contentLayer.add(
       addPixelText(this, 66, 98, '拒绝：无任何变化，直接结束白天', {
-        color: PALETTE.copperBrown.hex,
+        color: PALETTE.deepWood.hex,
         origin: [0, 0],
       }),
     );
@@ -958,6 +994,79 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.addTicketPanel(offer.item, NEGOTIATING_PANEL_CENTER_Y, NEGOTIATING_PANEL_HEIGHT, 38, 56);
 
+    if (offer.isBrideScripted) {
+      this.contentLayer.add(
+        addPixelText(this, 66, 27, '旧客回门 · 新娘来赎婚戒', {
+          color: PALETTE.vermilion.hex,
+          origin: [0, 0],
+        }),
+      );
+
+      this.contentLayer.add(
+        addPixelText(this, BASE_WIDTH - 16, 27, '故事事件', {
+          color: PALETTE.deepWood.hex,
+          origin: [1, 0],
+        }),
+      );
+
+      this.contentLayer.add(this.add.rectangle(185, 41, 238, 1, PALETTE.oldPaper.num));
+
+      this.contentLayer.add(
+        addPixelText(this, 66, 44, '「掌柜，我凑钱来赎婚戒了，能还我吗？」', {
+          color: PALETTE.ink.hex,
+          origin: [0, 0],
+        }),
+      );
+
+      this.contentLayer.add(
+        addPixelText(this, 66, 60, '提醒：赎走戒指，今晚少张挡伤牌(守诺盾5)', {
+          color: PALETTE.vermilion.hex,
+          origin: [0, 0],
+        }),
+      );
+
+      this.contentLayer.add(
+        addPixelText(this, 66, 78, `接受：守诺离库 钱+${offer.payout} 口碑+1(不耗券)`, {
+          color: PALETTE.ink.hex,
+          origin: [0, 0],
+        }),
+      );
+
+      this.contentLayer.add(
+        addPixelText(this, 66, 94, '拒绝：留着守诺 口碑-1(她失望而去)', {
+          color: PALETTE.deepWood.hex,
+          origin: [0, 0],
+        }),
+      );
+
+      this.addActionButton(
+        REDEMPTION_ACCEPT_BUTTON.x,
+        REDEMPTION_ACCEPT_BUTTON.y,
+        REDEMPTION_ACCEPT_BUTTON.width,
+        REDEMPTION_ACCEPT_BUTTON.height,
+        '还她婚戒',
+        `钱+${offer.payout} 碑+1`,
+        () => this.handleRedemption(true),
+        false,
+        PALETTE.candle.num,
+        PALETTE.lampYellow.num,
+      );
+
+      this.addActionButton(
+        REDEMPTION_REJECT_BUTTON.x,
+        REDEMPTION_REJECT_BUTTON.y,
+        REDEMPTION_REJECT_BUTTON.width,
+        REDEMPTION_REJECT_BUTTON.height,
+        '留着婚戒',
+        '留守诺 碑-1',
+        () => this.handleRedemption(false),
+        false,
+        PALETTE.oldPaper.num,
+        PALETTE.lampYellow.num,
+      );
+      return;
+    }
+
     const tickets = this.state.redeemTickets ?? this.save.redeemTickets;
     this.contentLayer.add(
       addPixelText(this, 66, 28, '有人回来赎当！', {
@@ -968,7 +1077,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.contentLayer.add(
       addPixelText(this, BASE_WIDTH - 16, 28, `赎当券:${tickets}`, {
-        color: PALETTE.copperBrown.hex,
+        color: PALETTE.deepWood.hex,
         origin: [1, 0],
       }),
     );
@@ -997,7 +1106,7 @@ export class PawnshopScene extends Phaser.Scene {
         90,
         `接受:牌离库 钱+${offer.payout} 口碑+1 券-1`,
         {
-          color: PALETTE.jade.hex,
+          color: PALETTE.ink.hex,
           origin: [0, 0],
         },
       ),
@@ -1005,7 +1114,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.contentLayer.add(
       addPixelText(this, 66, 104, '拒绝:牌与赎当券均保留', {
-        color: PALETTE.copperBrown.hex,
+        color: PALETTE.deepWood.hex,
         origin: [0, 0],
       }),
     );
@@ -1042,9 +1151,15 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
+    const wasBride = Boolean(this.state.redemptionOffer?.isBrideScripted);
     audio.unlock();
     audio.playSfx(accept ? 'redeem_deal' : 'button_click');
     this.state = resolveRedemption(this.state, accept);
+
+    const nextChapter = cloneChapterState(this.save.chapter);
+    if (wasBride) {
+      nextChapter.day2BrideRedemptionDone = true;
+    }
 
     this.save = {
       ...this.save,
@@ -1052,10 +1167,38 @@ export class PawnshopScene extends Phaser.Scene {
       reputation: this.state.reputation,
       deck: [...this.state.deck],
       redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
+      chapter: nextChapter,
     };
     saveGame(this.save);
     if (this.state.pawnPrices) {
       savePawnPrices(this.state.pawnPrices);
+    }
+
+    // P10 子项 4：新娘故事事件不占当日随机赎当名额；结束后照常检查当日随机赎当（不改动 createRedemptionOffer）
+    if (wasBride) {
+      const redeemMultiplier = getRedemptionMultiplier(
+        this.save.chapter.pactChoice,
+        this.save.chapter.currentChapter,
+      );
+      const redeemRng = mulberry32(deriveRedemptionSeed(this.seed, this.save.day));
+      const candidateDeck = accept
+        ? this.state.deck
+        : this.state.deck.map((card) => (card === BRIDE_RING_CARD_NAME ? '' : card));
+      const randomOffer = createRedemptionOffer(
+        candidateDeck,
+        this.state.redeemTickets ?? this.save.redeemTickets,
+        this.state.pawnPrices ?? loadPawnPrices(),
+        redeemRng,
+        ITEMS,
+        redeemMultiplier,
+      );
+      if (randomOffer) {
+        this.state = {
+          ...this.state,
+          phase: 'redemption',
+          redemptionOffer: randomOffer,
+        };
+      }
     }
 
     this.renderCurrentPhase();
@@ -1106,7 +1249,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.contentLayer.add(
       addPixelText(this, BASE_WIDTH - 16, 27, `牌:${item.cardName}(${item.cardCost}费)`, {
-        color: PALETTE.copperBrown.hex,
+        color: PALETTE.ink.hex,
         origin: [1, 0],
       }),
     );
@@ -1122,12 +1265,12 @@ export class PawnshopScene extends Phaser.Scene {
       }),
     );
 
-    // 卡牌效果说明（C1：收当卡片同步写清效果，位于 y=67..79，高于教程气泡 y=80）
+    // 卡牌效果说明（C1 + P10 子项 2：浅底深木字高对比，位于 y=67..79，高于教程气泡 y=80）
     const cardDef = CARDS_BY_NAME.get(item.cardName);
     if (cardDef) {
       this.contentLayer.add(
         addPixelText(this, 66, 67, `效果:${formatEffectDescription(cardDef)}`, {
-          color: PALETTE.copperBrown.hex,
+          color: PALETTE.deepWood.hex,
           origin: [0, 0],
         }),
       );
@@ -1199,7 +1342,7 @@ export class PawnshopScene extends Phaser.Scene {
     // 紧凑结算面板（y=24..88），确保 3/6 教程气泡（y=92..136）与底部按钮完全不遮挡结算内容
     this.addTicketPanel(outcome.item, FEEDBACK_PANEL_CENTER_Y, FEEDBACK_PANEL_HEIGHT, 36, 56);
 
-    const headlineColor = outcome.accepted ? PALETTE.jade.hex : PALETTE.vermilion.hex;
+    const headlineColor = outcome.accepted ? PALETTE.ink.hex : PALETTE.vermilion.hex;
     const headline = outcome.accepted ? `成交！收下${outcome.item.name}` : '没谈成';
     this.contentLayer.add(
       addPixelText(this, 60, 25, headline, {
@@ -1216,7 +1359,7 @@ export class PawnshopScene extends Phaser.Scene {
           25,
           `${outcome.price}元 口碑${formatSignedDelta(outcome.reputationDelta)}`,
           {
-            color: PALETTE.copperBrown.hex,
+            color: PALETTE.ink.hex,
             origin: [1, 0],
           },
         ),
@@ -1234,12 +1377,12 @@ export class PawnshopScene extends Phaser.Scene {
     );
 
     if (outcome.accepted) {
-      // C1：收当结算显示卡牌效果说明（y=51..62）
+      // C1 + P10 子项 2：收当结算显示卡牌效果说明（浅底深木字高对比，y=51..62）
       const cardDef = CARDS_BY_NAME.get(outcome.item.cardName);
       const effectDesc = cardDef ? formatEffectDescription(cardDef) : '';
       this.contentLayer.add(
         addPixelText(this, 60, 51, `${outcome.item.cardName}:${effectDesc}`, {
-          color: PALETTE.copperBrown.hex,
+          color: PALETTE.deepWood.hex,
           origin: [0, 0],
         }),
       );
@@ -1297,43 +1440,50 @@ export class PawnshopScene extends Phaser.Scene {
         .setStrokeStyle(1, PALETTE.ink.num),
     );
 
+    const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
+    const isDay3Rumor = this.save.chapter.dayInChapter === 3;
+
     // 标题条
-    this.contentLayer.add(this.add.rectangle(centerX, 39, cardWidth, 22, PALETTE.deepWood.num));
+    const titleY = isDay3Rumor ? 38 : 39;
+    const titleH = isDay3Rumor ? 20 : 22;
+    this.contentLayer.add(this.add.rectangle(centerX, titleY, cardWidth, titleH, PALETTE.deepWood.num));
     this.contentLayer.add(
-      addPixelText(this, centerX, 39, `第${this.state.day}天 · 白天结束`, {
+      addPixelText(this, centerX, titleY, `第${this.state.day}天 · 白天结束`, {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
     );
 
     // 钱与口碑摘要条
+    const statsY = isDay3Rumor ? 58 : 64;
+    const statsH = isDay3Rumor ? 16 : 20;
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, 64, cardWidth - 18, 20, PALETTE.deepWood.num)
+        .rectangle(centerX, statsY, cardWidth - 18, statsH, PALETTE.deepWood.num)
         .setStrokeStyle(1, PALETTE.ink.num),
     );
 
     this.contentLayer.add(
-      addPixelText(this, 34, 64, '钱:', {
+      addPixelText(this, 34, statsY, '钱:', {
         color: PALETTE.candle.hex,
         origin: [0, 0.5],
       }),
     );
     this.contentLayer.add(
-      addPixelText(this, 54, 64, `${this.state.money}`, {
+      addPixelText(this, 54, statsY, `${this.state.money}`, {
         color: PALETTE.lampYellow.hex,
         origin: [0, 0.5],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, centerX + 8, 64, '口碑:', {
+      addPixelText(this, centerX + 8, statsY, '口碑:', {
         color: PALETTE.candle.hex,
         origin: [0, 0.5],
       }),
     );
     this.contentLayer.add(
-      addPixelText(this, centerX + 42, 64, `${this.state.reputation}`, {
+      addPixelText(this, centerX + 42, statsY, `${this.state.reputation}`, {
         color: PALETTE.brass.hex,
         origin: [0, 0.5],
       }),
@@ -1341,25 +1491,23 @@ export class PawnshopScene extends Phaser.Scene {
 
     // 牌组列表
     this.contentLayer.add(
-      addPixelText(this, 28, 80, `当前牌组（${this.state.deck.length}张）：`, {
+      addPixelText(this, 28, isDay3Rumor ? 68 : 80, `当前牌组（${this.state.deck.length}张）：`, {
         color: PALETTE.ink.hex,
         origin: [0, 0],
       }),
     );
 
-    const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
-    const isDay3Rumor = this.save.chapter.dayInChapter === 3;
-
     if (this.state.deck.length === 0) {
       this.contentLayer.add(
-        addPixelText(this, centerX, isDay3Rumor ? 105 : 112, '今日未收到新牌', {
-          color: PALETTE.copperBrown.hex,
+        addPixelText(this, centerX, isDay3Rumor ? 95 : 112, '今日未收到新牌', {
+          color: PALETTE.deepWood.hex,
           origin: 0.5,
         }),
       );
     } else if (this.state.deck.length <= 3) {
       const slotXs = [72, centerX, BASE_WIDTH - 72];
-      const slotY = isDay3Rumor ? 105 : 112;
+      const slotY = isDay3Rumor ? 95 : 112;
+      const slotH = isDay3Rumor ? 18 : 22;
       this.state.deck.forEach((cardName, index) => {
         const x = slotXs[index] ?? centerX;
         const matchedItem = ITEMS.find((item) => item.cardName === cardName);
@@ -1367,10 +1515,12 @@ export class PawnshopScene extends Phaser.Scene {
 
         this.contentLayer.add(
           this.add
-            .rectangle(x, slotY, 82, 22, PALETTE.paperWhite.num)
+            .rectangle(x, slotY, 82, slotH, PALETTE.paperWhite.num)
             .setStrokeStyle(1, PALETTE.ink.num),
         );
-        this.contentLayer.add(this.add.rectangle(x, slotY - 9, 80, 3, stripColor));
+        this.contentLayer.add(
+          this.add.rectangle(x, slotY - Math.floor(slotH / 2) + 2, 80, 3, stripColor),
+        );
         this.contentLayer.add(
           addPixelText(this, x, slotY + 1, cardName, {
             color: PALETTE.ink.hex,
@@ -1387,16 +1537,19 @@ export class PawnshopScene extends Phaser.Scene {
         const row = Math.floor(index / 3);
         const col = index % 3;
         const x = slotXs[col];
-        const y = isDay3Rumor ? (row === 0 ? 98 : 115) : row === 0 ? 104 : 124;
+        const y = isDay3Rumor ? (row === 0 ? 88 : 102) : row === 0 ? 104 : 124;
+        const boxH = isDay3Rumor ? 13 : 15;
         const matchedItem = ITEMS.find((item) => item.cardName === cardName);
         const stripColor = matchedItem ? parseHexColor(matchedItem.color) : PALETTE.brass.num;
 
         this.contentLayer.add(
           this.add
-            .rectangle(x, y, 82, 15, PALETTE.paperWhite.num)
+            .rectangle(x, y, 82, boxH, PALETTE.paperWhite.num)
             .setStrokeStyle(1, PALETTE.ink.num),
         );
-        this.contentLayer.add(this.add.rectangle(x, y - 6, 80, 2, stripColor));
+        this.contentLayer.add(
+          this.add.rectangle(x, y - Math.floor(boxH / 2) + 1, 80, 2, stripColor),
+        );
         this.contentLayer.add(
           addPixelText(this, x, y + 1, cardName, {
             color: PALETTE.ink.hex,
@@ -1406,8 +1559,8 @@ export class PawnshopScene extends Phaser.Scene {
       });
       if (this.state.deck.length > maxSlots) {
         this.contentLayer.add(
-          addPixelText(this, slotXs[2], isDay3Rumor ? 116 : 125, `等${this.state.deck.length}张`, {
-            color: PALETTE.copperBrown.hex,
+          addPixelText(this, slotXs[2], isDay3Rumor ? 102 : 125, `等${this.state.deck.length}张`, {
+            color: PALETTE.deepWood.hex,
             origin: 0.5,
           }),
         );
@@ -1415,15 +1568,18 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     if (isDay3Rumor) {
+      // P10 子项 6 修 1：day3Rumor 使用 wrapCjkText 折行，文案一字不改、完整显示在面板内（y=111..137）
       this.contentLayer.add(
         this.add
-          .rectangle(centerX, 130, cardWidth - 10, 14, PALETTE.deepWood.num)
+          .rectangle(centerX, 124, cardWidth - 12, 26, PALETTE.deepWood.num)
           .setStrokeStyle(1, PALETTE.brass.num),
       );
       this.contentLayer.add(
-        addPixelText(this, centerX, 130, chapterCfg.day3Rumor, {
+        addPixelText(this, centerX, 124, formatDay3Rumor(chapterCfg.day3Rumor), {
           color: PALETTE.lampYellow.hex,
           origin: 0.5,
+          align: 1,
+          lineSpacing: 0,
         }),
       );
     }
@@ -1436,8 +1592,10 @@ export class PawnshopScene extends Phaser.Scene {
     );
     const bossDay = isBossDay(this.save.chapter.currentChapter, this.save.chapter.dayInChapter);
     const enterLabel = bossDay ? '迎战大心魔' : '进入夜里牌局';
+    const summaryBtnY = isDay3Rumor ? 153 : 151;
+    const summaryBtnH = isDay3Rumor ? 24 : 26;
 
-    this.addActionButton(88, 151, 122, 26, enterLabel, null, () => {
+    this.addActionButton(88, summaryBtnY, 122, summaryBtnH, enterLabel, null, () => {
       audio.unlock();
       audio.playSfx('button_click');
       const nextChapter = cloneChapterState(this.save.chapter);
@@ -1466,7 +1624,7 @@ export class PawnshopScene extends Phaser.Scene {
       });
     });
 
-    this.addActionButton(224, 151, 138, 26, '返回标题', null, () => {
+    this.addActionButton(224, summaryBtnY, 138, summaryBtnH, '返回标题', null, () => {
       audio.unlock();
       audio.playSfx('button_click');
       this.scene.start('TitleScene');
@@ -1615,6 +1773,9 @@ export class PawnshopScene extends Phaser.Scene {
     this.state = settle(this.state, tier, accepted);
     if (accepted) {
       this.save.chapter.pawnsCollected += 1;
+      if (this.state.day === 1 && item.id === BRIDE_RING_ITEM_ID) {
+        this.save.chapter.day1RingPawned = true;
+      }
       if (this.state.pawnPrices) {
         savePawnPrices(this.state.pawnPrices);
       }

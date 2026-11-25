@@ -184,6 +184,12 @@ function isValidChapterSaveState(raw: unknown): raw is ChapterSaveState {
   ) {
     return false;
   }
+  if (ch.day1RingPawned !== undefined && typeof ch.day1RingPawned !== 'boolean') {
+    return false;
+  }
+  if (ch.day2BrideRedemptionDone !== undefined && typeof ch.day2BrideRedemptionDone !== 'boolean') {
+    return false;
+  }
   return true;
 }
 

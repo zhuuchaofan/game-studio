@@ -51,6 +51,9 @@ export interface CardBattleSceneData {
 }
 
 export const BATTLE_DETAIL_TOGGLE_BUTTON = { x: 13, y: 88, width: 16, height: 12 } as const;
+/** P10 子项 6：心魔血条与开场横幅逻辑坐标，全程不遮血条、不压手牌、不挡[故]与结束回合按钮。 */
+export const DEMON_HP_BAR_RECT = { x: 108, y: 38, width: 156, height: 3 } as const;
+export const DEMON_INTRO_BANNER_RECT = { x: 24, y: 67, width: 224, height: 40 } as const;
 
 interface HandSlotView {
   slotIndex: number;
@@ -245,6 +248,7 @@ export class CardBattleScene extends Phaser.Scene {
     window.__BATTLE_DEBUG__ = {
       getState: () => ({
         ...toBattleDebugSnapshot(this.state, this.isAnimating || this.playQueue.length > 0),
+        demonIntroBannerText: this.buildDemonIntroBannerText(),
         detailMode: this.detailMode,
         queuedCount: this.playQueue.length,
         day: this.save?.day ?? 1,
@@ -269,29 +273,61 @@ export class CardBattleScene extends Phaser.Scene {
     this.syncInputBounds();
   }
 
+  private buildDemonIntroBannerText(): string {
+    const parts: string[] = [`心魔「${this.state.demonName}」现身`];
+    if (this.state.demonCustomerLink) {
+      parts.push(this.state.demonCustomerLink);
+    }
+    if (this.state.demonIntroLine) {
+      parts.push(this.state.demonIntroLine);
+    }
+    return parts.join('\n');
+  }
+
   private showDemonIntroBanner(): void {
     this.dismissIntroBanner();
-    if (!this.state.demonIntroLine) {
+    if (!this.state.demonIntroLine && !this.state.demonCustomerLink) {
       return;
     }
-    const cx = Math.floor(BASE_WIDTH / 2);
+    // P10 子项 5 + 子项 6 修 2：横幅置于中部带（x=24..248, y=67..107），全程非阻塞、
+    // 不遮挡上方心魔血条（y=38..41）、下方手牌（y=112..176）、左侧[故]钮与右侧结束回合按钮
+    const cx = Math.floor(DEMON_INTRO_BANNER_RECT.x + DEMON_INTRO_BANNER_RECT.width / 2);
+    const cy = Math.floor(DEMON_INTRO_BANNER_RECT.y + DEMON_INTRO_BANNER_RECT.height / 2);
     const banner = this.add.container(0, 0).setDepth(90);
     const bg = this.add
-      .rectangle(cx, 44, 292, 36, PALETTE.nightBlack.num)
-      .setStrokeStyle(2, PALETTE.vermilion.num)
-      .setInteractive({ useHandCursor: true });
-    bg.on('pointerdown', () => this.dismissIntroBanner());
-    banner.add([
+      .rectangle(cx, cy, DEMON_INTRO_BANNER_RECT.width, DEMON_INTRO_BANNER_RECT.height, PALETTE.nightBlack.num)
+      .setStrokeStyle(2, PALETTE.vermilion.num);
+
+    const children: Phaser.GameObjects.GameObject[] = [
       bg,
-      addPixelText(this, cx, 36, `心魔「${this.state.demonName}」现身`, {
-        color: PALETTE.vermilion.hex,
+      addPixelText(this, cx, DEMON_INTRO_BANNER_RECT.y + 7, `心魔「${this.state.demonName}」现身`, {
+        color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
-      addPixelText(this, cx, 52, this.state.demonIntroLine, {
-        color: PALETTE.paperWhite.hex,
-        origin: 0.5,
-      }),
-    ]);
+    ];
+    if (this.state.demonCustomerLink) {
+      children.push(
+        addPixelText(this, cx, DEMON_INTRO_BANNER_RECT.y + 20, this.state.demonCustomerLink, {
+          color: PALETTE.silverBlue.hex,
+          origin: 0.5,
+        }),
+      );
+    }
+    if (this.state.demonIntroLine) {
+      children.push(
+        addPixelText(
+          this,
+          cx,
+          this.state.demonCustomerLink ? DEMON_INTRO_BANNER_RECT.y + 32 : DEMON_INTRO_BANNER_RECT.y + 24,
+          this.state.demonIntroLine,
+          {
+            color: PALETTE.paperWhite.hex,
+            origin: 0.5,
+          },
+        ),
+      );
+    }
+    banner.add(children);
     this.introBanner = banner;
     this.introBannerTimer = this.time.delayedCall(INTRO_BANNER_MS, () => this.dismissIntroBanner());
   }
@@ -571,7 +607,7 @@ export class CardBattleScene extends Phaser.Scene {
     const card = cardName ? this.state.cardsByName.get(cardName) : undefined;
     const cx = Math.floor(BASE_WIDTH / 2);
 
-    // y=66..79 腾出徽章带：普通战留空（预留传家宝条），Boss R2 蓄力/打断时展示蓄力进度与返还提示
+    // y=66..79 徽章与心魔关联带：Boss R2 蓄力/打断优先展示进度，其余时机显性展示心魔-客人关联（P10 子项 5）
     if (this.detailMode === 'effect') {
       if (this.state.bossCharging) {
         this.detailLayer.add([
@@ -607,6 +643,16 @@ export class CardBattleScene extends Phaser.Scene {
               origin: 0.5,
             },
           ),
+        ]);
+      } else if (this.state.demonCustomerLink) {
+        this.detailLayer.add([
+          this.add
+            .rectangle(cx, 73, BASE_WIDTH - 8, 13, PALETTE.nightBlack.num)
+            .setStrokeStyle(1, PALETTE.nightBlue.num),
+          addPixelText(this, cx, 73, `这是${this.state.demonCustomerLink}`, {
+            color: PALETTE.silverBlue.hex,
+            origin: 0.5,
+          }),
         ]);
       }
     }
@@ -672,6 +718,7 @@ export class CardBattleScene extends Phaser.Scene {
     );
 
     toggleBtn.on('pointerdown', () => {
+      this.dismissIntroBanner();
       audio.unlock();
       audio.playSfx('button_click');
       this.detailMode = this.detailMode === 'effect' ? 'story' : 'effect';
@@ -700,11 +747,12 @@ export class CardBattleScene extends Phaser.Scene {
       const stripColor = card.color ? parseHexColor(card.color) : PALETTE.brass.num;
 
       const cardContainer = this.add.container(x, y);
+      // P10 子项 2：不可出牌改银蓝底+夜黑字（CR 7.24 vs 原雾蓝 3.60），费用徽章与效果字均为最高对比度
       const bgColor = isChoiceMode
         ? PALETTE.candle.num
         : selectable
           ? PALETTE.paperWhite.num
-          : PALETTE.mistBlue.num;
+          : PALETTE.silverBlue.num;
       const borderColor = isChoiceMode
         ? PALETTE.lampYellow.num
         : selectable
@@ -720,13 +768,14 @@ export class CardBattleScene extends Phaser.Scene {
       }
 
       const costBg = this.add
-        .rectangle(-17, -24, 12, 12, card.cost === 0 ? PALETTE.jade.num : PALETTE.brass.num)
+        .rectangle(-17, -24, 12, 12, card.cost === 0 ? PALETTE.jade.num : PALETTE.lampYellow.num)
         .setStrokeStyle(1, PALETTE.ink.num);
       const textHex = selectable ? PALETTE.ink.hex : PALETTE.nightBlack.hex;
-      const costText = addPixelText(this, -17, -24, `${card.cost}`, { color: textHex, origin: 0.5 });
+      const costTextHex = card.cost === 0 ? PALETTE.paperWhite.hex : textHex;
+      const costText = addPixelText(this, -17, -24, `${card.cost}`, { color: costTextHex, origin: 0.5 });
       const nameText = addPixelText(this, 0, 12, card.name, { color: textHex, origin: 0.5 });
       const effectText = addPixelText(this, 0, 24, formatEffectShort(card), {
-        color: selectable ? PALETTE.deepWood.hex : PALETTE.nightBlack.hex,
+        color: textHex,
         origin: 0.5,
       });
 
@@ -831,13 +880,19 @@ export class CardBattleScene extends Phaser.Scene {
       }
       const playable = this.canQueueOrPlaySlot(slot);
       slot.container.y = HAND_Y;
-      slot.frame.setFillStyle(playable ? PALETTE.paperWhite.num : PALETTE.mistBlue.num);
+      slot.frame.setFillStyle(playable ? PALETTE.paperWhite.num : PALETTE.silverBlue.num);
       slot.frame.setStrokeStyle(1, playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
       if (playable) slot.artImage.clearTint();
       else slot.artImage.setTint(PALETTE.silverBlue.num);
-      slot.costText.setTint(playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
+      slot.costText.setTint(
+        slot.card.cost === 0
+          ? PALETTE.paperWhite.num
+          : playable
+            ? PALETTE.ink.num
+            : PALETTE.nightBlack.num,
+      );
       slot.nameText.setTint(playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
-      slot.effectText.setTint(playable ? PALETTE.deepWood.num : PALETTE.nightBlack.num);
+      slot.effectText.setTint(playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
     }
   }
 

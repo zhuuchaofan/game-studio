@@ -7,6 +7,7 @@ import {
   createBattle,
   endTurn,
   getIntent,
+  isAttackCard,
   playCard,
   resolvePendingChoice,
   resolveWinReward,
@@ -80,6 +81,14 @@ export const SIM_BOSS_WIN_RATE_MIN = 0.45;
 export const SIM_BOSS_WIN_RATE_MAX = 0.85;
 export const SIM_CHAPTER_CLEAR_RATE_MIN = 0.35;
 export const SIM_CHAPTER_CLEAR_RATE_MAX = 0.75;
+/**
+ * P10 子项 7 新玩家首夜模拟护栏（先测 1000 局基线：总胜率 28.5%、单攻击牌 8.8%，
+ * 据实测结果定区间，未为过护栏改动任何游戏数值）。
+ */
+export const SIM_NEW_PLAYER_FIRST_NIGHT_WIN_RATE_MIN = 0.2;
+export const SIM_NEW_PLAYER_FIRST_NIGHT_WIN_RATE_MAX = 0.45;
+export const SIM_NEW_PLAYER_SINGLE_ATTACK_WIN_RATE_MIN = 0.05;
+export const SIM_NEW_PLAYER_SINGLE_ATTACK_WIN_RATE_MAX = 0.25;
 
 export interface MonteCarloStats {
   demonId: string;
@@ -128,12 +137,37 @@ export interface SimTuneOverrides {
   days?: number;
 }
 
+export interface NewPlayerFirstNightStats {
+  runs: number;
+  wins: number;
+  lossesHp: number;
+  lossesTimeout: number;
+  winRate: number;
+  singleAttackRuns: number;
+  singleAttackWins: number;
+  singleAttackWinRate: number;
+  doubleAttackRuns: number;
+  doubleAttackWins: number;
+  doubleAttackWinRate: number;
+  avgEndRound: number;
+  avgWinRemainingHp: number;
+}
+
+export interface NewPlayerFirstNightSimOptions {
+  cards?: readonly CardDef[];
+  demons?: readonly DemonDef[];
+  battleBalance?: BattleBalanceConfig;
+  items?: readonly PawnItem[];
+  runs?: number;
+}
+
 export interface BalanceSimulationReport {
   overrides: SimTuneOverrides;
   demons: MonteCarloStats[];
   economy: SevenDayEconomyStats;
   boss: MonteCarloStats;
   chapter1: ChapterOneSimStats;
+  newPlayerFirstNight: NewPlayerFirstNightStats;
 }
 
 export interface SimGuardrailCheckResult {
@@ -922,6 +956,91 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
   };
 }
 
+/**
+ * P10 子项 7：新玩家首夜模拟（真实第 1 天 3 件旧物分布，禁用 TEST_DECK）。
+ * 开局牌组 = 按 pickDailyItems(items, 1, rng, 3) 真实分布抽出的 3 件旧物对应牌，
+ * 跑 `runs`（默认 1000）局对阵第 1 夜心魔 A（药费），统计总体首夜胜率与“只有一张攻击牌”对局胜率。
+ */
+export function simulateNewPlayerFirstNight(
+  opts: NewPlayerFirstNightSimOptions = {},
+): NewPlayerFirstNightStats {
+  const cards = opts.cards ?? (cardsJson as CardDef[]);
+  const demons = opts.demons ?? (demonsJson as DemonDef[]);
+  const battleBalance: BattleBalanceConfig = opts.battleBalance ?? {
+    startingHp: balanceJson.startingHp,
+    startingRenqing: balanceJson.startingRenqing,
+    maxRenqing: balanceJson.maxRenqing,
+    drawFirst: balanceJson.drawFirst,
+    drawPerRound: balanceJson.drawPerRound,
+    winRewardMoney: balanceJson.winRewardMoney,
+  };
+  const items = opts.items ?? ITEMS;
+  const runs = opts.runs ?? 1000;
+
+  const cardByName = new Map<string, CardDef>();
+  for (const card of cards) {
+    cardByName.set(card.name, card);
+  }
+
+  let wins = 0;
+  let lossesHp = 0;
+  let lossesTimeout = 0;
+  let singleAttackRuns = 0;
+  let singleAttackWins = 0;
+  let doubleAttackRuns = 0;
+  let doubleAttackWins = 0;
+  let totalEndRound = 0;
+  let totalWinRemainingHp = 0;
+
+  for (let seed = 1; seed <= runs; seed += 1) {
+    const dayRng = mulberry32(deriveDaySeed(seed, 1));
+    const dailyItems = pickDailyItems(items, 1, dayRng, DAILY_CUSTOMER_COUNT);
+    const deck = dailyItems.map((item) => item.cardName);
+    const attackCount = deck.filter((name) => isAttackCard(cardByName.get(name))).length;
+
+    const battleSeed = seed * 1009 + 37;
+    const finalState = simulateChapterBattle(cards, demons, battleBalance, deck, 'a', battleSeed);
+    totalEndRound += finalState.round;
+
+    const isSingleAttack = attackCount === 1;
+    if (isSingleAttack) {
+      singleAttackRuns += 1;
+    } else if (attackCount >= 2) {
+      doubleAttackRuns += 1;
+    }
+
+    if (finalState.result === 'win') {
+      wins += 1;
+      totalWinRemainingHp += finalState.playerHp;
+      if (isSingleAttack) {
+        singleAttackWins += 1;
+      } else if (attackCount >= 2) {
+        doubleAttackWins += 1;
+      }
+    } else if (finalState.result === 'lose_hp') {
+      lossesHp += 1;
+    } else {
+      lossesTimeout += 1;
+    }
+  }
+
+  return {
+    runs,
+    wins,
+    lossesHp,
+    lossesTimeout,
+    winRate: runs > 0 ? wins / runs : 0,
+    singleAttackRuns,
+    singleAttackWins,
+    singleAttackWinRate: singleAttackRuns > 0 ? singleAttackWins / singleAttackRuns : 0,
+    doubleAttackRuns,
+    doubleAttackWins,
+    doubleAttackWinRate: doubleAttackRuns > 0 ? doubleAttackWins / doubleAttackRuns : 0,
+    avgEndRound: runs > 0 ? totalEndRound / runs : 0,
+    avgWinRemainingHp: wins > 0 ? totalWinRemainingHp / wins : 0,
+  };
+}
+
 const ALLOWED_SIM_TUNE_KEYS = new Set<keyof SimTuneOverrides>([
   'demonAHp',
   'demonBHp',
@@ -1055,12 +1174,22 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     runs,
   });
 
+  // P10 New-player Night 1 simulation (realistic Day 1 3-item pool via pickDailyItems)
+  const newPlayerFirstNight = simulateNewPlayerFirstNight({
+    cards,
+    demons,
+    battleBalance,
+    items: ITEMS,
+    runs,
+  });
+
   return {
     overrides,
     demons: demonStats,
     economy,
     boss: bossStats,
     chapter1,
+    newPlayerFirstNight,
   };
 }
 
@@ -1104,6 +1233,26 @@ export function checkSimGuardrails(report: BalanceSimulationReport): SimGuardrai
     );
   }
 
+  const npWinRate = report.newPlayerFirstNight.winRate;
+  if (
+    npWinRate < SIM_NEW_PLAYER_FIRST_NIGHT_WIN_RATE_MIN ||
+    npWinRate > SIM_NEW_PLAYER_FIRST_NIGHT_WIN_RATE_MAX
+  ) {
+    errors.push(
+      `New-player first-night winRate ${(npWinRate * 100).toFixed(1)}% out of [${(SIM_NEW_PLAYER_FIRST_NIGHT_WIN_RATE_MIN * 100).toFixed(0)}%, ${(SIM_NEW_PLAYER_FIRST_NIGHT_WIN_RATE_MAX * 100).toFixed(0)}%]`,
+    );
+  }
+
+  const npSingleRate = report.newPlayerFirstNight.singleAttackWinRate;
+  if (
+    npSingleRate < SIM_NEW_PLAYER_SINGLE_ATTACK_WIN_RATE_MIN ||
+    npSingleRate > SIM_NEW_PLAYER_SINGLE_ATTACK_WIN_RATE_MAX
+  ) {
+    errors.push(
+      `New-player first-night single-attack winRate ${(npSingleRate * 100).toFixed(1)}% out of [${(SIM_NEW_PLAYER_SINGLE_ATTACK_WIN_RATE_MIN * 100).toFixed(0)}%, ${(SIM_NEW_PLAYER_SINGLE_ATTACK_WIN_RATE_MAX * 100).toFixed(0)}%]`,
+    );
+  }
+
   return {
     passed: errors.length === 0,
     errors,
@@ -1137,6 +1286,15 @@ export function formatSimReport(report: BalanceSimulationReport): string {
   );
   lines.push(
     `  平均胜夜数: ${ch.avgNightsWon.toFixed(2)}/7 | 第7夜平均人情: ${ch.avgBossRenqing.toFixed(2)} | 终局中位钱: ${ch.medianFinalMoney.toFixed(1)} | 终局均牌数: ${ch.avgFinalDeckSize.toFixed(1)}`,
+  );
+
+  const np = report.newPlayerFirstNight;
+  lines.push('\n[新玩家首夜模拟 (真实第1天3件旧物分布, 1000 局, 对阵心魔 A 药费)]');
+  lines.push(
+    `  首夜总胜率: ${(np.winRate * 100).toFixed(1)}% (${np.wins}/${np.runs}) | 平均结束回合 ${np.avgEndRound.toFixed(2)} | 胜场残血 ${np.avgWinRemainingHp.toFixed(1)} | 血归零 ${np.lossesHp} / 超时 ${np.lossesTimeout}`,
+  );
+  lines.push(
+    `  只有1张攻击牌胜率: ${(np.singleAttackWinRate * 100).toFixed(1)}% (${np.singleAttackWins}/${np.singleAttackRuns}) | 2张攻击牌胜率: ${(np.doubleAttackWinRate * 100).toFixed(1)}% (${np.doubleAttackWins}/${np.doubleAttackRuns})`,
   );
 
   const eco = report.economy;

@@ -84,7 +84,11 @@ export interface BattleDebugSnapshot {
   demonId: string;
   demonName: string;
   demonIntroLine?: string;
+  demonCustomerLink?: string;
+  demonCustomerTag?: string;
+  demonIntroBannerText?: string;
   victoryLine?: string | null;
+  aftermathLine?: string | null;
   intent: IntentInfo;
   isAnimating?: boolean;
   queuedCount?: number;
@@ -206,7 +210,10 @@ export function createBattle(
     demonName: demon.name,
     isBoss: Boolean(demon.isBoss),
     demonIntroLine: demon.introLine ?? '',
+    demonCustomerLink: demon.customerLink ?? '',
+    demonCustomerTag: demon.customerTag ?? '',
     demonVictoryLine: demon.victoryLine ?? '',
+    demonAftermathLine: demon.aftermathLine ?? '',
     demonHp: effectiveDemonHp,
     demonMaxHp: effectiveDemonHp,
     demonShield: 0,
@@ -693,6 +700,8 @@ export function toBattleDebugSnapshot(
     demonId: state.demonId,
     demonName: state.demonName,
     demonIntroLine: state.demonIntroLine,
+    demonCustomerLink: state.demonCustomerLink,
+    demonCustomerTag: state.demonCustomerTag,
     intent: getIntent(state),
     isAnimating,
   };

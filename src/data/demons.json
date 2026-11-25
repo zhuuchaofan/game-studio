@@ -4,7 +4,10 @@
     "name": "药费",
     "hp": 20,
     "introLine": "这个月的药费单，又来了。",
+    "customerLink": "白天当了手表的父亲的难处",
+    "customerTag": "旧手表·父亲",
     "victoryLine": "今晚，药费被扛过去了。当了手表的父亲，能睡个安稳觉了。",
+    "aftermathLine": "白天手表还在柜台，下月账单还在。",
     "actions": [
       { "round": 1, "damage": 3 },
       { "round": 2, "damage": 3 },
@@ -16,7 +19,10 @@
     "name": "车票",
     "hp": 22,
     "introLine": "远行的车票攥在手里，舍不得放。",
+    "customerLink": "白天当了婚戒的新娘的难处",
+    "customerTag": "婚戒·新娘",
     "victoryLine": "今晚，车票被扛过去了。当了婚戒的新娘，离回家又近了一步。",
+    "aftermathLine": "白天婚戒仍在铺里，远路还得自己走。",
     "actions": [
       { "round": 1, "damage": 2 },
       { "round": 2, "damage": 2 },
@@ -28,7 +34,10 @@
     "name": "房租",
     "hp": 26,
     "introLine": "房东在门口敲了三下。",
+    "customerLink": "白天当了旧书的学生的难处",
+    "customerTag": "旧书·学生",
     "victoryLine": "今晚，房租被扛过去了。当了旧书的学生，不用再为下个月发愁了。",
+    "aftermathLine": "白天旧书仍堆在柜后，下月房租还在。",
     "actions": [
       { "round": 1, "damage": 3 },
       { "round": 2, "damage": 4 },
@@ -40,7 +49,10 @@
     "name": "学费",
     "hp": 20,
     "introLine": "开学的日子，越来越近了。",
+    "customerLink": "白天当了自行车的父亲的难处",
+    "customerTag": "自行车·父亲",
     "victoryLine": "今晚，学费被扛过去了。骑永久自行车送儿子的父亲，值了。",
+    "aftermathLine": "白天老车仍停在铺里，学费单子还在。",
     "actions": [
       { "round": 1, "damage": 1 },
       { "round": 2, "damage": 2 },
@@ -54,7 +66,10 @@
     "chapter": 1,
     "hp": 38,
     "introLine": "旧账到期，今夜封门讨债！",
+    "customerLink": "老街当铺自己的旧账难处",
+    "customerTag": "老街旧账",
     "victoryLine": "催账单揉成了纸团，老债主叹了口气，转身走进夜巷。",
+    "aftermathLine": "催账暂缓，老街旧账仍待慢慢平清。",
     "actions": [
       { "round": 1, "damage": 3 },
       {

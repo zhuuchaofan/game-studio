@@ -52,7 +52,10 @@ export interface DemonDef {
   isBoss?: boolean;
   chapter?: number;
   introLine?: string;
+  customerLink?: string;
+  customerTag?: string;
   victoryLine?: string;
+  aftermathLine?: string;
   actions: DemonAction[];
 }
 
@@ -165,7 +168,10 @@ export interface BattleState {
   demonName: string;
   isBoss: boolean;
   demonIntroLine: string;
+  demonCustomerLink: string;
+  demonCustomerTag: string;
   demonVictoryLine: string;
+  demonAftermathLine: string;
   demonHp: number;
   demonMaxHp: number;
   demonShield: number;

@@ -95,6 +95,7 @@ export class ResultScene extends Phaser.Scene {
     const isBossBattle = Boolean(demonDef?.isBoss);
     const demonName = data?.demonName || demonDef?.name || '';
     const victoryLine = result === 'win' ? (demonDef?.victoryLine ?? null) : null;
+    const aftermathLine = result === 'win' ? (demonDef?.aftermathLine ?? null) : null;
     const playerHp = data?.playerHp ?? 0;
     const round = data?.round ?? 1;
     const maxRounds = data?.maxRounds ?? round;
@@ -142,9 +143,10 @@ export class ResultScene extends Phaser.Scene {
           day: currentSave.day,
           tutorialDone: true,
         });
+    const settlementOutcome = result === 'win' ? 'win' : 'lose';
     this.tutorial = isBossBattle
       ? createTutorialState({ day: currentSave.day, tutorialDone: true })
-      : syncTutorialForResult(incomingTutorial);
+      : syncTutorialForResult(incomingTutorial, settlementOutcome);
 
     // 只要第 1 天打完进入结算且未处于教程气泡展示中，即落盘完成标记
     if (currentSave.day === 1 && !this.tutorial.active) {
@@ -171,7 +173,9 @@ export class ResultScene extends Phaser.Scene {
         resultView: this.resultView,
         demonId,
         demonName,
+        demonCustomerLink: demonDef?.customerLink ?? '',
         victoryLine,
+        aftermathLine,
         intent: { current: null, next: null, upcomingSkill: null },
         isAnimating: false,
         reward,
@@ -182,7 +186,7 @@ export class ResultScene extends Phaser.Scene {
         tutorialActive: this.tutorial.active,
         currentStep: this.tutorial.currentStep,
         tutorialDone: this.tutorial.done || loadTutorialDone(),
-        tutorialCopy: getTutorialCopy(this.tutorial.currentStep),
+        tutorialCopy: getTutorialCopy(this.tutorial.currentStep, this.tutorial.settlementOutcome),
       }),
     };
 
@@ -193,7 +197,16 @@ export class ResultScene extends Phaser.Scene {
     } else if (this.resultView === 'chapter_failed') {
       this.renderChapterFailed(demonName, loseReason ?? '');
     } else {
-      this.renderNormalResult(result, demonName, victoryLine, reward, loseReason, currentSave, nextSave);
+      this.renderNormalResult(
+        result,
+        demonName,
+        victoryLine,
+        aftermathLine,
+        reward,
+        loseReason,
+        currentSave,
+        nextSave,
+      );
     }
 
     this.renderTutorialBubble();
@@ -361,6 +374,7 @@ export class ResultScene extends Phaser.Scene {
     result: 'win' | 'lose_hp' | 'lose_timeout',
     demonName: string,
     victoryLine: string | null,
+    aftermathLine: string | null,
     reward: WinReward | null,
     loseReason: string | null,
     currentSave: SaveData,
@@ -376,13 +390,13 @@ export class ResultScene extends Phaser.Scene {
       this.add
         .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.deepBlue.num)
         .setStrokeStyle(1, result === 'win' ? PALETTE.brass.num : PALETTE.mistBlue.num),
-      // 顶部紧凑标题条（y=8..24，所有结算与 C5 胜利叙事排布在 y=8..82，完全避开 6/6 教程气泡 y=86..132）
-      this.add.rectangle(centerX, 16, BASE_WIDTH - 22, 16, PALETTE.nightBlack.num),
-      addPixelText(this, 18, 16, result === 'win' ? '赢了！' : '心魔还在……', {
+      // 顶部紧凑标题条（y=8..22，所有结算、C5 胜利叙事与 P10 白天变化排布在 y=8..87，避开 6/6 气泡 y=90..134）
+      this.add.rectangle(centerX, 15, BASE_WIDTH - 22, 14, PALETTE.nightBlack.num),
+      addPixelText(this, 18, 15, result === 'win' ? '赢了！' : '心魔还在……', {
         color: result === 'win' ? PALETTE.lampYellow.hex : PALETTE.vermilion.hex,
         origin: [0, 0.5],
       }),
-      addPixelText(this, BASE_WIDTH - 18, 16, `第${currentSave.day}天 · 当铺Lv.${nextSave.shopLevel}`, {
+      addPixelText(this, BASE_WIDTH - 18, 15, `第${currentSave.day}天 · 当铺Lv.${nextSave.shopLevel}`, {
         color: PALETTE.silverBlue.hex,
         origin: [1, 0.5],
       }),
@@ -393,42 +407,50 @@ export class ResultScene extends Phaser.Scene {
         ? `得钱+${reward.money}(全牌加赠)`
         : `得钱:+${reward.money}`;
       this.contentLayer.add([
-        addPixelText(this, 20, 32, `击败心魔「${demonName}」`, {
+        addPixelText(this, 20, 29, `击败心魔「${demonName}」`, {
           color: PALETTE.jade.hex,
           origin: [0, 0.5],
         }),
-        addPixelText(this, BASE_WIDTH - 20, 32, moneyTag, {
+        addPixelText(this, BASE_WIDTH - 20, 29, moneyTag, {
           color: PALETTE.lampYellow.hex,
           origin: [1, 0.5],
         }),
-        addPixelText(this, 20, 46, reward.cardName ? `得牌:${reward.cardName}` : '全牌已集齐', {
+        addPixelText(this, 20, 41, reward.cardName ? `得牌:${reward.cardName}` : '全牌已集齐', {
           color: PALETTE.paperWhite.hex,
           origin: [0, 0.5],
         }),
-        addPixelText(this, BASE_WIDTH - 20, 46, `赎当券×${reward.redeemTicket}`, {
+        addPixelText(this, BASE_WIDTH - 20, 41, `赎当券×${reward.redeemTicket}`, {
           color: PALETTE.brass.hex,
           origin: [1, 0.5],
         }),
-        this.add.rectangle(centerX, 55, BASE_WIDTH - 36, 1, PALETTE.nightBlue.num),
+        this.add.rectangle(centerX, 49, BASE_WIDTH - 36, 1, PALETTE.nightBlue.num),
       ]);
 
-      // C5：按心魔显示胜利叙事句（两行居中，y=58..82，不被 6/6 气泡遮挡）
+      // C5 + P10 子项 5：按心魔显示胜利叙事句 + 白天世界实情（不报喜不报忧），置于 y=51..87，完全避开 6/6 气泡 y=90..134
       if (victoryLine) {
         const [line1, line2] = splitVictoryNarrative(victoryLine);
         this.contentLayer.add(
-          addPixelText(this, centerX, 64, line1, {
+          addPixelText(this, centerX, 57, line1, {
             color: PALETTE.candle.hex,
             origin: 0.5,
           }),
         );
         if (line2) {
           this.contentLayer.add(
-            addPixelText(this, centerX, 77, line2, {
+            addPixelText(this, centerX, 69, line2, {
               color: PALETTE.paperWhite.hex,
               origin: 0.5,
             }),
           );
         }
+      }
+      if (aftermathLine) {
+        this.contentLayer.add(
+          addPixelText(this, centerX, 81, aftermathLine, {
+            color: PALETTE.silverBlue.hex,
+            origin: 0.5,
+          }),
+        );
       }
     } else {
       this.contentLayer.add([
@@ -489,20 +511,25 @@ export class ResultScene extends Phaser.Scene {
       return;
     }
 
-    this.tutorialBubble = createTutorialBubble(this, this.tutorial.currentStep, {
-      onAdvance: () => {
-        this.tutorial = advanceTutorialStep(this.tutorial);
-        if (this.tutorial.done) {
+    this.tutorialBubble = createTutorialBubble(
+      this,
+      this.tutorial.currentStep,
+      {
+        onAdvance: () => {
+          this.tutorial = advanceTutorialStep(this.tutorial);
+          if (this.tutorial.done) {
+            saveTutorialDone(true);
+          }
+          this.renderTutorialBubble();
+        },
+        onSkip: () => {
+          this.tutorial = skipTutorial(this.tutorial);
           saveTutorialDone(true);
-        }
-        this.renderTutorialBubble();
+          this.renderTutorialBubble();
+        },
       },
-      onSkip: () => {
-        this.tutorial = skipTutorial(this.tutorial);
-        saveTutorialDone(true);
-        this.renderTutorialBubble();
-      },
-    });
+      { settlementOutcome: this.tutorial.settlementOutcome },
+    );
   }
 
   private createResultButton(
