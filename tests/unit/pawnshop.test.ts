@@ -7,8 +7,11 @@ import {
   createRedemptionOffer,
   DAY1_GUARANTEED_DAMAGE_ITEM_IDS,
   deriveDaySeed,
+  formatOfferDialogue,
   formatReputationHint,
   getEffectiveAcceptRate,
+  getReputationDelta,
+  getTemperamentLabel,
   getTierAffordability,
   hasAnyAffordableTier,
   isTierAffordable,
@@ -20,6 +23,7 @@ import {
   settle,
   shuffleItems,
   skipCustomer,
+  TIER_ORDER,
   toDebugSnapshot,
 } from '../../src/game/pawnshop';
 import { mulberry32 } from '../../src/utils/rng';
@@ -98,31 +102,31 @@ describe('settle & advanceCustomer', () => {
     expect(next.log).not.toBe(initial.log);
   });
 
-  it('applies money, reputation, and card rules on accepted offers across all tiers', () => {
-    // Watch: low (20, rep -1, card 倒转)
+  it('applies money, reputation, and card rules on accepted offers across all tiers (with P7 temperaments)', () => {
+    // Watch (urgent): low (20, rep -2 under P7 urgent rule, card 倒转)
     let state = createInitialState();
     state = settle(state, 'low', true);
     expect(state.phase).toBe('feedback');
     expect(state.money).toBe(180);
-    expect(state.reputation).toBe(-1);
+    expect(state.reputation).toBe(-2);
     expect(state.deck).toEqual(['倒转']);
 
-    // Ring: fair (60, rep +0, card 守诺)
+    // Ring (sentimental): fair (60, rep +0, card 守诺)
     state = advanceCustomer(state);
     expect(state.phase).toBe('negotiating');
     expect(state.customerIndex).toBe(1);
     state = settle(state, 'fair', true);
     expect(state.money).toBe(120);
-    expect(state.reputation).toBe(-1);
+    expect(state.reputation).toBe(-2);
     expect(state.deck).toEqual(['倒转', '守诺']);
 
-    // Old book: high (30, rep +1, card 旧书)
+    // Old book (urgent): high (30, rep +1, card 旧书)
     state = advanceCustomer(state);
     expect(state.phase).toBe('negotiating');
     expect(state.customerIndex).toBe(2);
     state = settle(state, 'high', true);
     expect(state.money).toBe(90);
-    expect(state.reputation).toBe(0);
+    expect(state.reputation).toBe(-1);
     expect(state.deck).toEqual(['倒转', '守诺', '旧书']);
 
     // Finish day
@@ -132,7 +136,7 @@ describe('settle & advanceCustomer', () => {
       phase: 'summary',
       customerIndex: 3,
       money: 90,
-      reputation: 0,
+      reputation: -1,
       deck: ['倒转', '守诺', '旧书'],
       log: state.log,
     });
@@ -284,7 +288,8 @@ describe('skipCustomer & hasAnyAffordableTier', () => {
     expect(afterSkip.phase).toBe('summary');
     expect(afterSkip.customerIndex).toBe(3);
     expect(afterSkip.money).toBe(20);
-    expect(afterSkip.reputation).toBe(2);
+    // Watch (urgent, high -> +1) + Bicycle (proud, high -> +2) = 3
+    expect(afterSkip.reputation).toBe(3);
     expect(afterSkip.deck).toEqual(['倒转', '飞驰']);
     expect(afterSkip.lastOutcome).toBeNull();
     expect(afterSkip.log).toHaveLength(3);
@@ -424,5 +429,166 @@ describe('P6 C4: Redemption mechanism', () => {
     expect(rejected.deck).toEqual(['守诺', '余音']);
     expect(rejected.pawnPrices).toEqual({ 守诺: [90] });
     expect(rejected.redemptionOffer).toBeNull();
+  });
+});
+
+describe('P7: Customer temperaments, 1987 offer dialogue & economic invariants', () => {
+  it('assigns exact temperaments and pixel badge labels to all 6 items', () => {
+    const byId = new Map(ITEMS.map((item) => [item.id, item]));
+    expect(byId.get('watch')?.temperament).toBe('urgent');
+    expect(byId.get('ring')?.temperament).toBe('sentimental');
+    expect(byId.get('old_book')?.temperament).toBe('urgent');
+    expect(byId.get('bicycle')?.temperament).toBe('proud');
+    expect(byId.get('erhu')?.temperament).toBe('sentimental');
+    expect(byId.get('stamp_album')?.temperament).toBe('proud');
+
+    expect(getTemperamentLabel('urgent')).toBe('急用钱');
+    expect(getTemperamentLabel('proud')).toBe('爱面子');
+    expect(getTemperamentLabel('sentimental')).toBe('念旧');
+  });
+
+  it('applies exact temperament modifiers to acceptance rates, reputation deltas, and redemption priority', () => {
+    // urgent: low accept +10% (30% -> 40%), low accept rep -2
+    expect(getEffectiveAcceptRate('low', 0, BALANCE, 'urgent')).toBe(0.4);
+    expect(getEffectiveAcceptRate('fair', 0, BALANCE, 'urgent')).toBe(0.8);
+    expect(getEffectiveAcceptRate('high', 0, BALANCE, 'urgent')).toBe(1.0);
+    expect(getReputationDelta('low', true, 'urgent')).toBe(-2);
+    expect(getReputationDelta('high', true, 'urgent')).toBe(1);
+    expect(getReputationDelta('low', false, 'urgent')).toBe(0);
+
+    // proud: low accept -10% (30% -> 20%), high accept rep +2
+    expect(getEffectiveAcceptRate('low', 0, BALANCE, 'proud')).toBe(0.2);
+    expect(getEffectiveAcceptRate('fair', 0, BALANCE, 'proud')).toBe(0.8);
+    expect(getEffectiveAcceptRate('high', 0, BALANCE, 'proud')).toBe(1.0);
+    expect(getReputationDelta('low', true, 'proud')).toBe(-1);
+    expect(getReputationDelta('high', true, 'proud')).toBe(2);
+    expect(getReputationDelta('high', false, 'proud')).toBe(0);
+
+    // sentimental: fair accept +5% (80% -> 85%), redemption prioritizes sentimental cards
+    expect(getEffectiveAcceptRate('low', 0, BALANCE, 'sentimental')).toBe(0.3);
+    expect(getEffectiveAcceptRate('fair', 0, BALANCE, 'sentimental')).toBe(0.85);
+    expect(getEffectiveAcceptRate('high', 0, BALANCE, 'sentimental')).toBe(1.0);
+    expect(getReputationDelta('low', true, 'sentimental')).toBe(-1);
+    expect(getReputationDelta('high', true, 'sentimental')).toBe(1);
+
+    // Redemption candidate pool prioritizes sentimental items (守诺/余音) over urgent/proud (倒转/飞驰)
+    for (const rngVal of [0, 0.25, 0.5, 0.75, 0.99]) {
+      const offer = createRedemptionOffer(['倒转', '飞驰', '守诺', '集邮'], 1, {}, () => rngVal);
+      expect(offer).not.toBeNull();
+      expect(offer!.cardName).toBe('守诺');
+      expect(offer!.item.temperament).toBe('sentimental');
+    }
+
+    // Falls back to non-sentimental pawnshop cards when no sentimental card is in deck
+    const fallbackOffer = createRedemptionOffer(['倒转', '飞驰'], 1, {}, () => 0);
+    expect(fallbackOffer?.cardName).toBe('倒转');
+  });
+
+  it('formatOfferDialogue generates distinct 1987 old-street dialogue across tiers, temperaments, and reputation', () => {
+    const watch = ITEMS.find((i) => i.id === 'watch')!;
+    const bicycle = ITEMS.find((i) => i.id === 'bicycle')!;
+    const ring = ITEMS.find((i) => i.id === 'ring')!;
+
+    // Exact style examples from task spec
+    expect(formatOfferDialogue(watch, 'low', true, 3)).toBe('听街坊说你家公道，少点我也认了');
+    expect(formatOfferDialogue(watch, 'low', false, 0)).toBe('这价连药费零头都不够');
+
+    // Every item x tier x accepted x rep bucket returns non-empty, non-template dialogue
+    for (const item of ITEMS) {
+      for (const tier of TIER_ORDER) {
+        for (const accepted of [true, false]) {
+          for (const rep of [-3, 0, 3]) {
+            const line = formatOfferDialogue(item, tier, accepted, rep);
+            expect(line.length).toBeGreaterThanOrEqual(6);
+            expect(line).not.toBe('当客走了，没谈成');
+          }
+        }
+      }
+    }
+
+    // Distinct flavor by temperament
+    expect(formatOfferDialogue(bicycle, 'high', true, 0)).toContain('面子');
+    expect(formatOfferDialogue(ring, 'low', false, 0)).toContain('半辈子');
+  });
+
+  it('economic invariants: money is never negative, single high+redeem profit is bounded, and no infinite farm loop exists', () => {
+    for (const item of ITEMS) {
+      for (const tier of TIER_ORDER) {
+        for (const rep of [-10, -2, 0, 2, 10]) {
+          // 1. Effective accept rate always within valid probability bounds (0, 1]
+          const rate = getEffectiveAcceptRate(tier, rep, BALANCE, item.temperament);
+          expect(rate).toBeGreaterThan(0);
+          expect(rate).toBeLessThanOrEqual(1);
+
+          // 2. Money never goes negative across arbitrary starting balances
+          for (const money of [0, 1, quotePrice(item.trueValue, tier) - 1, quotePrice(item.trueValue, tier), 200]) {
+            const init = createInitialState({
+              money,
+              reputation: rep,
+              items: [item],
+              pawnPrices: {},
+            });
+            const afterAccept = settle(init, tier, true);
+            const afterReject = settle(init, tier, false);
+            const afterSkip = skipCustomer(init);
+
+            expect(afterAccept.money).toBeGreaterThanOrEqual(0);
+            expect(afterReject.money).toBeGreaterThanOrEqual(0);
+            expect(afterSkip.money).toBeGreaterThanOrEqual(0);
+
+            // 3. Rejection & skip never create money or reputation (no reject/skip farm loop)
+            expect(afterReject.money).toBe(money);
+            expect(afterReject.reputation).toBe(rep);
+            expect(afterReject.deck).toEqual([]);
+            expect(afterSkip.money).toBe(money);
+            expect(afterSkip.reputation).toBe(rep);
+          }
+        }
+      }
+
+      // 4. Single high-tier buy + redemption has strictly bounded net profit <= 30% of trueValue
+      //    and consumes both the card and 1 finite redeemTicket (no infinite money/rep loop).
+      const highPrice = quotePrice(item.trueValue, 'high');
+      const startMoney = highPrice + 50;
+      const bought = settle(
+        createInitialState({
+          money: startMoney,
+          reputation: 0,
+          items: [item],
+          redeemTickets: 1,
+          pawnPrices: {},
+        }),
+        'high',
+        true,
+      );
+      expect(bought.money).toBe(startMoney - highPrice);
+      const offer = createRedemptionOffer(
+        bought.deck,
+        bought.redeemTickets ?? 0,
+        bought.pawnPrices ?? {},
+        () => 0,
+      );
+      expect(offer).not.toBeNull();
+      const redeemState = createInitialState({
+        money: bought.money,
+        reputation: bought.reputation,
+        deck: bought.deck,
+        items: [item],
+        redeemTickets: bought.redeemTickets,
+        pawnPrices: bought.pawnPrices,
+        redemptionOffer: offer,
+      });
+      const afterRedeem = resolveRedemption(redeemState, true);
+
+      const netMoneyGain = afterRedeem.money - startMoney;
+      expect(netMoneyGain).toBeGreaterThan(0);
+      expect(netMoneyGain).toBeLessThanOrEqual(Math.round(item.trueValue * 0.3));
+      expect(afterRedeem.redeemTickets).toBe(0);
+      expect(afterRedeem.deck).toEqual([]);
+      // Without another night win, redemption cannot repeat
+      expect(
+        createRedemptionOffer(afterRedeem.deck, afterRedeem.redeemTickets ?? 0, afterRedeem.pawnPrices ?? {}, () => 0),
+      ).toBeNull();
+    }
   });
 });

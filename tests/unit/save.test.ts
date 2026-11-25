@@ -11,12 +11,17 @@ import {
   applyDayResult,
   clearSave,
   clearTutorialDone,
+  CORRUPT_SAVE_STORAGE_KEY,
   createNewGame,
   demonIdForDay,
   loadSave,
+  loadSaveDetailed,
   loadTutorialDone,
   maxRenqingForLevel,
+  MIGRATIONS,
+  migrateSaveData,
   SAVE_STORAGE_KEY,
+  SAVE_VERSION,
   saveGame,
   saveTutorialDone,
   TUTORIAL_STORAGE_KEY,
@@ -41,11 +46,12 @@ function createMemoryStorage(): StorageLike & { store: Map<string, string> } {
   };
 }
 
-describe('SaveData & localStorage persistence', () => {
-  it('createNewGame initializes Day 1 defaults from balance.json', () => {
+describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
+  it('createNewGame initializes Day 1 defaults at SAVE_VERSION = 2 from balance.json', () => {
+    expect(SAVE_VERSION).toBe(2);
     const save = createNewGame();
     expect(save).toEqual({
-      version: 1,
+      version: 2,
       day: 1,
       money: balanceJson.startingMoney,
       reputation: balanceJson.startingReputation,
@@ -60,7 +66,7 @@ describe('SaveData & localStorage persistence', () => {
     expect(loadSave(storage)).toBeNull();
 
     const sample: SaveData = {
-      version: 1,
+      version: 2,
       day: 2,
       money: 150,
       reputation: 1,
@@ -81,47 +87,80 @@ describe('SaveData & localStorage persistence', () => {
     expect(loadSave(storage)).toBeNull();
   });
 
-  it('returns null without throwing on mismatched version or corrupted JSON', () => {
+  it('migrates legacy v1 SaveData sequentially to v2 via MIGRATIONS without data loss', () => {
+    expect(MIGRATIONS.some((m) => m.from === 1 && m.to === 2)).toBe(true);
+
+    const storage = createMemoryStorage();
+    const v1Save = {
+      version: 1,
+      day: 3,
+      money: 120,
+      reputation: 2,
+      deck: ['倒转', '守诺', '余音'],
+      shopLevel: 2,
+      redeemTickets: 1,
+    };
+    storage.setItem(SAVE_STORAGE_KEY, JSON.stringify(v1Save));
+
+    const migratedRaw = migrateSaveData(v1Save);
+    expect(migratedRaw?.migratedFrom).toBe(1);
+    expect(migratedRaw?.data.version).toBe(2);
+
+    const detailed = loadSaveDetailed(storage);
+    expect(detailed.quarantinedCorrupt).toBe(false);
+    expect(detailed.migratedFrom).toBe(1);
+    expect(detailed.save).toEqual({
+      ...v1Save,
+      version: 2,
+    });
+    expect(storage.store.has(CORRUPT_SAVE_STORAGE_KEY)).toBe(false);
+  });
+
+  it('quarantines corrupted JSON, unsupported future versions, or invalid fields to pawnshop-cards-save-corrupt-v1 without throwing', () => {
     const storage = createMemoryStorage();
 
-    // Corrupted JSON
-    storage.setItem(SAVE_STORAGE_KEY, '{not-valid-json');
-    expect(loadSave(storage)).toBeNull();
+    // 1. Corrupted JSON
+    const brokenJson = '{not-valid-json';
+    storage.setItem(SAVE_STORAGE_KEY, brokenJson);
+    const res1 = loadSaveDetailed(storage);
+    expect(res1.save).toBeNull();
+    expect(res1.quarantinedCorrupt).toBe(true);
+    expect(storage.store.get(CORRUPT_SAVE_STORAGE_KEY)).toBe(brokenJson);
 
-    // Wrong version
-    storage.setItem(
-      SAVE_STORAGE_KEY,
-      JSON.stringify({
-        version: 2,
-        day: 1,
-        money: 200,
-        reputation: 0,
-        deck: [],
-        shopLevel: 1,
-        redeemTickets: 0,
-      }),
-    );
-    expect(loadSave(storage)).toBeNull();
+    // 2. Unsupported future version
+    const futureSave = JSON.stringify({
+      version: 99,
+      day: 1,
+      money: 200,
+      reputation: 0,
+      deck: [],
+      shopLevel: 1,
+      redeemTickets: 0,
+    });
+    storage.setItem(SAVE_STORAGE_KEY, futureSave);
+    const res2 = loadSaveDetailed(storage);
+    expect(res2.save).toBeNull();
+    expect(res2.quarantinedCorrupt).toBe(true);
+    expect(storage.store.get(CORRUPT_SAVE_STORAGE_KEY)).toBe(futureSave);
 
-    // Missing / invalid fields
-    storage.setItem(
-      SAVE_STORAGE_KEY,
-      JSON.stringify({
-        version: 1,
-        day: 0,
-        money: '200',
-        reputation: 0,
-        deck: [123],
-        shopLevel: 1,
-        redeemTickets: 0,
-      }),
-    );
+    // 3. Invalid field types
+    const invalidFields = JSON.stringify({
+      version: 2,
+      day: 0,
+      money: '200',
+      reputation: 0,
+      deck: [123],
+      shopLevel: 1,
+      redeemTickets: 0,
+    });
+    storage.setItem(SAVE_STORAGE_KEY, invalidFields);
     expect(loadSave(storage)).toBeNull();
+    expect(storage.store.get(CORRUPT_SAVE_STORAGE_KEY)).toBe(invalidFields);
   });
 
   it('applyDayResult updates money, deck, redeemTickets, shopLevel, and day on win (immutably)', () => {
     const initial: SaveData = {
-      version: 1,
+      version: 2,
       day: 1,
       money: 120,
       reputation: 1,
@@ -143,7 +182,7 @@ describe('SaveData & localStorage persistence', () => {
 
     expect(initial).toEqual(snapshot);
     expect(afterWin).toEqual({
-      version: 1,
+      version: 2,
       day: 2,
       money: 140,
       reputation: 1,
@@ -152,7 +191,6 @@ describe('SaveData & localStorage persistence', () => {
       redeemTickets: 1,
     });
 
-    // When all cards owned (cardName === null, money already +40 from resolveWinReward)
     const afterFullWin = applyDayResult(afterWin, {
       outcome: 'win',
       reward: {
@@ -171,7 +209,7 @@ describe('SaveData & localStorage persistence', () => {
 
   it('applyDayResult increments only day on lose while keeping money, deck, level, tickets unchanged', () => {
     const initial: SaveData = {
-      version: 1,
+      version: 2,
       day: 1,
       money: 90,
       reputation: -1,
@@ -182,7 +220,7 @@ describe('SaveData & localStorage persistence', () => {
 
     const afterLose = applyDayResult(initial, { outcome: 'lose' });
     expect(afterLose).toEqual({
-      version: 1,
+      version: 2,
       day: 2,
       money: 90,
       reputation: -1,
@@ -193,11 +231,10 @@ describe('SaveData & localStorage persistence', () => {
     expect(afterLose.deck).not.toBe(initial.deck);
   });
 
-  it('persists tutorial completion backward-compatibly without breaking legacy v1 saves', () => {
+  it('persists tutorial completion backward-compatibly across v1->v2 migration', () => {
     const storage = createMemoryStorage();
     expect(loadTutorialDone(storage)).toBe(false);
 
-    // Legacy v1 save without tutorialCompleted loads cleanly and defaults tutorial to incomplete
     const legacySave = {
       version: 1,
       day: 1,
@@ -208,10 +245,9 @@ describe('SaveData & localStorage persistence', () => {
       redeemTickets: 0,
     };
     storage.setItem(SAVE_STORAGE_KEY, JSON.stringify(legacySave));
-    expect(loadSave(storage)).toEqual(legacySave);
+    expect(loadSave(storage)).toEqual({ ...legacySave, version: 2 });
     expect(loadTutorialDone(storage)).toBe(false);
 
-    // Optional boolean tutorialCompleted inside SaveData is accepted and honored
     storage.setItem(
       SAVE_STORAGE_KEY,
       JSON.stringify({ ...legacySave, tutorialCompleted: true }),
@@ -219,7 +255,6 @@ describe('SaveData & localStorage persistence', () => {
     expect(loadSave(storage)?.tutorialCompleted).toBe(true);
     expect(loadTutorialDone(storage)).toBe(true);
 
-    // Corrupted non-boolean tutorialCompleted still causes loadSave to return null
     storage.setItem(
       SAVE_STORAGE_KEY,
       JSON.stringify({ ...legacySave, tutorialCompleted: 'yes' }),
@@ -227,7 +262,6 @@ describe('SaveData & localStorage persistence', () => {
     expect(loadSave(storage)).toBeNull();
     expect(loadTutorialDone(storage)).toBe(false);
 
-    // Dedicated tutorial key persists independently across save clears / new games
     saveTutorialDone(true, storage);
     expect(storage.store.get(TUTORIAL_STORAGE_KEY)).toBe('1');
     expect(loadTutorialDone(storage)).toBe(true);
@@ -276,7 +310,6 @@ describe('Renqing scaling, demon rotation & day customer shuffle', () => {
     expect(daily1).toHaveLength(3);
     expect(new Set(daily1.map((i) => i.id)).size).toBe(3);
 
-    // Different days can produce different 3-item daily lineups and surface all 6 items across days
     const seenOrders = new Set<string>();
     const seenIds = new Set<string>();
     for (let day = 1; day <= 10; day += 1) {

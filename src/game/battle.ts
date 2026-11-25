@@ -1,11 +1,15 @@
 import type { RngFn } from '../utils/rng';
 import {
   applyEffect,
+  applyEffectWithEvents,
   cloneBattleState,
-  drawCardsFromState,
+  clonePendingChoice,
+  drawCardsWithEvents,
   isAttackCard,
   shuffleArray,
+  type BattleActionResult,
   type BattleBalanceConfig,
+  type BattleEvent,
   type BattlePhase,
   type BattleResult,
   type BattleState,
@@ -15,11 +19,15 @@ import {
   type DemonAction,
   type DemonDef,
   type EffectContext,
+  type PendingChoice,
   type RoundSnapshot,
 } from './effects';
+import type { HookRegistry } from './hooks';
 
 export type {
+  BattleActionResult,
   BattleBalanceConfig,
+  BattleEvent,
   BattlePhase,
   BattleResult,
   BattleState,
@@ -29,9 +37,10 @@ export type {
   DemonAction,
   DemonDef,
   EffectContext,
+  PendingChoice,
   RoundSnapshot,
 };
-export { applyEffect, isAttackCard, shuffleArray };
+export { applyEffect, applyEffectWithEvents, isAttackCard, shuffleArray };
 
 export interface IntentInfo {
   current: DemonAction | null;
@@ -57,6 +66,7 @@ export interface BattleDebugSnapshot {
   hand: string[];
   deckCount: number;
   discardCount: number;
+  pendingChoice?: PendingChoice | null;
   result: BattleResult | 'empty_deck';
   demonId: string;
   demonName: string;
@@ -70,7 +80,7 @@ export interface BattleDebugSnapshot {
   day?: number;
   shopLevel?: number;
   savedData?: {
-    version: 1;
+    version: 1 | 2;
     day: number;
     money: number;
     reputation: number;
@@ -122,6 +132,7 @@ export function createBattle(
   cards: readonly CardDef[],
   demons: readonly DemonDef[],
   balance: BattleBalanceConfig,
+  hooks?: HookRegistry,
 ): BattleState {
   const demon = demons.find((d) => d.id === demonId) ?? demons[0];
   if (!demon) {
@@ -157,29 +168,37 @@ export function createBattle(
     reflectNextDamage: false,
     revealedNextIntent: false,
     roundSnapshots: [{ playerHp: balance.startingHp, demonHp: demon.hp }],
+    pendingChoice: null,
     result: 'ongoing',
     log: [],
     cardsByName,
     balance: { ...balance },
     rng,
+    ...(hooks ? { hooks } : {}),
   };
 
-  const afterDraw = drawCardsFromState(initialDrawPhase, balance.drawFirst, {
+  let state = drawCardsWithEvents(initialDrawPhase, balance.drawFirst, {
     cardsByName,
     rng,
-  });
-
-  return {
-    ...afterDraw,
+  }).state;
+  state = {
+    ...state,
     phase: 'play',
   };
+
+  if (hooks) {
+    state = hooks.emit('battleStart', state, { round: state.round }).state;
+    state = hooks.emit('turnStart', state, { round: state.round }).state;
+  }
+
+  return state;
 }
 
 /**
  * Returns whether the card at `handIndex` can currently be played.
  */
 export function canPlayCard(state: BattleState, handIndex: number): boolean {
-  if (state.phase !== 'play' || state.result !== 'ongoing') {
+  if (state.phase !== 'play' || state.result !== 'ongoing' || state.pendingChoice !== null) {
     return false;
   }
   if (handIndex < 0 || handIndex >= state.hand.length) {
@@ -205,57 +224,208 @@ export function canPlayCard(state: BattleState, handIndex: number): boolean {
   return true;
 }
 
+function finalizeWinIfDead(state: BattleState, events: BattleEvent[]): BattleState {
+  if (state.demonHp > 0 || state.result !== 'ongoing') {
+    return state;
+  }
+  let current = cloneBattleState(state);
+  current.demonHp = 0;
+  current.phase = 'result';
+  current.result = 'win';
+  current.pendingChoice = null;
+  events.push({ type: 'BATTLE_ENDED', result: 'win', round: current.round });
+  if (current.hooks) {
+    const wonHook = current.hooks.emit('battleWon', current, {
+      round: current.round,
+      result: 'win',
+    });
+    current = wonHook.state;
+    events.push(...wonHook.events);
+  }
+  return current;
+}
+
 /**
- * Plays the card at `handIndex`, applying its effects sequentially.
- * Pure & immutable: returns unchanged clone if the play is illegal.
+ * Plays the card at `handIndex`, applying its effects sequentially and returning { state, events }.
+ * Pauses into `state.pendingChoice` if an effect requires player hand selection (e.g., 当票).
+ * Pure & immutable: returns unchanged clone with empty events if the play is illegal.
  */
-export function playCard(state: BattleState, handIndex: number): BattleState {
+export function playCard(state: BattleState, handIndex: number): BattleActionResult {
   if (!canPlayCard(state, handIndex)) {
-    return cloneBattleState(state);
+    return { state: cloneBattleState(state), events: [] };
   }
 
   const cardName = state.hand[handIndex];
   const card = state.cardsByName.get(cardName);
   if (!card) {
-    return cloneBattleState(state);
+    return { state: cloneBattleState(state), events: [] };
   }
 
   let current = cloneBattleState(state);
+  const events: BattleEvent[] = [];
+
   current.renqing -= card.cost;
   current.hand.splice(handIndex, 1);
+  current.log.push(`R${current.round}:打出${cardName}(费${card.cost})`);
+  events.push({ type: 'CARD_PLAYED', cardName, cost: card.cost, round: current.round });
 
   const ctx: EffectContext = {
     cardsByName: current.cardsByName,
     rng: current.rng,
   };
 
-  for (const effect of card.effects) {
-    current = applyEffect(current, effect, ctx);
+  for (let i = 0; i < card.effects.length; i += 1) {
+    const effect = card.effects[i];
+    if (effect.type === 'discard_for_renqing') {
+      if (current.hand.length === 0) {
+        continue;
+      }
+      current.discardPile.push(cardName);
+      const remaining = card.effects.slice(i + 1).map((e) => ({ ...e }));
+      const choice: PendingChoice = {
+        kind: 'discard',
+        sourceCardName: cardName,
+        prompt: '选1张手牌弃掉',
+        count: 1,
+        then: [{ type: 'renqing', value: effect.value ?? 0 }, ...remaining],
+        returnToHandOnCancel: {
+          cardName,
+          cost: card.cost,
+        },
+      };
+      current.pendingChoice = choice;
+      events.push({ type: 'CHOICE_REQUIRED', choice: clonePendingChoice(choice)! });
+      return { state: current, events };
+    }
+
+    const res = applyEffectWithEvents(current, effect, ctx, cardName);
+    current = res.state;
+    events.push(...res.events);
   }
 
   current.discardPile.push(cardName);
-  current.log.push(`R${current.round}:打出${cardName}(费${card.cost})`);
 
-  // 伤害立即击杀心魔 -> 立即判胜
-  if (current.demonHp <= 0) {
-    current.demonHp = 0;
-    current.phase = 'result';
-    current.result = 'win';
+  if (current.hooks) {
+    const hookRes = current.hooks.emit('cardPlayed', current, {
+      card,
+      cardName,
+      round: current.round,
+    });
+    current = hookRes.state;
+    events.push(...hookRes.events);
   }
 
-  return current;
+  current = finalizeWinIfDead(current, events);
+
+  return { state: current, events };
+}
+
+/**
+ * Resolves an active `pendingChoice` (e.g., choosing which hand card to discard for 当票),
+ * then resumes all queued `then` effects. Pure & immutable.
+ */
+export function resolvePendingChoice(state: BattleState, handIndex: number): BattleActionResult {
+  const choice = state.pendingChoice;
+  if (
+    !choice ||
+    state.phase !== 'play' ||
+    state.result !== 'ongoing' ||
+    handIndex < 0 ||
+    handIndex >= state.hand.length
+  ) {
+    return { state: cloneBattleState(state), events: [] };
+  }
+
+  let current = cloneBattleState(state);
+  const events: BattleEvent[] = [];
+
+  const [discarded] = current.hand.splice(handIndex, 1);
+  current.discardPile.push(discarded);
+  current.pendingChoice = null;
+  current.log.push(`R${current.round}:弃置${discarded}`);
+  events.push({ type: 'CARD_DISCARDED', cardName: discarded, handIndex });
+
+  if (current.hooks) {
+    const discardHook = current.hooks.emit('onDiscard', current, {
+      discardedCard: discarded,
+      cardName: choice.sourceCardName,
+      round: current.round,
+    });
+    current = discardHook.state;
+    events.push(...discardHook.events);
+  }
+
+  const ctx: EffectContext = {
+    cardsByName: current.cardsByName,
+    rng: current.rng,
+  };
+
+  for (const effect of choice.then) {
+    const res = applyEffectWithEvents(current, effect, ctx, choice.sourceCardName);
+    current = res.state;
+    events.push(...res.events);
+  }
+
+  const sourceCard = current.cardsByName.get(choice.sourceCardName);
+  if (current.hooks && sourceCard) {
+    const playedHook = current.hooks.emit('cardPlayed', current, {
+      card: sourceCard,
+      cardName: sourceCard.name,
+      round: current.round,
+    });
+    current = playedHook.state;
+    events.push(...playedHook.events);
+  }
+
+  current = finalizeWinIfDead(current, events);
+
+  return { state: current, events };
+}
+
+/**
+ * Cancels an active `pendingChoice`, returning the source card to hand and refunding its cost
+ * when `returnToHandOnCancel` is set. Pure & immutable.
+ */
+export function cancelPendingChoice(state: BattleState): BattleActionResult {
+  const choice = state.pendingChoice;
+  if (!choice) {
+    return { state: cloneBattleState(state), events: [] };
+  }
+
+  const current = cloneBattleState(state);
+  current.pendingChoice = null;
+
+  if (choice.returnToHandOnCancel) {
+    const { cardName, cost } = choice.returnToHandOnCancel;
+    const discardIdx = current.discardPile.lastIndexOf(cardName);
+    if (discardIdx >= 0) {
+      current.discardPile.splice(discardIdx, 1);
+    }
+    current.hand.push(cardName);
+    current.renqing += cost;
+    current.log.push(`R${current.round}:取消${cardName}`);
+  }
+
+  return { state: current, events: [] };
 }
 
 /**
  * Ends the player's turn: transitions play -> demonAct -> roundEnd -> (next round draw -> play | result).
- * Pure & immutable.
+ * Pure & immutable, returning { state, events }.
  */
-export function endTurn(state: BattleState): BattleState {
-  if (state.phase !== 'play' || state.result !== 'ongoing') {
-    return cloneBattleState(state);
+export function endTurn(state: BattleState): BattleActionResult {
+  if (state.phase !== 'play' || state.result !== 'ongoing' || state.pendingChoice !== null) {
+    return { state: cloneBattleState(state), events: [] };
   }
 
   let current = cloneBattleState(state);
+  const events: BattleEvent[] = [];
+
+  if (current.hooks) {
+    const turnEndHook = current.hooks.emit('turnEnd', current, { round: current.round });
+    current = turnEndHook.state;
+    events.push(...turnEndHook.events);
+  }
 
   // 1. demonAct phase
   current.phase = 'demonAct';
@@ -268,10 +438,31 @@ export function endTurn(state: BattleState): BattleState {
       current.demonHp = Math.max(0, current.demonHp - incomingDamage);
       current.reflectNextDamage = false;
       current.log.push(`R${current.round}:反弹${incomingDamage}伤`);
+      events.push({
+        type: 'DEMON_ACT',
+        round: current.round,
+        ...(action?.skill ? { skill: action.skill } : {}),
+        rawDamage: incomingDamage,
+        absorbed: 0,
+        hpDamage: 0,
+        reflected: true,
+      });
+      events.push({
+        type: 'REFLECT_TRIGGERED',
+        damage: incomingDamage,
+        demonHpAfter: current.demonHp,
+      });
+      if (current.hooks) {
+        const reflectHook = current.hooks.emit('onReflect', current, {
+          reflectedDamage: incomingDamage,
+          round: current.round,
+        });
+        current = reflectHook.state;
+        events.push(...reflectHook.events);
+      }
       if (current.demonHp <= 0) {
-        current.phase = 'result';
-        current.result = 'win';
-        return current;
+        current = finalizeWinIfDead(current, events);
+        return { state: current, events };
       }
     } else {
       const absorbed = Math.min(current.shield, incomingDamage);
@@ -282,12 +473,41 @@ export function endTurn(state: BattleState): BattleState {
       current.log.push(
         `R${current.round}:心魔${skillPrefix}造成${incomingDamage}伤(盾挡${absorbed},扣血${hpDamage})`,
       );
+      events.push({
+        type: 'DEMON_ACT',
+        round: current.round,
+        ...(action?.skill ? { skill: action.skill } : {}),
+        rawDamage: incomingDamage,
+        absorbed,
+        hpDamage,
+        reflected: false,
+      });
+      if (hpDamage > 0) {
+        events.push({
+          type: 'DAMAGE_DEALT',
+          target: 'player',
+          amount: hpDamage,
+          source: current.demonName,
+          playerHpAfter: current.playerHp,
+        });
+      }
       if (current.playerHp <= 0) {
         current.phase = 'result';
         current.result = 'lose_hp';
-        return current;
+        events.push({ type: 'BATTLE_ENDED', result: 'lose_hp', round: current.round });
+        return { state: current, events };
       }
     }
+  } else {
+    events.push({
+      type: 'DEMON_ACT',
+      round: current.round,
+      ...(action?.skill ? { skill: action.skill } : {}),
+      rawDamage: 0,
+      absorbed: 0,
+      hpDamage: 0,
+      reflected: false,
+    });
   }
 
   // 2. roundEnd phase
@@ -295,7 +515,8 @@ export function endTurn(state: BattleState): BattleState {
   if (current.round >= current.maxRounds) {
     current.phase = 'result';
     current.result = 'lose_timeout';
-    return current;
+    events.push({ type: 'BATTLE_ENDED', result: 'lose_timeout', round: current.round });
+    return { state: current, events };
   }
 
   // 3. Advance to next round: reset shield, refill renqing (+ next bonus), save snapshot, draw
@@ -309,13 +530,22 @@ export function endTurn(state: BattleState): BattleState {
   });
 
   current.phase = 'draw';
-  current = drawCardsFromState(current, current.balance.drawPerRound, {
+  const drawRes = drawCardsWithEvents(current, current.balance.drawPerRound, {
     cardsByName: current.cardsByName,
     rng: current.rng,
   });
+  current = drawRes.state;
+  events.push(...drawRes.events);
   current.phase = 'play';
+  events.push({ type: 'TURN_STARTED', round: current.round, renqing: current.renqing });
 
-  return current;
+  if (current.hooks) {
+    const turnStartHook = current.hooks.emit('turnStart', current, { round: current.round });
+    current = turnStartHook.state;
+    events.push(...turnStartHook.events);
+  }
+
+  return { state: current, events };
 }
 
 /**
@@ -382,6 +612,7 @@ export function toBattleDebugSnapshot(
     hand: [...state.hand],
     deckCount: state.drawPile.length,
     discardCount: state.discardPile.length,
+    pendingChoice: clonePendingChoice(state.pendingChoice),
     result: state.result,
     demonId: state.demonId,
     demonName: state.demonName,
@@ -455,7 +686,7 @@ export function formatEffectDescription(card: CardDef): string {
       case 'reveal':
         return '查看心魔下回合意图';
       case 'discard_for_renqing':
-        return `弃1张牌，获得${e.value ?? 0}点人情`;
+        return `选弃1张牌，获得${e.value ?? 0}点人情`;
     }
   });
   return parts.join('，');

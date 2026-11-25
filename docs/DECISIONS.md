@@ -313,3 +313,13 @@
   5. **C5**：`src/data/demons.json` 写入四心魔精确出场句与胜利叙事句；`CardBattleScene` 开局展示非阻塞出场横幅，`ResultScene` 胜利页展示对应叙事句。
 - **理由**：把原本藏在数据里的旧物故事、口碑、赎当券与心魔主题真正接入核心玩法与反馈回路。
 - **影响**：更新 `docs/GAME_DESIGN.md` §14 及全部单测/E2E 覆盖。
+
+## 2026-11-25 — P7 开源对照 Top 5 工程化与经济深化落地
+- **决策**：严格遵守协议红线（仅汲取抽象设计、全量自研实现，唯一引入的第三方代码为 MIT 协议的 ZzFX v1.4.0 核心函数），按 `proto-tasks/10-p7-open-source-takeaways.md` 一次性落地 5 大子项与 Vite 分包微优化：
+  1. **数据校验器 + `npm run sim` 护栏**：新增 `src/game/validate.ts`（在 `npm test` 中校验 `cards/items/demons` 交叉完整性与 16 色板）；新增 `scripts/sim.mjs` 封装 `src/game/montecarlo.ts` 为 `npm run sim` / `npm run sim:check`（护栏：4 心魔胜率 40%–95%、7 天常赢中位现金流 ≥ 30，支持 `SIM_TUNE` JSON 热覆盖）。
+  2. **音频 Lookahead + ZzFX（MIT）**：保留 `AudioEngine` 工程外壳，BGM 升级为 `ctx.currentTime` 提前 100ms Lookahead 调度；单文件内联 ZzFX v1.4.0 `buildSamples`（MIT 副本存 `docs/licenses/ZzFX-LICENSE.txt` 并登记 `docs/ASSET_LEDGER.md`），补齐 6 类带白噪声/失真质感的新音效（`hit_demon` / `shield_block` / `player_hurt` / `offer_rejected` / `insufficient_funds` / `redeem_deal`），保持零外部音频文件与极小包体增幅。
+  3. **结构化事件流 + `PendingChoice`**：`playCard`/`endTurn`/`resolvePendingChoice`/`cancelPendingChoice` 返回 `{ state, events: BattleEvent[] }`，`CardBattleScene.ts`（1,151 行 → 1,028 行）按事件驱动播放飘字/闪红/微震屏/音效；「当票」改为可序列化 `pendingChoice` 暂停选牌弃置（支持取消）。
+  4. **当客性格 + 白话台词 + 经济不变量**：`items.json` 为 6 件旧物配 `urgent`/`proud`/`sentimental` 性格与数值修正，当客卡片顶部展示 2–4 字 16 色像素徽章；新增 `formatOfferDialogue` 替换模板化反馈；`tests/unit/pawnshop.test.ts` 增加经济不变量属性测试；同步重跑 `scripts/generate-pixel-font.py` 补全全部新增汉字（629 字形，零方框）。
+  5. **Hook 注册表 + 存档迁移与坏档隔离 + Phaser 分包**：新增 `src/game/hooks.ts`（7 个战斗钩子 + `MAX_HOOK_DEPTH = 32` 熔断日志）；升级 `src/game/save.ts` 至 `SAVE_VERSION = 2` 与 `MIGRATIONS`（v1 → v2 无损迁移），坏档备份至 `pawnshop-cards-save-corrupt-v1` 并在标题画面提示；`vite.config.ts` 增加 `manualChunks` 将 `phaser` 拆出独立缓存 chunk。
+- **理由**：在进入正式版 60 张牌与当铺货架/遗物扩容前，补齐数据守卫、平衡自动化、音频质感、事件驱动牌局、经营博弈深度与存档兼容性底座。
+- **影响**：同步增补 `docs/GAME_DESIGN.md` §15、`docs/ASSET_LEDGER.md`、`docs/PROGRESS.md` 及全套单测/E2E。

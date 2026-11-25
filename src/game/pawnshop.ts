@@ -11,9 +11,17 @@ import {
 
 export type OfferTier = 'low' | 'fair' | 'high';
 
+export type CustomerTemperament = 'urgent' | 'proud' | 'sentimental';
+
 export type PawnshopPhase = 'redemption' | 'negotiating' | 'feedback' | 'summary';
 
 export type DebugPhase = 'title' | PawnshopPhase;
+
+export const TEMPERAMENT_LABELS: Record<CustomerTemperament, string> = {
+  urgent: '急用钱',
+  proud: '爱面子',
+  sentimental: '念旧',
+};
 
 export interface TierConfig {
   label: string;
@@ -40,6 +48,7 @@ export interface PawnItem {
   cardName: string;
   cardCost: number;
   color: string;
+  temperament?: CustomerTemperament;
 }
 
 export interface OfferOutcome {
@@ -99,9 +108,15 @@ export interface PawnshopDebugSnapshot {
   maxRenqing?: number;
   itemsOrder?: string[];
   hasSave?: boolean;
+  corruptSaveQuarantined?: boolean;
+  /** 当前当客性格与像素徽章文案（仅 negotiating 阶段提供）。 */
+  currentTemperament?: CustomerTemperament | null;
+  currentTemperamentLabel?: string | null;
+  /** 最近一次结算台词（供测试与验收）。 */
+  lastMessage?: string | null;
   /** 当前当客每档报价是否买得起（仅 negotiating 阶段由场景钩子提供）。 */
   tierAffordability?: Record<OfferTier, boolean>;
-  /** 当前口碑修正后的三档接受率（仅 negotiating 阶段由场景钩子提供）。 */
+  /** 当前口碑与性格修正后的三档接受率（仅 negotiating 阶段由场景钩子提供）。 */
   effectiveAcceptRates?: Record<OfferTier, number>;
   /** 当前当客是否允许跳过（仅 negotiating 阶段为 true）。 */
   canSkip?: boolean;
@@ -181,7 +196,11 @@ export const DAY1_GUARANTEED_DAMAGE_ITEM_IDS: readonly string[] = ['bicycle', 'e
 /** P6 C4 赎当倍率：当价 × 1.2 */
 export const REDEMPTION_PRICE_MULTIPLIER = 1.2;
 
-export const ITEMS: readonly PawnItem[] = itemsJson.map((item) => ({ ...item }));
+export const ITEMS: readonly PawnItem[] = (itemsJson as PawnItem[]).map((item) => ({ ...item }));
+
+export function getTemperamentLabel(temperament?: CustomerTemperament): string | null {
+  return temperament ? TEMPERAMENT_LABELS[temperament] : null;
+}
 
 /**
  * Computes the offered price from an item's true value and the chosen tier multiplier.
@@ -232,37 +251,161 @@ export function hasAnyAffordableTier(
 }
 
 /**
- * Computes effective customer acceptance rate taking reputation into account (P6 C3):
- * - low:  30% + 5% * reputation, clamped to [10%, 60%]
- * - fair: 80% + 2% * reputation, clamped to [50%, 95%]
+ * Computes effective customer acceptance rate taking reputation (P6 C3) and
+ * customer temperament (P7) into account:
+ * - low:  base 30% + 5% * rep (clamped [10%, 60%]), then urgent +10% / proud -10% (clamped [5%, 70%])
+ * - fair: base 80% + 2% * rep (clamped [50%, 95%]), then sentimental +5% (clamped [50%, 95%])
  * - high: 100% (unchanged)
  */
 export function getEffectiveAcceptRate(
   tier: OfferTier,
   reputation: number,
   balance: BalanceConfig = BALANCE,
+  temperament?: CustomerTemperament,
 ): number {
   const base = balance.tiers[tier].acceptRate;
   if (tier === 'high') {
     return base;
   }
   if (tier === 'low') {
-    const raw = base + 0.05 * reputation;
-    return Math.round(Math.min(0.6, Math.max(0.1, raw)) * 10000) / 10000;
+    const repClamped = Math.min(0.6, Math.max(0.1, base + 0.05 * reputation));
+    const tempOffset = temperament === 'urgent' ? 0.1 : temperament === 'proud' ? -0.1 : 0;
+    const adjusted = Math.min(0.7, Math.max(0.05, repClamped + tempOffset));
+    return Math.round(adjusted * 10000) / 10000;
   }
-  const raw = base + 0.02 * reputation;
-  return Math.round(Math.min(0.95, Math.max(0.5, raw)) * 10000) / 10000;
+  const repClamped = Math.min(0.95, Math.max(0.5, base + 0.02 * reputation));
+  const tempOffset = temperament === 'sentimental' ? 0.05 : 0;
+  const adjusted = Math.min(0.95, Math.max(0.5, repClamped + tempOffset));
+  return Math.round(adjusted * 10000) / 10000;
 }
 
 /**
- * Formats the daytime offer-area reputation modifier hint (P6 C3).
+ * Computes reputation delta for an offer outcome incorporating P7 customer temperament:
+ * - urgent + low accepted: -2 (baseline -1)
+ * - proud + high accepted: +2 (baseline +1)
+ * - all rejections: 0
+ */
+export function getReputationDelta(
+  tier: OfferTier,
+  accepted: boolean,
+  temperament?: CustomerTemperament,
+  balance: BalanceConfig = BALANCE,
+): number {
+  if (!accepted) {
+    return balance.tiers[tier].reputationOnReject;
+  }
+  if (tier === 'low' && temperament === 'urgent') {
+    return -2;
+  }
+  if (tier === 'high' && temperament === 'proud') {
+    return 2;
+  }
+  return balance.tiers[tier].reputationOnAccept;
+}
+
+/**
+ * Formats authentic 1987 old-street pawnshop offer outcome dialogue based on
+ * item temperament, offer tier, acceptance, and current shop reputation (P7).
+ */
+export function formatOfferDialogue(
+  item: PawnItem,
+  tier: OfferTier,
+  accepted: boolean,
+  reputation: number,
+): string {
+  const temp = item.temperament;
+  const highRep = reputation >= 2;
+  const lowRep = reputation <= -2;
+
+  if (accepted) {
+    if (tier === 'low') {
+      if (highRep) {
+        return '听街坊说你家公道，少点我也认了';
+      }
+      if (temp === 'urgent') {
+        return '急等着用钱，吃点亏我也认了';
+      }
+      if (temp === 'proud') {
+        return '今儿算我落魄，改天体面来赎';
+      }
+      if (temp === 'sentimental') {
+        return '帮我收稳当些，这物件有念想';
+      }
+      return '行吧，先应应急再说';
+    }
+
+    if (tier === 'fair') {
+      if (highRep) {
+        return '老街坊办事敞亮，就按这价收吧';
+      }
+      if (lowRep) {
+        return '价还算公道，别亏待这旧物';
+      }
+      if (temp === 'sentimental') {
+        return '价钱实在，麻烦掌柜替我好生收着';
+      }
+      if (temp === 'proud') {
+        return '这个数不丢面儿，成交';
+      }
+      if (temp === 'urgent') {
+        return '公道价，可算解了燃眉之急';
+      }
+      return '价格合适，麻烦写张当票';
+    }
+
+    // high tier accepted
+    if (temp === 'proud') {
+      return '掌柜识货给面子，回头替你多美言';
+    }
+    if (temp === 'sentimental') {
+      return '多谢掌柜厚道，等缓过来一定赎回';
+    }
+    if (temp === 'urgent') {
+      return '给这么厚道，真救了我大急！';
+    }
+    return highRep ? '果然名不虚传，掌柜真仗义' : '这价厚道，多谢掌柜照顾';
+  }
+
+  // Rejected
+  if (tier === 'low') {
+    if (item.id === 'watch' || temp === 'urgent') {
+      return '这价连药费零头都不够';
+    }
+    if (temp === 'proud') {
+      return '这价太寒碜人，我还得要脸面';
+    }
+    if (temp === 'sentimental') {
+      return '这物件跟我半辈子，不能贱卖';
+    }
+    return lowRep ? '怪不得街坊说你压价狠，不谈了' : '压得太狠了，我另寻别家';
+  }
+
+  if (tier === 'fair') {
+    if (lowRep) {
+      return '听人说你家不厚道，我再看看别家';
+    }
+    if (temp === 'proud') {
+      return '我这好东西，心里还得再高点';
+    }
+    if (temp === 'sentimental') {
+      return '到底还是舍不得，过几天再来';
+    }
+    return '还是差了点意思，先拿回去吧';
+  }
+
+  return '算了，这物件我再想想';
+}
+
+/**
+ * Formats the daytime offer-area reputation modifier hint (P6 C3 + P7 temperament).
  */
 export function formatReputationHint(
   reputation: number,
   balance: BalanceConfig = BALANCE,
+  temperament?: CustomerTemperament,
 ): string {
-  const lowPct = Math.round(getEffectiveAcceptRate('low', reputation, balance) * 100);
-  const fairPct = Math.round(getEffectiveAcceptRate('fair', reputation, balance) * 100);
+  const lowPct = Math.round(getEffectiveAcceptRate('low', reputation, balance, temperament) * 100);
+  const fairPct = Math.round(getEffectiveAcceptRate('fair', reputation, balance, temperament) * 100);
   if (reputation > 0) {
     return `口碑${reputation}：当客更容易接受(低${lowPct}%/平${fairPct}%)`;
   }
@@ -315,8 +458,7 @@ export function shuffleItems(items: readonly PawnItem[], rng: RngFn): PawnItem[]
 
 /**
  * Picks daily customers (default 3) via Fisher-Yates shuffle.
- * On Day 1 (P6 B2), guarantees at least 1 damage-card item (bicycle/erhu) appears:
- * if the top slice has none, swaps the last slot with the first damage item in the remainder.
+ * On Day 1 (P6 B2), guarantees at least 1 damage-card item (bicycle/erhu) appears.
  */
 export function pickDailyItems(
   items: readonly PawnItem[],
@@ -345,11 +487,11 @@ export function pickDailyItems(
 }
 
 /**
- * Creates a redemption offer at the start of a day (P6 C4) if:
+ * Creates a redemption offer at the start of a day (P6 C4 + P7 sentimental priority):
  * - player holds >= 1 redeemTicket, AND
  * - deck contains at least 1 card originating from a pawnshop item (items.json).
- * Picks one eligible card uniformly via `rng`; basePrice uses recorded deal price if available,
- * otherwise falls back to item's trueValue. Payout = round(basePrice * 1.2).
+ * P7: Prioritizes cards belonging to `sentimental` (念旧) customers when present.
+ * Payout = round(basePrice * 1.2).
  */
 export function createRedemptionOffer(
   deck: readonly string[],
@@ -380,8 +522,11 @@ export function createRedemptionOffer(
     return null;
   }
 
-  const pickedIdx = Math.floor(rng() * candidates.length);
-  const chosen = candidates[Math.min(pickedIdx, candidates.length - 1)];
+  const sentimentalCandidates = candidates.filter((c) => c.item.temperament === 'sentimental');
+  const pool = sentimentalCandidates.length > 0 ? sentimentalCandidates : candidates;
+
+  const pickedIdx = Math.floor(rng() * pool.length);
+  const chosen = pool[Math.min(pickedIdx, pool.length - 1)];
   const recorded = peekPawnPrice(pawnPrices, chosen.cardName);
   const basePrice = recorded !== null ? recorded : chosen.item.trueValue;
   const payout = Math.round(basePrice * REDEMPTION_PRICE_MULTIPLIER);
@@ -399,10 +544,6 @@ function isBalanceConfig(value: unknown): value is BalanceConfig {
   return typeof value === 'object' && value !== null && 'tiers' in value;
 }
 
-/**
- * Creates a fresh daytime pawnshop state from balance and item data,
- * optionally overriding day/money/reputation/deck/items from SaveData.
- */
 export function createInitialState(
   initialOrBalance?: PawnshopInitialOptions | BalanceConfig,
   legacyItems?: readonly PawnItem[],
@@ -439,15 +580,12 @@ export function createInitialState(
     lastOutcome: null,
     ...(opts.redeemTickets !== undefined ? { redeemTickets: opts.redeemTickets } : {}),
     ...(opts.pawnPrices !== undefined ? { pawnPrices: clonePawnPrices(opts.pawnPrices) } : {}),
-    ...(redemptionOffer !== null ? { redemptionOffer: { ...redemptionOffer, item: { ...redemptionOffer.item } } } : {}),
+    ...(redemptionOffer !== null
+      ? { redemptionOffer: { ...redemptionOffer, item: { ...redemptionOffer.item } } }
+      : {}),
   };
 }
 
-/**
- * Resolves the pre-day redemption event (P6 C4), transitioning cleanly to negotiating.
- * - Accept: card leaves deck, money += payout (basePrice * 1.2), reputation +1, redeemTickets -1.
- * - Reject: nothing changes, redeemTickets preserved.
- */
 export function resolveRedemption(state: PawnshopState, accept: boolean): PawnshopState {
   const offer = state.redemptionOffer ?? null;
   if (state.phase !== 'redemption' || !offer) {
@@ -479,7 +617,11 @@ export function resolveRedemption(state: PawnshopState, accept: boolean): Pawnsh
   }
 
   const nextDeck = [...state.deck];
-  if (offer.deckIndex >= 0 && offer.deckIndex < nextDeck.length && nextDeck[offer.deckIndex] === offer.cardName) {
+  if (
+    offer.deckIndex >= 0 &&
+    offer.deckIndex < nextDeck.length &&
+    nextDeck[offer.deckIndex] === offer.cardName
+  ) {
     nextDeck.splice(offer.deckIndex, 1);
   } else {
     const fallbackIdx = nextDeck.indexOf(offer.cardName);
@@ -528,8 +670,6 @@ export function settle(
   const tierConfig = balance.tiers[tier];
   const price = quotePrice(currentItem.trueValue, tier, balance);
 
-  // 钱不能变负数：成交价高于当前钱数时不成交、不扣钱、不改状态
-  //（界面层已置灰禁用，此处为纯逻辑层兜底；被拒报价不受影响）。
   if (accepted && price > state.money) {
     return {
       ...state,
@@ -540,10 +680,7 @@ export function settle(
     };
   }
 
-  const reputationDelta = accepted
-    ? tierConfig.reputationOnAccept
-    : tierConfig.reputationOnReject;
-
+  const reputationDelta = getReputationDelta(tier, accepted, currentItem.temperament, balance);
   const nextMoney = accepted ? state.money - price : state.money;
   const nextReputation = state.reputation + reputationDelta;
   const nextDeck = accepted ? [...state.deck, currentItem.cardName] : [...state.deck];
@@ -553,7 +690,7 @@ export function settle(
         ? recordPawnPrice(state.pawnPrices, currentItem.cardName, price)
         : clonePawnPrices(state.pawnPrices)
       : undefined;
-  const message = accepted ? `成交！收下${currentItem.name}` : '当客走了，没谈成';
+  const message = formatOfferDialogue(currentItem, tier, accepted, state.reputation);
 
   const logEntry = accepted
     ? `${currentItem.name}:${tierConfig.label}(${price})->接受,牌=${currentItem.cardName},口碑${formatSignedDelta(reputationDelta)}`
@@ -581,10 +718,6 @@ export function settle(
   };
 }
 
-/**
- * Skips the current customer during negotiating: no deal, money/reputation/deck unchanged,
- * records a skip log entry, and advances to the next customer (or end-of-day summary).
- */
 export function skipCustomer(state: PawnshopState): PawnshopState {
   const currentItem = state.items[state.customerIndex];
   if (state.phase !== 'negotiating' || !currentItem) {
@@ -615,9 +748,6 @@ export function skipCustomer(state: PawnshopState): PawnshopState {
   };
 }
 
-/**
- * Advances from feedback to the next customer, or to the end-of-day summary after the last customer.
- */
 export function advanceCustomer(state: PawnshopState): PawnshopState {
   const nextIndex = state.customerIndex + 1;
   const isFinished = nextIndex >= state.items.length;
@@ -634,9 +764,6 @@ export function advanceCustomer(state: PawnshopState): PawnshopState {
   };
 }
 
-/**
- * Builds the read-only snapshot returned by window.__PAWNSHOP_DEBUG__.getState().
- */
 export function toDebugSnapshot(state: PawnshopState): PawnshopDebugSnapshot {
   return {
     phase: state.phase,
@@ -658,9 +785,6 @@ export function formatSignedDelta(delta: number): string {
   return '+0';
 }
 
-/**
- * Wraps CJK strings cleanly at punctuation or maxCharsPerLine without relying on spaces.
- */
 export function wrapCjkText(text: string, maxCharsPerLine: number): string {
   const lines: string[] = [];
   let current = '';

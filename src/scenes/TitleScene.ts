@@ -5,7 +5,7 @@ import { addPixelText } from '../game/pixelFont';
 import {
   clearPawnPrices,
   createNewGame,
-  loadSave,
+  loadSaveDetailed,
   loadTutorialDone,
   maxRenqingForLevel,
   saveGame,
@@ -27,7 +27,8 @@ export class TitleScene extends Phaser.Scene {
   create(): void {
     const centerX = Math.floor(BASE_WIDTH / 2);
     const centerY = Math.floor(BASE_HEIGHT / 2);
-    const existingSave = loadSave();
+    const loadResult = loadSaveDetailed();
+    const existingSave = loadResult.save;
 
     audio.stopBgm();
     installAudioDebugHook(audio);
@@ -46,6 +47,7 @@ export class TitleScene extends Phaser.Scene {
         redeemTickets: existingSave?.redeemTickets ?? 0,
         maxRenqing: maxRenqingForLevel(existingSave?.shopLevel ?? 1),
         hasSave: existingSave !== null,
+        corruptSaveQuarantined: loadResult.quarantinedCorrupt,
         tutorialActive: false,
         currentStep: null,
         tutorialDone: loadTutorialDone(),
@@ -85,6 +87,17 @@ export class TitleScene extends Phaser.Scene {
     });
 
     this.add.rectangle(centerX, 92, 136, 1, PALETTE.brass.num);
+
+    if (loadResult.quarantinedCorrupt) {
+      this.add
+        .rectangle(centerX, 102, 232, 14, PALETTE.ink.num)
+        .setStrokeStyle(1, PALETTE.vermilion.num);
+      addPixelText(this, centerX, 102, '旧存档损坏，已备份隔离', {
+        size: 12,
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+      });
+    }
 
     // “开始”按钮：烛光底 + 墨黑字 + 1 像素墨黑描边
     this.createMenuButton(

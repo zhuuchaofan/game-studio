@@ -3,7 +3,15 @@ import balanceJson from '../../src/data/balance.json';
 import cardsJson from '../../src/data/cards.json';
 import demonsJson from '../../src/data/demons.json';
 import type { BattleBalanceConfig, CardDef, DemonDef } from '../../src/game/battle';
-import { runMonteCarlo, simulateSevenDayEconomy, TEST_DECK } from '../../src/game/montecarlo';
+import {
+  checkSimGuardrails,
+  formatSimReport,
+  parseSimTuneEnv,
+  runBalanceSimulation,
+  runMonteCarlo,
+  simulateSevenDayEconomy,
+  TEST_DECK,
+} from '../../src/game/montecarlo';
 
 const CARDS = cardsJson as CardDef[];
 const DEMONS = demonsJson as DemonDef[];
@@ -145,5 +153,28 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     expect(statsC.demonName).toBe('房租');
     expect(statsD.demonId).toBe('d');
     expect(statsD.demonName).toBe('学费');
+  });
+
+  it('passes P7 sim:check guardrails on baseline data and supports SIM_TUNE hot overrides', () => {
+    const baseline = runBalanceSimulation({ runs: 1000 });
+    const check = checkSimGuardrails(baseline);
+    expect(check.errors).toEqual([]);
+    expect(check.passed).toBe(true);
+
+    const text = formatSimReport(baseline);
+    expect(text).toContain('心魔 A');
+    expect(text).toContain('中位现金流');
+    expect(text).toContain('平均赎当次数');
+
+    const parsed = parseSimTuneEnv('{"demonAHp":22,"runs":200}');
+    expect(parsed).toEqual({ demonAHp: 22, runs: 200 });
+    const tuned = runBalanceSimulation(parsed);
+    expect(tuned.demons[0].winRate).toBeLessThan(baseline.demons[0].winRate);
+
+    // Guardrail fails when a demon HP is tuned to an impossible value
+    const broken = runBalanceSimulation({ demonAHp: 999, runs: 100 });
+    const brokenCheck = checkSimGuardrails(broken);
+    expect(brokenCheck.passed).toBe(false);
+    expect(brokenCheck.errors.some((e) => e.includes('Demon A'))).toBe(true);
   });
 });

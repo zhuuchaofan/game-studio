@@ -18,3 +18,14 @@
 ## 像素插画
 
 - `src/data/pixelart.ts`（20 张原型牌面 32×32 + 3 件旧物 32×32 + 2 个心魔 32×32）：项目原创逐像素手绘点阵，仅使用 `docs/ART_STYLE.md` 定稿 16 色调色板，未使用任何外部图片素材或 AI 生图。
+
+## 音频合成算法
+
+| 项目 | 内容 |
+|------|------|
+| 名称与版本号 | ZzFX — Zuper Zmall Zound Zynth `v1.4.0`（上游 commit `ac5a4727a44e5506a12f7340087e0b889cfd69dc`） |
+| 官方来源 URL | https://github.com/KilledByAPixel/ZzFX |
+| 作者与版权年份 | Frank Force，`Copyright (c) 2019 Frank Force` |
+| 许可证 | MIT License，许可全文副本见 [ZzFX-LICENSE.txt](./licenses/ZzFX-LICENSE.txt) |
+| 使用范围与修改说明 | 单文件内联算法：仅将 `ZzFX.js` 中的 `buildSamples` 核心合成函数以 TypeScript 形式内联进 `src/game/audio.ts`（`zzfxBuildSamples`，压缩后 < 1 KB），用于实时生成 `hit_demon` / `shield_block` / `player_hurt` / `offer_rejected` / `insufficient_funds` / `redeem_deal` 6 类带白噪声/失真质感的 8-bit 音效并接入自研 `AudioEngine` 的 `masterGain`；零外部音频文件，保留完整 MIT 版权声明 |
+| 上游第三方依赖许可 | 无（纯浏览器 WebAudio / Math 零依赖算法） |

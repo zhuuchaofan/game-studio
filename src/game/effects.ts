@@ -1,4 +1,5 @@
 import type { RngFn } from '../utils/rng';
+import type { HookRegistry } from './hooks';
 
 export type CardEffectType =
   | 'damage'
@@ -63,6 +64,62 @@ export interface RoundSnapshot {
   demonHp: number;
 }
 
+/**
+ * Pure JSON-serializable paused card-choice continuation.
+ */
+export interface PendingChoice {
+  kind: 'discard';
+  sourceCardName: string;
+  prompt: string;
+  count: number;
+  then: CardEffect[];
+  returnToHandOnCancel?: {
+    cardName: string;
+    cost: number;
+  };
+}
+
+export type BattleEvent =
+  | { type: 'CARD_PLAYED'; cardName: string; cost: number; round: number }
+  | {
+      type: 'DAMAGE_DEALT';
+      target: 'demon' | 'player';
+      amount: number;
+      source: string;
+      demonHpAfter?: number;
+      playerHpAfter?: number;
+    }
+  | { type: 'SHIELD_GAINED'; amount: number; shieldAfter: number; source: string }
+  | { type: 'REFLECT_TRIGGERED'; damage: number; demonHpAfter: number }
+  | {
+      type: 'REWIND_APPLIED';
+      playerHpBefore: number;
+      playerHpAfter: number;
+      demonHpBefore: number;
+      demonHpAfter: number;
+    }
+  | {
+      type: 'DEMON_ACT';
+      round: number;
+      skill?: string;
+      rawDamage: number;
+      absorbed: number;
+      hpDamage: number;
+      reflected: boolean;
+    }
+  | { type: 'BATTLE_ENDED'; result: Exclude<BattleResult, 'ongoing'>; round: number }
+  | { type: 'CARD_DISCARDED'; cardName: string; handIndex: number }
+  | { type: 'CHOICE_REQUIRED'; choice: PendingChoice }
+  | { type: 'RENQING_GAINED'; amount: number; renqingAfter: number; source: string }
+  | { type: 'HEAL_APPLIED'; amount: number; playerHpAfter: number }
+  | { type: 'CARDS_DRAWN'; cards: string[] }
+  | { type: 'TURN_STARTED'; round: number; renqing: number };
+
+export interface BattleActionResult {
+  state: BattleState;
+  events: BattleEvent[];
+}
+
 export interface BattleState {
   phase: BattlePhase;
   round: number;
@@ -88,17 +145,35 @@ export interface BattleState {
   reflectNextDamage: boolean;
   revealedNextIntent: boolean;
   roundSnapshots: RoundSnapshot[];
+  pendingChoice: PendingChoice | null;
   result: BattleResult;
   log: string[];
   /** Internal runtime references (non-serialized, provided by createBattle). */
   readonly cardsByName: ReadonlyMap<string, CardDef>;
   readonly balance: BattleBalanceConfig;
   readonly rng: RngFn;
+  readonly hooks?: HookRegistry;
 }
 
 export interface EffectContext {
   cardsByName: ReadonlyMap<string, CardDef>;
   rng: RngFn;
+}
+
+export function clonePendingChoice(choice: PendingChoice | null): PendingChoice | null {
+  if (!choice) {
+    return null;
+  }
+  return {
+    kind: choice.kind,
+    sourceCardName: choice.sourceCardName,
+    prompt: choice.prompt,
+    count: choice.count,
+    then: choice.then.map((e) => ({ ...e })),
+    ...(choice.returnToHandOnCancel
+      ? { returnToHandOnCancel: { ...choice.returnToHandOnCancel } }
+      : {}),
+  };
 }
 
 /**
@@ -128,7 +203,7 @@ export function isAttackCard(card: CardDef | undefined): boolean {
 }
 
 /**
- * Clones a BattleState shallowly with fresh copies of all mutable arrays.
+ * Clones a BattleState shallowly with fresh copies of all mutable arrays & pendingChoice.
  */
 export function cloneBattleState(state: BattleState): BattleState {
   return {
@@ -138,6 +213,7 @@ export function cloneBattleState(state: BattleState): BattleState {
     drawPile: [...state.drawPile],
     discardPile: [...state.discardPile],
     roundSnapshots: state.roundSnapshots.map((snap) => ({ ...snap })),
+    pendingChoice: clonePendingChoice(state.pendingChoice),
     log: [...state.log],
   };
 }
@@ -151,14 +227,23 @@ export function drawCardsFromState(
   count: number,
   ctx: EffectContext,
 ): BattleState {
+  return drawCardsWithEvents(state, count, ctx).state;
+}
+
+export function drawCardsWithEvents(
+  state: BattleState,
+  count: number,
+  ctx: EffectContext,
+): BattleActionResult {
   if (count <= 0) {
-    return cloneBattleState(state);
+    return { state: cloneBattleState(state), events: [] };
   }
 
   let drawPile = [...state.drawPile];
   let discardPile = [...state.discardPile];
   const hand = [...state.hand];
   let illuminateNextDraw = state.illuminateNextDraw;
+  const drawnCards: string[] = [];
 
   for (let i = 0; i < count; i += 1) {
     if (drawPile.length === 0) {
@@ -184,16 +269,167 @@ export function drawCardsFromState(
     const drawn = drawPile.shift();
     if (drawn !== undefined) {
       hand.push(drawn);
+      drawnCards.push(drawn);
     }
   }
 
-  return {
+  const nextState: BattleState = {
     ...cloneBattleState(state),
     hand,
     drawPile,
     discardPile,
     illuminateNextDraw,
   };
+
+  return {
+    state: nextState,
+    events: drawnCards.length > 0 ? [{ type: 'CARDS_DRAWN', cards: drawnCards }] : [],
+  };
+}
+
+/**
+ * EffectRunner with structured BattleEvent output.
+ * Does not mutate the input state.
+ */
+export function applyEffectWithEvents(
+  state: BattleState,
+  effect: CardEffect,
+  ctx: EffectContext,
+  sourceName = 'effect',
+): BattleActionResult {
+  const next = cloneBattleState(state);
+  const events: BattleEvent[] = [];
+
+  switch (effect.type) {
+    case 'damage': {
+      const amount = effect.value ?? 0;
+      next.demonHp = Math.max(0, next.demonHp - amount);
+      events.push({
+        type: 'DAMAGE_DEALT',
+        target: 'demon',
+        amount,
+        source: sourceName,
+        demonHpAfter: next.demonHp,
+      });
+      return { state: next, events };
+    }
+
+    case 'damage_conditional': {
+      const base = effect.value ?? 0;
+      const bonus = effect.bonus ?? 0;
+      const amount = next.demonHasActed ? base + bonus : base;
+      next.demonHp = Math.max(0, next.demonHp - amount);
+      events.push({
+        type: 'DAMAGE_DEALT',
+        target: 'demon',
+        amount,
+        source: sourceName,
+        demonHpAfter: next.demonHp,
+      });
+      return { state: next, events };
+    }
+
+    case 'shield': {
+      const amount = effect.value ?? 0;
+      next.shield += amount;
+      events.push({
+        type: 'SHIELD_GAINED',
+        amount,
+        shieldAfter: next.shield,
+        source: sourceName,
+      });
+      return { state: next, events };
+    }
+
+    case 'draw': {
+      const count = effect.value ?? 0;
+      return drawCardsWithEvents(next, count, ctx);
+    }
+
+    case 'heal': {
+      const amount = effect.value ?? 0;
+      const before = next.playerHp;
+      next.playerHp = Math.min(next.maxPlayerHp, next.playerHp + amount);
+      events.push({
+        type: 'HEAL_APPLIED',
+        amount: next.playerHp - before,
+        playerHpAfter: next.playerHp,
+      });
+      return { state: next, events };
+    }
+
+    case 'renqing': {
+      const amount = effect.value ?? 0;
+      next.renqing += amount;
+      events.push({
+        type: 'RENQING_GAINED',
+        amount,
+        renqingAfter: next.renqing,
+        source: sourceName,
+      });
+      return { state: next, events };
+    }
+
+    case 'renqing_next': {
+      const amount = effect.value ?? 0;
+      next.nextRoundRenqingBonus += amount;
+      return { state: next, events };
+    }
+
+    case 'rewind': {
+      if (next.roundSnapshots.length === 0) {
+        return { state: next, events };
+      }
+      const targetIndex = Math.min(
+        Math.max(0, next.round - 2),
+        next.roundSnapshots.length - 1,
+      );
+      const snapshot = next.roundSnapshots[targetIndex];
+      const playerHpBefore = next.playerHp;
+      const demonHpBefore = next.demonHp;
+      next.playerHp = snapshot.playerHp;
+      next.demonHp = snapshot.demonHp;
+      events.push({
+        type: 'REWIND_APPLIED',
+        playerHpBefore,
+        playerHpAfter: next.playerHp,
+        demonHpBefore,
+        demonHpAfter: next.demonHp,
+      });
+      return { state: next, events };
+    }
+
+    case 'illuminate': {
+      next.illuminateNextDraw = true;
+      return { state: next, events };
+    }
+
+    case 'reflect': {
+      next.reflectNextDamage = true;
+      return { state: next, events };
+    }
+
+    case 'reveal': {
+      next.revealedNextIntent = true;
+      return { state: next, events };
+    }
+
+    case 'discard_for_renqing': {
+      if (next.hand.length === 0) {
+        return { state: next, events };
+      }
+      const choice: PendingChoice = {
+        kind: 'discard',
+        sourceCardName: sourceName,
+        prompt: '选1张手牌弃掉',
+        count: 1,
+        then: [{ type: 'renqing', value: effect.value ?? 0 }],
+      };
+      next.pendingChoice = choice;
+      events.push({ type: 'CHOICE_REQUIRED', choice: clonePendingChoice(choice)! });
+      return { state: next, events };
+    }
+  }
 }
 
 /**
@@ -205,92 +441,5 @@ export function applyEffect(
   effect: CardEffect,
   ctx: EffectContext,
 ): BattleState {
-  const next = cloneBattleState(state);
-
-  switch (effect.type) {
-    case 'damage': {
-      const amount = effect.value ?? 0;
-      next.demonHp = Math.max(0, next.demonHp - amount);
-      return next;
-    }
-
-    case 'damage_conditional': {
-      const base = effect.value ?? 0;
-      const bonus = effect.bonus ?? 0;
-      const amount = next.demonHasActed ? base + bonus : base;
-      next.demonHp = Math.max(0, next.demonHp - amount);
-      return next;
-    }
-
-    case 'shield': {
-      const amount = effect.value ?? 0;
-      next.shield += amount;
-      return next;
-    }
-
-    case 'draw': {
-      const count = effect.value ?? 0;
-      return drawCardsFromState(next, count, ctx);
-    }
-
-    case 'heal': {
-      const amount = effect.value ?? 0;
-      next.playerHp = Math.min(next.maxPlayerHp, next.playerHp + amount);
-      return next;
-    }
-
-    case 'renqing': {
-      const amount = effect.value ?? 0;
-      next.renqing += amount;
-      return next;
-    }
-
-    case 'renqing_next': {
-      const amount = effect.value ?? 0;
-      next.nextRoundRenqingBonus += amount;
-      return next;
-    }
-
-    case 'rewind': {
-      if (next.roundSnapshots.length === 0) {
-        return next;
-      }
-      // Round 2 -> index 0 (start of Round 1); Round 3 -> index 1 (start of Round 2); Round 1 -> index 0.
-      const targetIndex = Math.min(
-        Math.max(0, next.round - 2),
-        next.roundSnapshots.length - 1,
-      );
-      const snapshot = next.roundSnapshots[targetIndex];
-      next.playerHp = snapshot.playerHp;
-      next.demonHp = snapshot.demonHp;
-      return next;
-    }
-
-    case 'illuminate': {
-      next.illuminateNextDraw = true;
-      return next;
-    }
-
-    case 'reflect': {
-      next.reflectNextDamage = true;
-      return next;
-    }
-
-    case 'reveal': {
-      next.revealedNextIntent = true;
-      return next;
-    }
-
-    case 'discard_for_renqing': {
-      if (next.hand.length === 0) {
-        return next;
-      }
-      const discarded = next.hand.shift();
-      if (discarded !== undefined) {
-        next.discardPile.push(discarded);
-      }
-      next.renqing += effect.value ?? 0;
-      return next;
-    }
-  }
+  return applyEffectWithEvents(state, effect, ctx).state;
 }

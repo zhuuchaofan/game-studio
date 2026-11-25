@@ -141,7 +141,8 @@ test('seed=4 Day 1 deadlock: when all 3 tiers are unaffordable on Ring, skip but
   const c3 = await waitForPawnshopPhase(page, 'negotiating');
   expect(c3.customerIndex).toBe(2);
   expect(c3.money).toBe(20);
-  expect(c3.reputation).toBe(2);
+  // Watch (urgent, high -> +1) + Bicycle (proud, high -> +2) = 3
+  expect(c3.reputation).toBe(3);
   expect(c3.deck).toEqual(['倒转', '飞驰']);
   expect(c3.tierAffordability).toEqual({ low: false, fair: false, high: false });
   expect(c3.canSkip).toBe(true);
@@ -157,7 +158,7 @@ test('seed=4 Day 1 deadlock: when all 3 tiers are unaffordable on Ring, skip but
   expect(stillStuckWithoutSkip.phase).toBe('negotiating');
   expect(stillStuckWithoutSkip.customerIndex).toBe(2);
   expect(stillStuckWithoutSkip.money).toBe(20);
-  expect(stillStuckWithoutSkip.reputation).toBe(2);
+  expect(stillStuckWithoutSkip.reputation).toBe(3);
   expect(stillStuckWithoutSkip.deck).toEqual(['倒转', '飞驰']);
 
   // Click Skip button -> advances to summary with money/reputation/deck completely unchanged
@@ -165,7 +166,7 @@ test('seed=4 Day 1 deadlock: when all 3 tiers are unaffordable on Ring, skip but
   const summary = await waitForPawnshopPhase(page, 'summary');
   expect(summary.customerIndex).toBe(3);
   expect(summary.money).toBe(20);
-  expect(summary.reputation).toBe(2);
+  expect(summary.reputation).toBe(3);
   expect(summary.deck).toEqual(['倒转', '飞驰']);
   expect(summary.canSkip).toBe(false);
   expect(summary.log).toHaveLength(3);

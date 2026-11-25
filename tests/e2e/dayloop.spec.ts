@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { clickLogical, LOGICAL_WIDTH } from './helpers';
 
 interface SaveSnapshot {
-  version: 1;
+  version: 1 | 2;
   day: number;
   money: number;
   reputation: number;
@@ -302,11 +302,11 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   expect(day1Start.itemsOrder).toEqual(['old_book', 'erhu', 'stamp_album']);
   await page.screenshot({ path: 'test-results/dayloop-desktop-day1.png' });
 
-  // Buy all 3 items at High tier (30 + 75 + 45 = 150 -> money 50, rep +3, deck 3 cards; money never negative)
+  // Buy all 3 items at High tier (30 + 75 + 45 = 150 -> money 50, rep +4 with proud stamp_album +2, deck 3 cards)
   const day1Summary = await completeDayPawnshopHigh(page, canvas);
   expect(day1Summary.money).toBe(50);
   expect(day1Summary.money).toBeGreaterThanOrEqual(0);
-  expect(day1Summary.reputation).toBe(3);
+  expect(day1Summary.reputation).toBe(4);
   expect(day1Summary.deck).toEqual(['旧书', '余音', '集邮']);
 
   // Enter night battle -> must pass through 6-frame lamp-pull TransitionScene
@@ -349,7 +349,7 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   const winResult = await playGreedyUntilResult(page, canvas);
   expect(winResult.result).toBe('win');
   expect(winResult.savedData).not.toBeNull();
-  expect(winResult.savedData!.version).toBe(1);
+  expect(winResult.savedData!.version).toBe(2);
   expect(winResult.savedData!.day).toBe(2);
   expect(winResult.savedData!.shopLevel).toBe(2);
   expect(winResult.savedData!.money).toBe(90); // 50 + 40 winRewardMoney
@@ -366,7 +366,7 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2.day).toBe(2);
   expect(day2.money).toBe(90);
-  expect(day2.reputation).toBe(3);
+  expect(day2.reputation).toBe(4);
   expect(day2.shopLevel).toBe(2);
   expect(day2.maxRenqing).toBe(4);
   expect(day2.deck).toEqual(winResult.savedData!.deck);
@@ -457,7 +457,7 @@ test('lose flow advances day +1 while keeping deck, money, shopLevel, and redeem
   const loseResult = await waitForBattleReady(page, 'result_scene');
   expect(loseResult.result).toBe('lose_timeout');
   expect(loseResult.savedData).toEqual({
-    version: 1,
+    version: 2,
     day: 2,
     money: 35,
     reputation: 3,
@@ -559,13 +559,13 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   expect(day3Start.itemsOrder).toContain('erhu');
   await page.screenshot({ path: 'test-results/p4-day3-erhu.png' });
 
-  // Day 3（erhu, ring, watch）with C3 reputation-modified low rates (rep=2 -> 40%):
-  // seed=4 RNG: 二胡拒 (0.9236 >= 0.40)、婚戒收 (0.3330 < 0.40, -30, rep 2->1 -> 35%)、
-  // 手表收 (0.2217 < 0.35, -20, rep 1->0) -> money 150, rep 0, deck +守诺 +倒转
+  // Day 3（erhu sentimental, ring sentimental, watch urgent）with C3+P7 rates (rep=2):
+  // 二胡拒 (0.9236 >= 0.40)、婚戒收 (0.3330 < 0.40, -30, rep 2->1)、
+  // 手表(urgent)收 (0.2217 < 0.45, -20, rep 1->-1) -> money 150, rep -1, deck +守诺 +倒转
   const day3Summary = await completeDayPawnshopLow(page, canvas);
   expect(day3Summary.money).toBe(150);
   expect(day3Summary.money).toBeGreaterThanOrEqual(0);
-  expect(day3Summary.reputation).toBe(0);
+  expect(day3Summary.reputation).toBe(-1);
   expect(day3Summary.log.some((entry) => entry.includes('二胡'))).toBe(true);
   expect(day3Summary.deck).toEqual(['倒转', '守诺', '旧书', '守诺', '倒转']);
 
@@ -601,14 +601,14 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   const day4Start = await waitForPawnshopPhase(page, 'negotiating');
   expect(day4Start.day).toBe(4);
   expect(day4Start.money).toBe(150);
-  expect(day4Start.reputation).toBe(0);
+  expect(day4Start.reputation).toBe(-1);
   expect(day4Start.itemsOrder).toHaveLength(3);
   expect(day4Start.itemsOrder).toEqual(['watch', 'bicycle', 'erhu']);
-  // Day 4 低价路线（rep=0 -> 30%）：手表拒 (0.9236)、自行车拒 (0.3330)、二胡收 (0.2217, -25) -> money 125, rep -1
+  // Day 4 低价路线（rep=-1）：手表拒 (0.9236 >= 0.35)、自行车拒 (0.3330 >= 0.15)、二胡收 (0.2217 < 0.25, -25) -> money 125, rep -2
   const day4Summary = await completeDayPawnshopLow(page, canvas);
   expect(day4Summary.money).toBe(125);
   expect(day4Summary.money).toBeGreaterThanOrEqual(0);
-  expect(day4Summary.reputation).toBe(-1);
+  expect(day4Summary.reputation).toBe(-2);
   expect(day4Summary.deck).toEqual(['倒转', '守诺', '旧书', '守诺', '倒转', '余音']);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
 
@@ -642,14 +642,14 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   const day5Start = await waitForPawnshopPhase(page, 'negotiating');
   expect(day5Start.day).toBe(5);
   expect(day5Start.money).toBe(125);
-  expect(day5Start.reputation).toBe(-1);
+  expect(day5Start.reputation).toBe(-2);
   expect(day5Start.itemsOrder).toHaveLength(3);
   expect(day5Start.itemsOrder).toEqual(['erhu', 'ring', 'old_book']);
-  // Day 5 低价路线（rep=-1 -> 25%）：二胡拒 (0.9236)、婚戒拒 (0.3330)、旧书收 (0.2217 < 0.25, -10) -> money 115, rep -2
+  // Day 5 低价路线（rep=-2）：二胡拒 (0.9236 >= 0.20)、婚戒拒 (0.3330 >= 0.20)、旧书(urgent)收 (0.2217 < 0.30, -10) -> money 115, rep -4
   const day5Summary = await completeDayPawnshopLow(page, canvas);
   expect(day5Summary.money).toBe(115);
   expect(day5Summary.money).toBeGreaterThanOrEqual(0);
-  expect(day5Summary.reputation).toBe(-2);
+  expect(day5Summary.reputation).toBe(-4);
   expect(day5Summary.deck).toEqual(['倒转', '守诺', '旧书', '守诺', '倒转', '余音', '旧书']);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
 

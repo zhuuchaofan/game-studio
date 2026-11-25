@@ -267,3 +267,29 @@
   - `npx vitest run` 11/11 文件、97/97 单测全部通过；
   - `npm run test:e2e`（Playwright，localhost）25/25 全部通过，无失败请求、无 `pageerror`；
   - Playwright 实测截图已保存于 `/tmp/p6-shots/` 并逐张核查通过（A1 四场景零方框、A2 1/6/3/6/6/6 零遮挡、A3 灰显+钱不够提示、C1 倒转效果说明、C3 口碑提示、C4 赎当界面、C5 心魔出场横幅与胜利叙事句）。
+
+## 2026-11-25 — P7 开源对照落地（feature/p7-open-source-takeaways）
+- **范围**：按 `proto-tasks/10-p7-open-source-takeaways.md` 全部完成 5 大子项、Vite Phaser 分包优化与文档同步，严格遵守协议红线（仅汲取抽象设计、全量自研实现，唯一引入的第三方代码为 MIT 协议的 ZzFX v1.4.0 核心合成函数），未触碰 `.github/workflows/` 与 `fix/custom-domain`：
+  - **子项 1（数据校验器 + `npm run sim` 平衡护栏）**：
+    - 新增 `src/game/validate.ts` 并在常规 `npm test`（`tests/unit/validate.test.ts`）中校验 `cards.json`、`items.json`、`demons.json` 的唯一性、非负参数、卡牌引用、16 色板与心魔回合连续性。
+    - 升级 `src/game/montecarlo.ts` 并新增 CLI 入口 `scripts/sim.mjs`，注册 `npm run sim` 与 `npm run sim:check`（护栏：每心魔胜率 `40%–95%`，7 天常赢玩家第 7 天中位现金流 `≥ 30`，支持 `SIM_TUNE='{"demonAHp":22}'` 热覆盖实验）。
+    - 当前基线 `npm run sim:check` 实测：A「药费」**91.3%**（平均 2.99 回合）、B「车票」**82.1%**（3.00 回合）、C「房租」**55.9%**（3.00 回合）、D「学费」**91.3%**（2.99 回合）；7 天全体中位现金流 **50.0**、常赢玩家（`≥ 5 胜`，n=870）第 7 天中位现金流 **52.5**（均值 57.6）、平均赎当 **4.61 次**，全部通过护栏。
+  - **子项 2（音频升级：Lookahead 调度 + ZzFX MIT）**：
+    - 保留 `AudioEngine` 手势解锁、静音持久化、无音频环境静默降级与 `__AUDIO_DEBUG__` 断言钩子不变；BGM 调度升级为基于 `ctx.currentTime` 的 100ms Lookahead 排程（25ms 轮询 + 切后台重同步）。
+    - 单文件内联 MIT 协议 **ZzFX v1.4.0** 核心 `zzfxBuildSamples`（压缩后约 1.1 KB，完整 MIT 许可副本存 `docs/licenses/ZzFX-LICENSE.txt` 并登记至 `docs/ASSET_LEDGER.md`），零外部音频文件补齐 6 类新音效：`hit_demon`、`shield_block`、`player_hurt`、`offer_rejected`、`insufficient_funds`、`redeem_deal`。
+  - **子项 3（牌局核心升级：结构化事件流 + `PendingChoice`）**：
+    - `playCard` / `endTurn` / `resolvePendingChoice` / `cancelPendingChoice` 返回 `{ state, events: BattleEvent[] }`（含 `CARD_PLAYED`、`DAMAGE_DEALT`、`SHIELD_GAINED`、`REFLECT_TRIGGERED`、`REWIND_APPLIED`、`DEMON_ACT`、`BATTLE_ENDED` 等）。
+    - `CardBattleScene.ts` 由 **1,151 行瘦身至 1,028 行（−123 行）**，改为事件驱动播放飘字、受击闪红、微震屏与音效；`BattleState` 引入可序列化 `pendingChoice`，「当票」升级为玩家点选具体要弃的手牌（支持取消退回）。
+  - **子项 4（当铺经济深化：性格徽章 + 白话还价反馈 + 经济不变量）**：
+    - `src/data/items.json` 为 6 件旧物分配 `temperament`（旧手表/旧书 `urgent` 急用钱、永久自行车/邮票册 `proud` 爱面子、婚戒/二胡 `sentimental` 念旧），实现三档接受率/口碑修正与念旧者赎当优先；当客卡片顶部展示 2–4 字 16 色像素徽章；新增 `formatOfferDialogue` 替换模板化结算文案；重跑 `scripts/generate-pixel-font.py` 补全新增汉字（`src/data/pixel-font.json` 532 → 629 字形，零方框）；`tests/unit/pawnshop.test.ts` 新增经济不变量属性测试。
+  - **子项 5（正式版扩容底座 + Vite 分包）**：
+    - 新增 `src/game/hooks.ts`（7 个战斗生命周期钩子 + `MAX_HOOK_DEPTH = 32` 深度熔断与日志）。
+    - 升级 `src/game/save.ts` 至 `SAVE_VERSION = 2`，新增 `MIGRATIONS`（`v1 → v2` 顺序迁移）与坏档隔离（损坏存档备份至 `pawnshop-cards-save-corrupt-v1` 并在标题画面提示玩家）。
+    - `vite.config.ts` 增加 `manualChunks` 将 `phaser` 拆出独立缓存 chunk（`phaser-*.js` 1,194.42 kB / `index-*.js` 264.93 kB）。
+  - **文档**：增补 `docs/GAME_DESIGN.md` §15、登记 ZzFX 至 `docs/ASSET_LEDGER.md`、更新 `docs/DECISIONS.md` 与本文件。
+- **验证证据**：
+  - `npx tsc --noEmit` 0 错误；`npm run build` 退出码 0（Phaser 独立成 chunk）；
+  - `npx vitest run` 13/13 文件、111/111 单测全过；
+  - `npm run sim:check` 通过，`SIM_TUNE='{"demonAHp":22}' npm run sim` 验证生效；
+  - `npm run test:e2e`（Playwright，localhost）27/27 全过（含新增 `tests/e2e/p7-features.spec.ts`）；
+  - 浏览器实测截图存 `/tmp/p7-shots/`（7 张）并逐张人工核查通过（坏档隔离提示、三档性格像素徽章与实时接受率提示、1987 还价台词、当票自选弃牌高亮与非最左牌弃置验证、6 类 ZzFX 音效触发）。

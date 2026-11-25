@@ -2,15 +2,16 @@ import balanceJson from '../data/balance.json';
 import type { WinReward } from './battle';
 
 export const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
+export const CORRUPT_SAVE_STORAGE_KEY = 'pawnshop-cards-save-corrupt-v1';
 export const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
 export const AUDIO_STORAGE_KEY = 'pawnshop-cards-audio-v1';
 export const PAWN_PRICES_STORAGE_KEY = 'pawnshop-cards-pawn-prices-v1';
-export const SAVE_VERSION = 1 as const;
+export const SAVE_VERSION = 2 as const;
 
 export type PawnPriceLedger = Record<string, number[]>;
 
 export interface SaveData {
-  version: 1;
+  version: 2;
   day: number;
   money: number;
   reputation: number;
@@ -19,6 +20,33 @@ export interface SaveData {
   redeemTickets: number;
   /** Optional backward-compatible tutorial completion flag (defaults to incomplete when omitted). */
   tutorialCompleted?: boolean;
+}
+
+export interface SaveMigration {
+  from: number;
+  to: number;
+  migrate: (raw: Record<string, unknown>) => Record<string, unknown>;
+}
+
+/**
+ * Ordered sequential save schema migrations.
+ * v1 -> v2: placeholder schema version bump preparing for future deck card instances & merged pawnPrices.
+ */
+export const MIGRATIONS: readonly SaveMigration[] = [
+  {
+    from: 1,
+    to: 2,
+    migrate: (raw) => ({
+      ...raw,
+      version: 2,
+    }),
+  },
+];
+
+export interface SaveLoadResult {
+  save: SaveData | null;
+  migratedFrom: number | null;
+  quarantinedCorrupt: boolean;
 }
 
 export interface SaveBalanceConfig {
@@ -60,7 +88,7 @@ function getDefaultStorage(): StorageLike | null {
 }
 
 function isValidSaveData(raw: unknown): raw is SaveData {
-  if (typeof raw !== 'object' || raw === null) {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return false;
   }
   const obj = raw as Record<string, unknown>;
@@ -94,9 +122,70 @@ function isValidSaveData(raw: unknown): raw is SaveData {
 }
 
 /**
+ * Runs ordered MIGRATIONS on a parsed save payload until it reaches SAVE_VERSION.
+ * Returns null if the version is unsupported or no migration path exists.
+ */
+export function migrateSaveData(
+  raw: unknown,
+  migrations: readonly SaveMigration[] = MIGRATIONS,
+): { data: Record<string, unknown>; migratedFrom: number | null } | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return null;
+  }
+  let current: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  const initialVersion = current.version;
+  if (typeof initialVersion !== 'number' || !Number.isInteger(initialVersion)) {
+    return null;
+  }
+  if (initialVersion > SAVE_VERSION) {
+    return null;
+  }
+
+  let version = initialVersion;
+  let steps = 0;
+  const maxSteps = migrations.length + 1;
+
+  while (version < SAVE_VERSION && steps < maxSteps) {
+    const migration = migrations.find((m) => m.from === version);
+    if (!migration) {
+      return null;
+    }
+    current = migration.migrate(current);
+    version = typeof current.version === 'number' ? current.version : migration.to;
+    steps += 1;
+  }
+
+  if (version !== SAVE_VERSION) {
+    return null;
+  }
+
+  return {
+    data: current,
+    migratedFrom: initialVersion < SAVE_VERSION ? initialVersion : null,
+  };
+}
+
+/**
+ * Copies a corrupted raw save string into the quarantine key without throwing.
+ */
+export function quarantineCorruptSave(raw: string, storage?: StorageLike | null): void {
+  const store = storage === undefined ? getDefaultStorage() : storage;
+  if (!store) {
+    return;
+  }
+  try {
+    store.setItem(CORRUPT_SAVE_STORAGE_KEY, raw);
+  } catch {
+    // Ignore storage quota/access errors
+  }
+}
+
+/**
  * Creates a fresh Day 1 save record using balance.json starting fields.
  */
-export function createNewGame(balance: Pick<SaveBalanceConfig, 'startingMoney' | 'startingReputation'> = SAVE_BALANCE): SaveData {
+export function createNewGame(
+  balance: Pick<SaveBalanceConfig, 'startingMoney' | 'startingReputation'> = SAVE_BALANCE,
+): SaveData {
   return {
     version: SAVE_VERSION,
     day: 1,
@@ -109,43 +198,67 @@ export function createNewGame(balance: Pick<SaveBalanceConfig, 'startingMoney' |
 }
 
 /**
- * Loads save data from storage. Returns null on missing, corrupted JSON, or version mismatch.
+ * Loads save data from storage with sequential version migration and corrupt-save quarantine.
+ * On read/parse/validation failure, copies raw payload into CORRUPT_SAVE_STORAGE_KEY.
  */
-export function loadSave(storage?: StorageLike | null): SaveData | null {
+export function loadSaveDetailed(storage?: StorageLike | null): SaveLoadResult {
   const store = storage === undefined ? getDefaultStorage() : storage;
   if (!store) {
-    return null;
+    return { save: null, migratedFrom: null, quarantinedCorrupt: false };
+  }
+
+  let raw: string | null = null;
+  try {
+    raw = store.getItem(SAVE_STORAGE_KEY);
+  } catch {
+    return { save: null, migratedFrom: null, quarantinedCorrupt: false };
+  }
+
+  if (!raw) {
+    return { save: null, migratedFrom: null, quarantinedCorrupt: false };
   }
 
   try {
-    const raw = store.getItem(SAVE_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
     const parsed: unknown = JSON.parse(raw);
-    if (!isValidSaveData(parsed)) {
-      return null;
+    const migrated = migrateSaveData(parsed);
+    if (!migrated || !isValidSaveData(migrated.data)) {
+      quarantineCorruptSave(raw, store);
+      return { save: null, migratedFrom: null, quarantinedCorrupt: true };
     }
+
+    const valid = migrated.data;
     const loaded: SaveData = {
       version: SAVE_VERSION,
-      day: Math.floor(parsed.day),
-      money: parsed.money,
-      reputation: parsed.reputation,
-      deck: [...parsed.deck],
-      shopLevel: Math.floor(parsed.shopLevel),
-      redeemTickets: Math.floor(parsed.redeemTickets),
+      day: Math.floor(valid.day),
+      money: valid.money,
+      reputation: valid.reputation,
+      deck: [...valid.deck],
+      shopLevel: Math.floor(valid.shopLevel),
+      redeemTickets: Math.floor(valid.redeemTickets),
     };
-    if (typeof parsed.tutorialCompleted === 'boolean') {
-      loaded.tutorialCompleted = parsed.tutorialCompleted;
+    if (typeof valid.tutorialCompleted === 'boolean') {
+      loaded.tutorialCompleted = valid.tutorialCompleted;
     }
-    return loaded;
+    return {
+      save: loaded,
+      migratedFrom: migrated.migratedFrom,
+      quarantinedCorrupt: false,
+    };
   } catch {
-    return null;
+    quarantineCorruptSave(raw, store);
+    return { save: null, migratedFrom: null, quarantinedCorrupt: true };
   }
 }
 
 /**
- * Persists save data into storage.
+ * Loads save data from storage. Migrates older versions automatically; quarantines corrupt saves and returns null.
+ */
+export function loadSave(storage?: StorageLike | null): SaveData | null {
+  return loadSaveDetailed(storage).save;
+}
+
+/**
+ * Persists save data into storage at current SAVE_VERSION.
  */
 export function saveGame(data: SaveData, storage?: StorageLike | null): void {
   const store = storage === undefined ? getDefaultStorage() : storage;
@@ -172,11 +285,6 @@ export function saveGame(data: SaveData, storage?: StorageLike | null): void {
   }
 }
 
-/**
- * Reads whether the Day 1 tutorial has been completed or skipped.
- * Checks the dedicated tutorial key first and falls back to optional SaveData.tutorialCompleted.
- * Defaults to false when absent or unreadable.
- */
 export function loadTutorialDone(storage?: StorageLike | null): boolean {
   const store = storage === undefined ? getDefaultStorage() : storage;
   if (!store) {
@@ -199,9 +307,6 @@ export function loadTutorialDone(storage?: StorageLike | null): boolean {
   return existing?.tutorialCompleted === true;
 }
 
-/**
- * Persists the tutorial completion flag in storage without altering existing SaveData shape.
- */
 export function saveTutorialDone(done: boolean, storage?: StorageLike | null): void {
   const store = storage === undefined ? getDefaultStorage() : storage;
   if (!store) {
@@ -219,16 +324,10 @@ export function saveTutorialDone(done: boolean, storage?: StorageLike | null): v
   }
 }
 
-/**
- * Clears the persisted tutorial completion mark.
- */
 export function clearTutorialDone(storage?: StorageLike | null): void {
   saveTutorialDone(false, storage);
 }
 
-/**
- * Reads persisted audio mute state from storage. Defaults to false (sound ON).
- */
 export function loadAudioMuted(storage?: StorageLike | null): boolean {
   const store = storage === undefined ? getDefaultStorage() : storage;
   if (!store) {
@@ -250,9 +349,6 @@ export function loadAudioMuted(storage?: StorageLike | null): boolean {
   return false;
 }
 
-/**
- * Persists audio mute state into storage without altering SaveData shape.
- */
 export function saveAudioMuted(muted: boolean, storage?: StorageLike | null): void {
   const store = storage === undefined ? getDefaultStorage() : storage;
   if (!store) {
@@ -266,10 +362,6 @@ export function saveAudioMuted(muted: boolean, storage?: StorageLike | null): vo
   }
 }
 
-/**
- * Loads historical pawn deal prices keyed by cardName (used by C4 redemption).
- * Stored in a dedicated key to preserve strict SaveData v1 backward compatibility.
- */
 export function loadPawnPrices(storage?: StorageLike | null): PawnPriceLedger {
   const store = storage === undefined ? getDefaultStorage() : storage;
   if (!store) {
@@ -380,9 +472,6 @@ export function consumePawnPrice(ledger: PawnPriceLedger, cardName: string): Paw
   return next;
 }
 
-/**
- * Removes saved data from storage.
- */
 export function clearSave(storage?: StorageLike | null): void {
   const store = storage === undefined ? getDefaultStorage() : storage;
   if (!store) {
@@ -396,11 +485,6 @@ export function clearSave(storage?: StorageLike | null): void {
   }
 }
 
-/**
- * Pure immutable transition applying night battle outcome to SaveData.
- * - Win: +money, +new card (if any), +redeemTickets, shopLevel +1, day +1
- * - Lose: only day +1 (deck/money/reputation/shopLevel/redeemTickets unchanged)
- */
 export function applyDayResult(save: SaveData, result: DayResultInput): SaveData {
   const baseTutorial =
     typeof save.tutorialCompleted === 'boolean'
@@ -434,10 +518,6 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
   };
 }
 
-/**
- * Computes max renqing for a given shop level:
- * min(renqingBase + (shopLevel - 1) * renqingPerLevel, renqingCap).
- */
 export function maxRenqingForLevel(
   shopLevel: number,
   balance: Pick<SaveBalanceConfig, 'renqingBase' | 'renqingPerLevel' | 'renqingCap'> = SAVE_BALANCE,
@@ -451,10 +531,6 @@ export type DemonId = 'a' | 'b' | 'c' | 'd';
 
 const DEMON_ROTATION: readonly DemonId[] = ['a', 'b', 'c', 'd'];
 
-/**
- * Night demon rotation rule: Day 1 -> 'a' (药费), Day 2 -> 'b' (车票),
- * Day 3 -> 'c' (房租), Day 4 -> 'd' (学费), cycling A -> B -> C -> D from Day 5 onward.
- */
 export function demonIdForDay(day: number): DemonId {
   const normalizedDay = Math.max(1, Math.floor(day));
   return DEMON_ROTATION[(normalizedDay - 1) % DEMON_ROTATION.length];
