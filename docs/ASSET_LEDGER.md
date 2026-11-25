@@ -11,13 +11,13 @@
 | 来源 URL | https://github.com/TakWolf/fusion-pixel-font/releases/tag/2026.11.10 |
 | 作者 | TakWolf（https://takwolf.com） |
 | 许可证 | SIL Open Font License 1.1（OFL-1.1），许可全文副本见 [OFL.txt](./fonts/OFL.txt)（构建脚本本身按 MIT 许可） |
-| 用途 | 游戏内全部场景文字的位图字体渲染（经 `scripts/generate-pixel-font.py` 生成点阵 JSON `src/data/pixel-font.json`，运行时渲染为 Phaser `BitmapText` 位图字体；原始 TTF 不入库） |
+| 用途 | 游戏内全部场景文字的位图字体渲染（经 `scripts/generate-pixel-font.py` 生成点阵 JSON `src/data/pixel-font.json`，运行时渲染为 Phaser `BitmapText` 位图字体；原始 TTF 不入库）。运行时正文以 24px、英文标题以 48px 显示：12px 图集经 Phaser `BitmapText` 整数 2×/4× 放大（NEAREST），源 TTF 仍为 12px，未重新生成 24px 字库 |
 | 是否修改 | 仅按项目用字子集化并做 12px 阈值二值化（灰度 > 128）转为 1-bit 点阵 JSON，未修改任何字形设计 |
-| 上游第三方许可 | Fusion Pixel 缝合自以下上游开源像素字体，随官方发布包附带于 `LICENSES/`，全部为 SIL OFL 1.1：<br>1. **Ark Pixel Font**（TakWolf，https://github.com/TakWolf/ark-pixel-font ）— SIL OFL 1.1（`LICENSES/ark-pixel/OFL.txt`）<br>2. **Cubic 11（俐方體 11 號）**（含 JF Dot M+H 12 / M+ BITMAP FONTS 声明）— SIL OFL 1.1（`LICENSES/cubic-11/OFL.txt`）<br>3. **Galmuri**（Copyright (c) 2019–2025 Lee Minseo）— SIL OFL 1.1（`LICENSES/galmuri/LICENSE.txt`） |
+| 上游第三方许可 | Fusion Pixel 缝合自以下上游开源像素字体（下列 `LICENSES/` 路径指上游官方发布包内目录；本仓库统一将 SIL OFL 1.1 许可全文副本存放在 [docs/fonts/OFL.txt](./fonts/OFL.txt)，音频合成许可存放在 [docs/licenses/ZzFX-LICENSE.txt](./licenses/ZzFX-LICENSE.txt)）：<br>1. **Ark Pixel Font**（TakWolf，https://github.com/TakWolf/ark-pixel-font ）— SIL OFL 1.1（上游发布包 `LICENSES/ark-pixel/OFL.txt`）<br>2. **Cubic 11（俐方體 11 號）**（含 JF Dot M+H 12 / M+ BITMAP FONTS 声明）— SIL OFL 1.1（上游发布包 `LICENSES/cubic-11/OFL.txt`）<br>3. **Galmuri**（Copyright (c) 2019–2025 Lee Minseo）— SIL OFL 1.1（上游发布包 `LICENSES/galmuri/LICENSE.txt`） |
 
 ## 像素插画
 
-- `src/data/pixelart.ts`（20 张原型牌面 32×32 + 3 件旧物 32×32 + 2 个心魔 32×32）：项目原创逐像素手绘点阵，仅使用 `docs/ART_STYLE.md` 定稿 16 色调色板，未使用任何外部图片素材或 AI 生图。
+- `src/data/pixelart.ts`（23 张牌面 32×32 + 6 件旧物 32×32 + 5 个心魔 32×32）：项目原创逐像素手绘点阵，仅使用 `docs/ART_STYLE.md` 定稿 16 色调色板，未使用任何外部图片素材或 AI 生图；在 640×360 画布下，源数据仍为 32×32，由 `src/game/pixelart.ts` 的 `pixelRowsToTexture` 统一按 2×2 最近邻块绘制渲染为 64×64 纹理。
 
 ## 音频合成算法
 

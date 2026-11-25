@@ -10,13 +10,22 @@ import {
   maxRenqingForLevel,
   saveGame,
 } from '../game/save';
+import {
+  TITLE_CALENDAR_BUTTON,
+  TITLE_CONTINUE_BUTTON,
+  TITLE_START_BUTTON,
+  TITLE_TUTORIAL_BUTTON,
+  TITLE_VOLUME_BUTTON,
+} from '../game/layout';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
-export const TITLE_START_BUTTON = { x: 160, y: 122, width: 96, height: 24 } as const;
-export const TITLE_CONTINUE_BUTTON = { x: 160, y: 156, width: 96, height: 24 } as const;
-export const TITLE_VOLUME_BUTTON = { x: 54, y: 154, width: 60, height: 22 } as const;
-export const TITLE_CALENDAR_BUTTON = { x: 266, y: 122, width: 60, height: 22 } as const;
-export const TITLE_TUTORIAL_BUTTON = { x: 266, y: 154, width: 60, height: 22 } as const;
+export {
+  TITLE_CALENDAR_BUTTON,
+  TITLE_CONTINUE_BUTTON,
+  TITLE_START_BUTTON,
+  TITLE_TUTORIAL_BUTTON,
+  TITLE_VOLUME_BUTTON,
+} from '../game/layout';
 
 export class TitleScene extends Phaser.Scene {
   private handleWindowResize?: () => void;
@@ -57,80 +66,82 @@ export class TitleScene extends Phaser.Scene {
       }),
     };
 
-    // 背景与金色边框卡片（沿用 M0 BootScene 视觉风格）
+    // 背景与金色边框卡片（640×360 16 色像素风）
     this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.ink.num);
     this.add
-      .rectangle(centerX, centerY, BASE_WIDTH - 16, BASE_HEIGHT - 16, PALETTE.deepWood.num)
-      .setStrokeStyle(2, PALETTE.brass.num);
+      .rectangle(centerX, centerY, BASE_WIDTH - 32, BASE_HEIGHT - 32, PALETTE.deepWood.num)
+      .setStrokeStyle(4, PALETTE.brass.num);
 
     // 四角黄铜像素点缀
-    const cornerInset = 12;
-    this.add.rectangle(cornerInset, cornerInset, 4, 4, PALETTE.lampYellow.num);
-    this.add.rectangle(BASE_WIDTH - cornerInset, cornerInset, 4, 4, PALETTE.lampYellow.num);
-    this.add.rectangle(cornerInset, BASE_HEIGHT - cornerInset, 4, 4, PALETTE.lampYellow.num);
+    const cornerInset = 24;
+    this.add.rectangle(cornerInset, cornerInset, 8, 8, PALETTE.lampYellow.num);
+    this.add.rectangle(BASE_WIDTH - cornerInset, cornerInset, 8, 8, PALETTE.lampYellow.num);
+    this.add.rectangle(cornerInset, BASE_HEIGHT - cornerInset, 8, 8, PALETTE.lampYellow.num);
     this.add.rectangle(
       BASE_WIDTH - cornerInset,
       BASE_HEIGHT - cornerInset,
-      4,
-      4,
+      8,
+      8,
       PALETTE.lampYellow.num,
     );
 
-    // 标题：PAWN SHOP CARDS（24px 2× 位图大字）+ 当铺纸牌（12px 金色字）
-    addPixelText(this, centerX, 32, 'PAWN SHOP CARDS', {
-      size: 24,
+    // 标题：PAWN SHOP CARDS（48px 4× 位图大字）+ 当铺纸牌（24px 金色字）
+    addPixelText(this, centerX, 58, 'PAWN SHOP CARDS', {
+      size: 48,
       color: PALETTE.paperWhite.hex,
       origin: 0.5,
     });
 
-    addPixelText(this, centerX, 54, '当铺纸牌', {
-      size: 12,
+    addPixelText(this, centerX, 102, '当铺纸牌', {
       color: PALETTE.lampYellow.hex,
       origin: 0.5,
     });
 
-    this.add.rectangle(centerX, 64, 136, 1, PALETTE.brass.num);
+    this.add.rectangle(centerX, 122, 280, 2, PALETTE.brass.num);
+    this.add.rectangle(centerX - 140, 122, 6, 6, PALETTE.lampYellow.num);
+    this.add.rectangle(centerX + 140, 122, 6, 6, PALETTE.lampYellow.num);
 
     const hasStatusLine =
       loadResult.quarantinedCorrupt ||
       existingSave?.chapter.status === 'failed' ||
       Boolean(existingSave?.chapter.chapter1Completed);
-    const noteCenterY = hasStatusLine ? 81 : 85;
-    const noteHeight = hasStatusLine ? 26 : 30;
+    const noteCenterY = hasStatusLine ? 162 : 172;
+    const noteHeight = hasStatusLine ? 62 : 68;
 
     this.add
-      .rectangle(centerX, noteCenterY, BASE_WIDTH - 36, noteHeight, PALETTE.ink.num)
-      .setStrokeStyle(1, PALETTE.brass.num);
-    addPixelText(this, centerX, noteCenterY - 6, SHOPKEEPER_OPENING_NOTE_LINES[0], {
-      size: 12,
+      .rectangle(centerX, noteCenterY, BASE_WIDTH - 64, noteHeight, PALETTE.ink.num)
+      .setStrokeStyle(2, PALETTE.brass.num);
+    addPixelText(this, centerX, noteCenterY - 14, SHOPKEEPER_OPENING_NOTE_LINES[0], {
       color: PALETTE.candle.hex,
       origin: 0.5,
     });
-    addPixelText(this, centerX, noteCenterY + 6, SHOPKEEPER_OPENING_NOTE_LINES[1], {
-      size: 12,
+    addPixelText(this, centerX, noteCenterY + 14, SHOPKEEPER_OPENING_NOTE_LINES[1], {
       color: PALETTE.lampYellow.hex,
       origin: 0.5,
     });
 
     if (loadResult.quarantinedCorrupt) {
       this.add
-        .rectangle(centerX, 102, 232, 14, PALETTE.ink.num)
-        .setStrokeStyle(1, PALETTE.vermilion.num);
-      addPixelText(this, centerX, 102, '旧存档损坏，已备份隔离', {
-        size: 12,
-        color: PALETTE.vermilion.hex,
+        .rectangle(centerX, 214, 340, 28, PALETTE.vermilion.num)
+        .setStrokeStyle(2, PALETTE.ink.num);
+      addPixelText(this, centerX, 214, '旧存档损坏，已备份隔离', {
+        color: PALETTE.paperWhite.hex,
         origin: 0.5,
       });
     } else if (existingSave?.chapter.status === 'failed') {
-      addPixelText(this, centerX, 102, '第1章未通关 · 可重开第1章', {
-        size: 12,
-        color: PALETTE.vermilion.hex,
+      this.add
+        .rectangle(centerX, 214, 360, 28, PALETTE.vermilion.num)
+        .setStrokeStyle(2, PALETTE.ink.num);
+      addPixelText(this, centerX, 214, '第1章未通关 · 可重开第1章', {
+        color: PALETTE.paperWhite.hex,
         origin: 0.5,
       });
     } else if (existingSave?.chapter.chapter1Completed) {
-      addPixelText(this, centerX, 102, '第1章·已完成', {
-        size: 12,
-        color: PALETTE.jade.hex,
+      this.add
+        .rectangle(centerX, 214, 220, 28, PALETTE.jade.num)
+        .setStrokeStyle(2, PALETTE.ink.num);
+      addPixelText(this, centerX, 214, '第1章·已完成', {
+        color: PALETTE.paperWhite.hex,
         origin: 0.5,
       });
     }
@@ -216,7 +227,7 @@ export class TitleScene extends Phaser.Scene {
         TITLE_VOLUME_BUTTON.height,
         getFill(audio.isMuted()),
       )
-      .setStrokeStyle(1, PALETTE.ink.num)
+      .setStrokeStyle(2, PALETTE.ink.num)
       .setInteractive({ useHandCursor: true });
 
     const label = addPixelText(
@@ -225,7 +236,6 @@ export class TitleScene extends Phaser.Scene {
       TITLE_VOLUME_BUTTON.y,
       getLabel(audio.isMuted()),
       {
-        size: 12,
         color: PALETTE.ink.hex,
         origin: 0.5,
       },
@@ -256,11 +266,10 @@ export class TitleScene extends Phaser.Scene {
   ): void {
     const btn = this.add
       .rectangle(x, y, width, height, fillColor)
-      .setStrokeStyle(1, PALETTE.ink.num)
+      .setStrokeStyle(2, PALETTE.ink.num)
       .setInteractive({ useHandCursor: true });
 
     addPixelText(this, x, y, label, {
-      size: 12,
       color: PALETTE.ink.hex,
       origin: 0.5,
     });

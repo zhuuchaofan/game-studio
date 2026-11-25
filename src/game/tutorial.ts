@@ -23,9 +23,9 @@ export interface TutorialBubblePointer {
 }
 
 export interface TutorialBubbleBox {
-  /** Top-left X in 320x180 logical coordinates. */
+  /** Top-left X in 640x360 logical coordinates. */
   x: number;
-  /** Top-left Y in 320x180 logical coordinates. */
+  /** Top-left Y in 640x360 logical coordinates. */
   y: number;
   width: number;
   height: number;
@@ -90,8 +90,8 @@ export const TUTORIAL_SETTLEMENT_LOSE_LINES: readonly [string, string] = [
  * Day 1 guided tutorial steps in strict gameplay flow order:
  * 1. 收当 -> 2. 报价三档 -> 3. 成交得牌 -> 4. 夜里出牌 -> 5. 人情 -> 6. 结算
  *
- * All bubble rectangles are placed so they never cover the buttons the player
- * needs to click next in 320x180 logical resolution.
+ * All bubble rectangles are placed so they never cover the buttons, reputation bar,
+ * toast, or customer card content in 640x360 logical resolution.
  */
 export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
   pawnshop_intro: {
@@ -105,10 +105,10 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     ],
     continueLabel: '1/6 点击继续',
     box: {
-      x: 6,
-      y: 80,
-      width: 230,
-      height: 56,
+      x: 10,
+      y: 161,
+      width: 476,
+      height: 110,
       theme: 'day',
     },
   },
@@ -119,12 +119,12 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：低价省钱怕谈崩，高价涨口碑，', '平价稳当，挑一档出价吧。'],
     continueLabel: '2/6 点击继续',
     box: {
-      x: 6,
-      y: 80,
-      width: 226,
-      height: 44,
+      x: 10,
+      y: 174,
+      width: 460,
+      height: 88,
       theme: 'day',
-      pointer: { direction: 'down', x: 160 },
+      pointer: { direction: 'down', x: 320 },
     },
   },
   deal_card: {
@@ -134,10 +134,10 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：收下的旧物都变纸牌入牌组，', '留着夜里打心魔；没谈成不扣钱。'],
     continueLabel: '3/6 点击继续',
     box: {
-      x: 12,
-      y: 92,
-      width: 296,
-      height: 44,
+      x: 24,
+      y: 184,
+      width: 592,
+      height: 88,
       theme: 'day',
     },
   },
@@ -148,12 +148,12 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：天黑拉灯，心魔上门了！', '点下方手牌出招，3回合内打掉它20血。'],
     continueLabel: '4/6 点击继续',
     box: {
-      x: 6,
-      y: 64,
-      width: 242,
-      height: 46,
+      x: 44,
+      y: 130,
+      width: 452,
+      height: 88,
       theme: 'night',
-      pointer: { direction: 'down', x: 126 },
+      pointer: { direction: 'down', x: 252 },
     },
   },
   renqing: {
@@ -163,12 +163,12 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: ['掌柜：顶上“人情”就是出牌本钱，', '每回合回满，用完点“结束回合”。'],
     continueLabel: '5/6 点击继续',
     box: {
-      x: 6,
-      y: 64,
-      width: 242,
-      height: 46,
+      x: 44,
+      y: 130,
+      width: 452,
+      height: 88,
       theme: 'night',
-      pointer: { direction: 'up', x: 116 },
+      pointer: { direction: 'up', x: 232 },
     },
   },
   settlement: {
@@ -178,19 +178,19 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     lines: TUTORIAL_SETTLEMENT_WIN_LINES,
     continueLabel: '6/6 点击完成',
     box: {
-      x: 16,
-      y: 90,
-      width: 288,
-      height: 44,
+      x: 32,
+      y: 186,
+      width: 576,
+      height: 88,
       theme: 'night',
     },
   },
 };
 
-const SKIP_BUTTON_WIDTH = 54;
-const SKIP_BUTTON_HEIGHT = 13;
-const SKIP_MARGIN_RIGHT = 6;
-const SKIP_MARGIN_BOTTOM = 2;
+const SKIP_BUTTON_WIDTH = 108;
+const SKIP_BUTTON_HEIGHT = 24;
+const SKIP_MARGIN_RIGHT = 10;
+const SKIP_MARGIN_BOTTOM = 4;
 
 export function getTutorialStepDef(step: TutorialStepId | null): TutorialStepDef | null {
   return step ? TUTORIAL_STEPS[step] : null;
@@ -228,8 +228,8 @@ export function getTutorialBubbleLayout(step: TutorialStepId): TutorialBubbleLay
     centerX,
     centerY,
     continueClickPoint: {
-      x: box.x + 36,
-      y: box.y + 18,
+      x: box.x + 72,
+      y: box.y + 36,
     },
     skipButton: {
       x: skipX,

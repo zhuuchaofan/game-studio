@@ -1,4 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+  PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  PAWNSHOP_TIER_BUTTONS,
+  TITLE_CONTINUE_BUTTON,
+} from '../../src/game/layout';
 import { clickLogical } from './helpers';
 
 interface SaveSnapshot {
@@ -31,11 +36,11 @@ interface PawnshopDebugState {
 const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 
 const BUTTONS = {
-  titleContinue: { x: 160, y: 156 },
-  tierLow: { x: 58, y: 151 },
-  tierFair: { x: 160, y: 151 },
-  tierHigh: { x: 262, y: 151 },
-  nextOrSummary: { x: 160, y: 151 },
+  titleContinue: TITLE_CONTINUE_BUTTON,
+  tierLow: PAWNSHOP_TIER_BUTTONS.low,
+  tierFair: PAWNSHOP_TIER_BUTTONS.fair,
+  tierHigh: PAWNSHOP_TIER_BUTTONS.high,
+  nextOrSummary: PAWNSHOP_FEEDBACK_NEXT_BUTTON,
 } as const;
 
 async function getPawnshopState(page: Page): Promise<PawnshopDebugState> {

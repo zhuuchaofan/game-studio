@@ -1,5 +1,15 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clickLogical, LOGICAL_WIDTH } from './helpers';
+import {
+  BATTLE_END_TURN_BUTTON,
+  BATTLE_HAND_Y,
+  computeHandCardX,
+  PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  PAWNSHOP_TIER_BUTTONS,
+  RESULT_RETURN_BUTTON,
+  TITLE_START_BUTTON,
+} from '../../src/game/layout';
+import { clickLogical, LOGICAL_HEIGHT, LOGICAL_WIDTH } from './helpers';
 
 interface PawnshopDebugState {
   phase: 'title' | 'negotiating' | 'feedback' | 'summary';
@@ -44,19 +54,16 @@ interface BattleDebugState {
   loseReason?: string | null;
 }
 
-const CARD_WIDTH = 48;
-const CARD_GAP = 4;
-const HAND_MARGIN_X = 6;
-const HAND_Y = 144;
+const HAND_Y = BATTLE_HAND_Y;
 
 const BUTTONS = {
-  titleStart: { x: 160, y: 128 },
-  tierLow: { x: 58, y: 151 },
-  tierHigh: { x: 262, y: 151 },
-  nextOrSummary: { x: 160, y: 151 },
-  enterNightBattle: { x: 88, y: 151 },
-  endTurn: { x: 283, y: 95 },
-  resultReturnTitle: { x: 160, y: 148 },
+  titleStart: TITLE_START_BUTTON,
+  tierLow: PAWNSHOP_TIER_BUTTONS.low,
+  tierHigh: PAWNSHOP_TIER_BUTTONS.high,
+  nextOrSummary: PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  enterNightBattle: PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  endTurn: BATTLE_END_TURN_BUTTON,
+  resultReturnTitle: RESULT_RETURN_BUTTON,
 } as const;
 
 const DAMAGE_PRIORITY = ['秤砣', '钢笔', '相机', '弹珠'] as const;
@@ -73,19 +80,6 @@ const CARD_COSTS: Record<string, number> = {
   蒲扇: 1,
   暖水瓶: 1,
 };
-
-function computeHandCardX(index: number, count: number): number {
-  const availableWidth = LOGICAL_WIDTH - HAND_MARGIN_X * 2;
-  const naturalStep = CARD_WIDTH + CARD_GAP;
-  const maxWidth = CARD_WIDTH + (count - 1) * naturalStep;
-  const step =
-    maxWidth <= availableWidth || count === 1
-      ? naturalStep
-      : Math.floor((availableWidth - CARD_WIDTH) / (count - 1));
-  const totalWidth = CARD_WIDTH + (count - 1) * step;
-  const startCenterX = Math.floor((LOGICAL_WIDTH - totalWidth) / 2) + Math.floor(CARD_WIDTH / 2);
-  return startCenterX + index * step;
-}
 
 async function waitForPawnshopPhase(
   page: Page,
@@ -508,12 +502,12 @@ test('completes full flow from P1 Pawnshop summary -> CardBattleScene (real P1 d
   expect(pageErrors).toEqual([]);
 });
 
-test('renders CardBattleScene and ResultScene cleanly on mobile portrait 390x844 viewport', async ({
+test('renders CardBattleScene and ResultScene cleanly on mobile landscape 844x390 viewport', async ({
   page,
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 844, height: 390 });
   await page.goto('/?seed=4&demon=a&deck=test');
   const canvas = page.locator('#game-container canvas');
   await expect(canvas).toBeVisible();
@@ -567,7 +561,7 @@ test('A4: rapid consecutive clicks on two playable cards in the same turn execut
   expect(box).not.toBeNull();
   const toClient = (pt: { x: number; y: number }) => ({
     x: box!.x + (pt.x / LOGICAL_WIDTH) * box!.width,
-    y: box!.y + (pt.y / 180) * box!.height,
+    y: box!.y + (pt.y / LOGICAL_HEIGHT) * box!.height,
   });
 
   const p1 = toClient({ x: x1, y: HAND_Y });

@@ -40,8 +40,27 @@ import {
   type TutorialState,
 } from '../game/tutorial';
 import { createTutorialBubble } from '../game/tutorialBubble';
+import {
+  CHAPTER_FAIL_TITLE_BUTTON,
+  DIARY_CONTINUE_BUTTON,
+  ENDING_EPILOGUE_BUTTON,
+  ENDING_RESTART_BUTTON,
+  ENDING_TITLE_BUTTON,
+  RESULT_NEXT_DAY_BUTTON,
+  RESULT_RETURN_BUTTON,
+} from '../game/layout';
 import { createRngFromUrl } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
+
+export {
+  CHAPTER_FAIL_TITLE_BUTTON,
+  DIARY_CONTINUE_BUTTON,
+  ENDING_EPILOGUE_BUTTON,
+  ENDING_RESTART_BUTTON,
+  ENDING_TITLE_BUTTON,
+  RESULT_NEXT_DAY_BUTTON,
+  RESULT_RETURN_BUTTON,
+} from '../game/layout';
 
 export interface ResultSceneData {
   result: 'win' | 'lose_hp' | 'lose_timeout';
@@ -66,15 +85,6 @@ const RESULT_BALANCE: BattleBalanceConfig = {
   drawPerRound: balanceJson.drawPerRound,
   winRewardMoney: balanceJson.winRewardMoney,
 };
-
-// 保留 (160, 148) 在“返回标题”命中区内，兼容 P2 既有 E2E 测试
-export const RESULT_NEXT_DAY_BUTTON = { x: 88, y: 148, width: 116, height: 24 } as const;
-export const RESULT_RETURN_BUTTON = { x: 222, y: 148, width: 136, height: 24 } as const;
-export const DIARY_CONTINUE_BUTTON = { x: 160, y: 158, width: 116, height: 22 } as const;
-export const ENDING_RESTART_BUTTON = { x: 96, y: 152, width: 116, height: 24 } as const;
-export const ENDING_TITLE_BUTTON = { x: 224, y: 152, width: 116, height: 24 } as const;
-export const ENDING_EPILOGUE_BUTTON = { x: 160, y: 152, width: 120, height: 24 } as const;
-export const CHAPTER_FAIL_TITLE_BUTTON = { x: 160, y: 148, width: 120, height: 24 } as const;
 
 function splitVictoryNarrative(line: string): [string, string] {
   const firstPeriod = line.indexOf('。');
@@ -261,19 +271,19 @@ export class ResultScene extends Phaser.Scene {
     this.contentLayer.add([
       this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.ink.num),
       this.add
-        .rectangle(centerX, 78, 296, 128, PALETTE.candle.num)
-        .setStrokeStyle(2, PALETTE.brass.num),
-      this.add.rectangle(centerX, 24, 292, 18, PALETTE.deepWood.num),
-      addPixelText(this, centerX, 24, `周日休市 · 《${chapterCfg.diary.title}》`, {
+        .rectangle(centerX, 160, 592, 264, PALETTE.candle.num)
+        .setStrokeStyle(4, PALETTE.brass.num),
+      this.add.rectangle(centerX, 50, 584, 34, PALETTE.deepWood.num),
+      addPixelText(this, centerX, 50, `周日休市 · 《${chapterCfg.diary.title}》`, {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
-      addPixelText(this, centerX, 42, chapterCfg.diary.subtitle, {
-        color: PALETTE.copperBrown.hex,
+      addPixelText(this, centerX, 82, chapterCfg.diary.subtitle, {
+        color: PALETTE.deepWood.hex,
         origin: 0.5,
       }),
-      this.add.rectangle(centerX, 52, 260, 1, PALETTE.oldPaper.num),
-      addPixelText(this, 24, 58, wrapCjkText(chapterCfg.diary.body, 22), {
+      this.add.rectangle(centerX, 100, 520, 2, PALETTE.oldPaper.num),
+      addPixelText(this, 48, 112, wrapCjkText(chapterCfg.diary.body, 22), {
         color: PALETTE.ink.hex,
         origin: [0, 0],
         lineSpacing: 3,
@@ -286,9 +296,11 @@ export class ResultScene extends Phaser.Scene {
         ? `本战执念(${ledger.bossFragmentItems.length}块):${ledger.bossFragmentItems.join('·')}`
         : '本战执念:素体(债主只身前来)';
     this.contentLayer.add(
-      addPixelText(this, centerX, 130, diaryObsessionSummary, {
+      addPixelText(this, centerX, 258, wrapCjkText(diaryObsessionSummary, 22), {
         color: PALETTE.vermilion.hex,
         origin: 0.5,
+        align: 1,
+        lineSpacing: 1,
       }),
     );
 
@@ -322,42 +334,42 @@ export class ResultScene extends Phaser.Scene {
     this.contentLayer.add([
       this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.nightBlack.num),
       this.add
-        .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.deepBlue.num)
-        .setStrokeStyle(2, PALETTE.brass.num),
-      this.add.rectangle(centerX, 18, BASE_WIDTH - 24, 18, PALETTE.nightBlack.num),
-      addPixelText(this, centerX, 18, endingTitle, {
+        .rectangle(centerX, centerY, BASE_WIDTH - 40, BASE_HEIGHT - 24, PALETTE.deepBlue.num)
+        .setStrokeStyle(4, PALETTE.brass.num),
+      this.add.rectangle(centerX, 34, BASE_WIDTH - 48, 34, PALETTE.nightBlack.num),
+      addPixelText(this, centerX, 34, endingTitle, {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
       addPixelText(
         this,
         centerX,
-        35,
+        68,
         `${chapterCfg.days}天 · 钱${nextSave.money} · 碑${nextSave.reputation} · 收${nextSave.chapter.pawnsCollected} · 胜${nextSave.chapter.demonsDefeated} · ${nextSave.deck.length}牌`,
         {
-          color: PALETTE.jade.hex,
+          color: PALETTE.candle.hex,
           origin: 0.5,
         },
       ),
       this.add
-        .rectangle(centerX, 90, 284, 88, PALETTE.nightBlack.num)
-        .setStrokeStyle(1, PALETTE.mistBlue.num),
+        .rectangle(centerX, 178, 568, 180, PALETTE.nightBlack.num)
+        .setStrokeStyle(2, PALETTE.mistBlue.num),
     ]);
 
-    // 逐件点名账本（物归原主 / 留柜未赎 / 化作执念），按实际行数推进 Y，零写死、零溢出
-    let cursorY = 50;
-    const lineColors = [PALETTE.jade.hex, PALETTE.candle.hex, PALETTE.vermilion.hex];
+    // 逐件点名账本（物归原主 / 留柜未赎 / 化作执念），按实际行数推进 Y，零写死、零溢出、WCAG>=4.5:1
+    let cursorY = 98;
+    const lineColors = [PALETTE.candle.hex, PALETTE.lampYellow.hex, PALETTE.oldPaper.hex];
     ledger.lines.forEach((rawLine, idx) => {
       const wrapped = wrapCjkText(rawLine, 21);
       const lineCount = wrapped.split('\n').length;
       this.contentLayer.add(
-        addPixelText(this, 24, cursorY, wrapped, {
+        addPixelText(this, 48, cursorY, wrapped, {
           color: lineColors[idx] ?? PALETTE.paperWhite.hex,
           origin: [0, 0],
           lineSpacing: 1,
         }),
       );
-      cursorY += lineCount * 13 + 3;
+      cursorY += lineCount * 26 + 6;
     });
 
     if (nextSave.chapter.currentChapter >= 3) {
@@ -413,29 +425,29 @@ export class ResultScene extends Phaser.Scene {
     this.contentLayer.add([
       this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.ink.num),
       this.add
-        .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.candle.num)
-        .setStrokeStyle(2, PALETTE.brass.num),
-      this.add.rectangle(centerX, 20, BASE_WIDTH - 24, 18, PALETTE.deepWood.num),
-      addPixelText(this, centerX, 20, MONTH_END_EPILOGUE_TITLE, {
+        .rectangle(centerX, centerY, BASE_WIDTH - 40, BASE_HEIGHT - 24, PALETTE.candle.num)
+        .setStrokeStyle(4, PALETTE.brass.num),
+      this.add.rectangle(centerX, 36, BASE_WIDTH - 48, 34, PALETTE.deepWood.num),
+      addPixelText(this, centerX, 36, MONTH_END_EPILOGUE_TITLE, {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
     ]);
 
-    let cursorY = 36;
+    let cursorY = 68;
     epilogueLines.forEach((rawLine, idx) => {
       const wrapped = wrapCjkText(rawLine, 22);
       const lineCount = wrapped.split('\n').length;
       const color =
         idx === 0 || idx === epilogueLines.length - 1 ? PALETTE.ink.hex : PALETTE.deepWood.hex;
       this.contentLayer.add(
-        addPixelText(this, 22, cursorY, wrapped, {
+        addPixelText(this, 44, cursorY, wrapped, {
           color,
           origin: [0, 0],
           lineSpacing: 1,
         }),
       );
-      cursorY += lineCount * 13 + 3;
+      cursorY += lineCount * 26 + 6;
     });
 
     this.createResultButton(
@@ -472,22 +484,25 @@ export class ResultScene extends Phaser.Scene {
     this.contentLayer.add([
       this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.nightBlack.num),
       this.add
-        .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.deepBlue.num)
-        .setStrokeStyle(2, PALETTE.vermilion.num),
-      this.add.rectangle(centerX, 20, BASE_WIDTH - 24, 20, PALETTE.nightBlack.num),
-      addPixelText(this, centerX, 20, '章节失败 · 第1章未通关', {
-        color: PALETTE.vermilion.hex,
-        origin: 0.5,
-      }),
-      addPixelText(this, centerX, 54, `大心魔「${demonName}」未能击退`, {
+        .rectangle(centerX, centerY, BASE_WIDTH - 40, BASE_HEIGHT - 24, PALETTE.deepBlue.num)
+        .setStrokeStyle(4, PALETTE.vermilion.num),
+      this.add.rectangle(centerX, 38, BASE_WIDTH - 48, 36, PALETTE.vermilion.num),
+      addPixelText(this, centerX, 38, '章节失败 · 第1章未通关', {
         color: PALETTE.paperWhite.hex,
         origin: 0.5,
       }),
-      addPixelText(this, centerX, 78, `失败原因：${loseReason}`, {
-        color: PALETTE.vermilion.hex,
+      addPixelText(this, centerX, 108, `大心魔「${demonName}」未能击退`, {
+        color: PALETTE.paperWhite.hex,
         origin: 0.5,
       }),
-      addPixelText(this, centerX, 106, '钱与牌组未扣除，可回标题重开第1章', {
+      this.add
+        .rectangle(centerX, 156, 400, 34, PALETTE.vermilion.num)
+        .setStrokeStyle(2, PALETTE.ink.num),
+      addPixelText(this, centerX, 156, `失败原因：${loseReason}`, {
+        color: PALETTE.paperWhite.hex,
+        origin: 0.5,
+      }),
+      addPixelText(this, centerX, 212, '钱与牌组未扣除，可回标题重开第1章', {
         color: PALETTE.silverBlue.hex,
         origin: 0.5,
       }),
@@ -519,60 +534,75 @@ export class ResultScene extends Phaser.Scene {
     const centerX = Math.floor(BASE_WIDTH / 2);
     const centerY = Math.floor(BASE_HEIGHT / 2);
 
-    // 夜里深蓝结算背景与卡片
+    // 夜里深蓝结算背景与卡片（所有正文排布在 y=16..180，严格避开 6/6 气泡 y=186..274 与底部按钮 y=286..334）
     this.contentLayer.add([
       this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.nightBlack.num),
       this.add
-        .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.deepBlue.num)
-        .setStrokeStyle(1, result === 'win' ? PALETTE.brass.num : PALETTE.mistBlue.num),
-      // 顶部紧凑标题条（y=8..22，所有结算、C5 胜利叙事与 P10 白天变化排布在 y=8..87，避开 6/6 气泡 y=90..134）
-      this.add.rectangle(centerX, 15, BASE_WIDTH - 22, 14, PALETTE.nightBlack.num),
-      addPixelText(this, 18, 15, result === 'win' ? '赢了！' : '心魔还在……', {
-        color: result === 'win' ? PALETTE.lampYellow.hex : PALETTE.vermilion.hex,
-        origin: [0, 0.5],
-      }),
-      addPixelText(this, BASE_WIDTH - 18, 15, `第${currentSave.day}天 · 当铺Lv.${nextSave.shopLevel}`, {
+        .rectangle(centerX, centerY, BASE_WIDTH - 40, BASE_HEIGHT - 24, PALETTE.deepBlue.num)
+        .setStrokeStyle(2, result === 'win' ? PALETTE.brass.num : PALETTE.mistBlue.num),
+      this.add.rectangle(centerX, 30, BASE_WIDTH - 44, 28, PALETTE.nightBlack.num),
+    ]);
+
+    if (result === 'win') {
+      this.contentLayer.add(
+        addPixelText(this, 36, 30, '赢了！', {
+          color: PALETTE.lampYellow.hex,
+          origin: [0, 0.5],
+        }),
+      );
+    } else {
+      this.contentLayer.add([
+        this.add.rectangle(108, 30, 152, 24, PALETTE.vermilion.num),
+        addPixelText(this, 108, 30, '心魔还在……', {
+          color: PALETTE.paperWhite.hex,
+          origin: 0.5,
+        }),
+      ]);
+    }
+
+    this.contentLayer.add(
+      addPixelText(this, BASE_WIDTH - 36, 30, `第${currentSave.day}天 · 当铺Lv.${nextSave.shopLevel}`, {
         color: PALETTE.silverBlue.hex,
         origin: [1, 0.5],
       }),
-    ]);
+    );
 
     if (result === 'win' && reward) {
       const moneyTag = reward.allOwnedBonus
         ? `得钱+${reward.money}(全牌加赠)`
         : `得钱:+${reward.money}`;
       this.contentLayer.add([
-        addPixelText(this, 20, 29, `击败心魔「${demonName}」`, {
-          color: PALETTE.jade.hex,
+        addPixelText(this, 40, 58, `击败心魔「${demonName}」`, {
+          color: PALETTE.candle.hex,
           origin: [0, 0.5],
         }),
-        addPixelText(this, BASE_WIDTH - 20, 29, moneyTag, {
+        addPixelText(this, BASE_WIDTH - 40, 58, moneyTag, {
           color: PALETTE.lampYellow.hex,
           origin: [1, 0.5],
         }),
-        addPixelText(this, 20, 41, reward.cardName ? `得牌:${reward.cardName}` : '全牌已集齐', {
+        addPixelText(this, 40, 82, reward.cardName ? `得牌:${reward.cardName}` : '全牌已集齐', {
           color: PALETTE.paperWhite.hex,
           origin: [0, 0.5],
         }),
-        addPixelText(this, BASE_WIDTH - 20, 41, `赎当券×${reward.redeemTicket}`, {
+        addPixelText(this, BASE_WIDTH - 40, 82, `赎当券×${reward.redeemTicket}`, {
           color: PALETTE.brass.hex,
           origin: [1, 0.5],
         }),
-        this.add.rectangle(centerX, 49, BASE_WIDTH - 36, 1, PALETTE.nightBlue.num),
+        this.add.rectangle(centerX, 98, BASE_WIDTH - 72, 2, PALETTE.nightBlue.num),
       ]);
 
-      // C5 + P10 子项 5：按心魔显示胜利叙事句 + 白天世界实情（不报喜不报忧），置于 y=51..87，完全避开 6/6 气泡 y=90..134
+      // C5 + P10 子项 5：胜利叙事句 + 白天世界实情，置于 y=114..174，完全避开 6/6 气泡 y=186..274
       if (victoryLine) {
         const [line1, line2] = splitVictoryNarrative(victoryLine);
         this.contentLayer.add(
-          addPixelText(this, centerX, 57, line1, {
+          addPixelText(this, centerX, 114, line1, {
             color: PALETTE.candle.hex,
             origin: 0.5,
           }),
         );
         if (line2) {
           this.contentLayer.add(
-            addPixelText(this, centerX, 69, line2, {
+            addPixelText(this, centerX, 138, line2, {
               color: PALETTE.paperWhite.hex,
               origin: 0.5,
             }),
@@ -581,7 +611,7 @@ export class ResultScene extends Phaser.Scene {
       }
       if (aftermathLine) {
         this.contentLayer.add(
-          addPixelText(this, centerX, 81, aftermathLine, {
+          addPixelText(this, centerX, 162, aftermathLine, {
             color: PALETTE.silverBlue.hex,
             origin: 0.5,
           }),
@@ -589,12 +619,15 @@ export class ResultScene extends Phaser.Scene {
       }
     } else {
       this.contentLayer.add([
-        addPixelText(this, centerX, 42, `心魔「${demonName}」未能平息`, {
+        addPixelText(this, centerX, 84, `心魔「${demonName}」未能平息`, {
           color: PALETTE.silverBlue.hex,
           origin: 0.5,
         }),
-        addPixelText(this, centerX, 62, `失败原因：${loseReason ?? ''}`, {
-          color: PALETTE.vermilion.hex,
+        this.add
+          .rectangle(centerX, 128, 360, 34, PALETTE.vermilion.num)
+          .setStrokeStyle(2, PALETTE.ink.num),
+        addPixelText(this, centerX, 128, `失败原因：${loseReason ?? ''}`, {
+          color: PALETTE.paperWhite.hex,
           origin: 0.5,
         }),
       ]);
@@ -677,7 +710,7 @@ export class ResultScene extends Phaser.Scene {
   ): void {
     const btn = this.add
       .rectangle(x, y, width, height, PALETTE.nightBlack.num)
-      .setStrokeStyle(1, PALETTE.brass.num)
+      .setStrokeStyle(2, PALETTE.brass.num)
       .setInteractive({ useHandCursor: true });
 
     const txt = addPixelText(this, x, y, label, {

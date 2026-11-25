@@ -1,5 +1,5 @@
-export const BASE_WIDTH = 320;
-export const BASE_HEIGHT = 180;
+export const BASE_WIDTH = 640;
+export const BASE_HEIGHT = 360;
 
 export interface ScaledDimensions {
   scale: number;

@@ -352,3 +352,17 @@
   - **sim 与护栏**：`montecarlo.ts` 新增 `simulateBossCompositionScan`（`n = 0..6` 赊账开关、6 单件敏感性、逐件赎当削弱路径、邮票册阈值 14 专项、`TEST_DECK` 对照）与 7 项组合护栏，全部实测通过（典型档 `41.4%–60.1%`、素体 `68.8%`、满配+赊账 48 血 `27.7%`、通关率 `46.2%`、邮票册打断率 `25.3%`、首夜回归 `28.5% / 8.8%`）。
   - **字形与测试**：重跑 `scripts/generate-pixel-font.py` 补全全部新增汉字（`src/data/pixel-font.json` 774 字形，169.9 KB）；新增 `tests/unit/p11-boss-composition.test.ts`（8 用例）与 `tests/e2e/p11-boss-composition.spec.ts`（5 用例），适配 `tests/e2e/p9-chapter-one.spec.ts` 与 `tests/e2e/p10-first-two-days.spec.ts`；全套单测（134/134）、全套 E2E 与 `npm run sim:check` 通过，并逐张目视核查 `test-results/p11-*.png` 截图（320×180 无溢出、无遮挡、无方框字）。
 
+## 2026-11-25 — 画布放大到 640×360 与全屏重排（feature/canvas-640x360）
+- **范围**：按 `proto-tasks/15-canvas-640x360.md` 与 §12.0 拍板决定（Q1=A / Q2=A / Q3=B / Q4=A / Q5=A / Q6=A / Q7=A），单独立项完成逻辑画布放大与全屏重新分区，严格遵守 §8 排除项（未改任何玩法、数值、护栏、音频、存档 v3、`src/data/*.json` 与 `.github/workflows/`）：
+  - **画布与缩放（Q1=A）**：`src/utils/scale.ts` `BASE_WIDTH/BASE_HEIGHT` 320×180 → 640×360；`index.html` 与 `src/main.ts` 将 390×844 竖屏升级为全屏横屏提示遮罩 `#portrait-hint`（「请横屏游玩」，隐藏 `#game-container`、不可游玩、零横向溢出），横屏 844×390（1×=640×360）、窄窗口 800×500（1×=640×360）、桌面 1280×720（2×=1280×720）自动恢复整数倍缩放；`TransitionScene.ts` 拉灯色带与拉绳等比放大 2×。
+  - **全屏重排与布局单一事实来源（Q6=A / Q7=A）**：新增 `src/game/layout.ts` 统一导出全场景按钮、台历格与牌框常量，重排 `TitleScene`、`PawnshopScene`、`CardBattleScene`、`CalendarMapScene`、`ResultScene` 与 `tutorial.ts`/`tutorialBubble.ts`，保持既有中文折行字符数（18/20/17/22/21）不变并消化留白与间距；一并根治 §3.1 五处布局遗留（① 标题交代框纯折行留白不切「掌」字；② 白天掌柜交代横幅移至 `y=167..227` 卡片下方且教程期不弹、点消/不可用按钮兜底关闭；③ 台历第 7 格「大心魔」改灯黄字 CR 9.25:1、详情行 1 改灯黄字 CR 8.15:1、夜里「意图」改银蓝字 CR 7.24:1；④ 1/6 气泡 `y=161..271` 与口碑条 `y=274..298` 分离；⑤ 「钱不够」Toast 移至右侧空档 `x=498..626, y=182..214`）。
+  - **字体与像素画 2×（Q2=A / Q3=B / Q4=A / Q5=A）**：`src/game/pixelFont.ts` 默认字号 12→24、类型扩至 `12 | 24 | 48`、`TitleScene` 英文标题升至 48px（`pixel-font.json` 774 字形不变）；`src/game/pixelart.ts` `pixelRowsToTexture` 集中按 2×2 最近邻绘制 64×64 纹理；全场景 `setStrokeStyle` 1→2；牌框 `96×128` 保留 `computeHandCardX` 重叠逻辑。
+  - **测试与文档同步**：`tests/e2e/helpers.ts` 改为从 `src/utils/scale.ts` 导入 `BASE_WIDTH/BASE_HEIGHT`（并新增一致性单测），14 个坐标 E2E spec 统一改为导入 `src/game/layout.ts` 常量，重写 `portrait.spec.ts`、更新 `smoke.spec.ts` 与 `tests/unit/{pixelart,scale,tutorial}.test.ts`；同步更新 `docs/ART_STYLE.md`、`docs/ASSET_LEDGER.md`、`docs/GAME_DESIGN.md`（§20）、`proto-tasks/15-canvas-640x360.md`、`p0-research/13-development-roadmap.md`（§4.5）与本文件。
+- **验证证据**：
+  - `npx tsc --noEmit`：0 错误；
+  - `npm run build`：退出码 0（`dist/index.html` 2.19 kB、`rolldown-runtime-*.js` 0.59 kB、`index-*.js` 362.46 kB、`phaser-*.js` 1,194.42 kB）；
+  - `npx vitest run`：15/15 文件、135/135 单测全过；
+  - `npm run test:e2e`（Playwright，localhost）：42/42 全过（含 `subpath`、`portrait` 与重排后全流程）；
+  - `npm run sim:check`：PASSED（A 91.3% / B 82.1% / C 55.9% / D 91.3%，素体 n=0 68.8%、n=2–5 60.1%/56.0%/51.6%/41.4%、n=6 32.5%、n=6+赊账 48 血 27.7%、7 天通关率 46.2%、邮票册打断率 25.3%、常赢第 7 天中位现金 57.0、新玩家首夜 28.5% / 单攻击牌 8.8% / 双攻击牌 100.0%）；
+  - **本地截图目视核查（`/tmp/canvas-screenshots/`，27 张，临时 spec 已删）**：覆盖标题（默认/续关+状态条）、白天收当（1/6、2/6+钱不够 Toast、掌柜横幅、3/6 成交反馈、第 3 天结算+风声、第 4 天契约/删牌、第 2 天新娘、第 6 天暗当、第 7 天封门预告/父亲）、台历（第 7 天 6 组件 48 血）、夜里牌局（开场+4/6、[故] 故事、`当票` 选牌、6 组件 Boss 开场）、日记页、第 1/3 章结局账本、第 3 章月末尾声、章节失败、普通胜负结算及 390×844 / 844×390 / 800×500 三视口（全部零溢出、零遮挡、零截断、零缺字；目视微调了第 3 天结算多行牌组间距、契约代价下边距、台历 28×28 执念徽章框与牌局 `[故]`/`[效]` 详情框左边界）。
+

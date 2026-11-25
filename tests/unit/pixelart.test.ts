@@ -8,6 +8,8 @@ import {
   MAX_COLORS_PER_SPRITE,
   parsePaletteChar,
   PIXEL_PALETTE,
+  RENDERED_SPRITE_SIZE,
+  SPRITE_PIXEL_SCALE,
   SPRITE_SIZE,
   validatePixelRows,
 } from '../../src/game/pixelart';
@@ -39,6 +41,10 @@ describe('Pixel art validation (23 cards + 6 items + 4 demons)', () => {
     );
     expect(tooManyColors.valid).toBe(false);
     expect(tooManyColors.colorCount).toBe(16);
+
+    expect(SPRITE_SIZE).toBe(32);
+    expect(SPRITE_PIXEL_SCALE).toBe(2);
+    expect(RENDERED_SPRITE_SIZE).toBe(64);
   });
 
   it('defines valid 32x32 16-color (<=12 colors) pixel art for all 23 cards in cards.json', () => {

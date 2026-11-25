@@ -1,4 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+  PACT_OPTION_BUTTONS,
+  PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  PAWNSHOP_SKIP_BUTTON,
+  PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  PAWNSHOP_TIER_BUTTONS,
+  REDEMPTION_REJECT_BUTTON,
+  TITLE_CONTINUE_BUTTON,
+  TITLE_START_BUTTON,
+  TRIM_SKIP_BUTTON,
+} from '../../src/game/layout';
 import { clickLogical } from './helpers';
 
 interface SaveSnapshot {
@@ -39,17 +50,17 @@ interface BattleDebugState {
 const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 
 const BUTTONS = {
-  titleStart: { x: 160, y: 122 },
-  titleContinue: { x: 160, y: 156 },
-  pactSteady: { x: 262, y: 106 },
-  trimSkip: { x: 160, y: 158 },
-  redeemReject: { x: 224, y: 151 },
-  tierLow: { x: 58, y: 151 },
-  tierFair: { x: 160, y: 151 },
-  tierHigh: { x: 262, y: 151 },
-  skipCustomer: { x: 270, y: 107 },
-  nextOrSummary: { x: 160, y: 151 },
-  enterNightBattle: { x: 88, y: 151 },
+  titleStart: TITLE_START_BUTTON,
+  titleContinue: TITLE_CONTINUE_BUTTON,
+  pactSteady: PACT_OPTION_BUTTONS[2],
+  trimSkip: TRIM_SKIP_BUTTON,
+  redeemReject: REDEMPTION_REJECT_BUTTON,
+  tierLow: PAWNSHOP_TIER_BUTTONS.low,
+  tierFair: PAWNSHOP_TIER_BUTTONS.fair,
+  tierHigh: PAWNSHOP_TIER_BUTTONS.high,
+  skipCustomer: PAWNSHOP_SKIP_BUTTON,
+  nextOrSummary: PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  enterNightBattle: PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
 } as const;
 
 async function getPawnshopState(page: Page): Promise<PawnshopDebugState> {

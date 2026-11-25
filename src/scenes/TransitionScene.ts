@@ -84,22 +84,22 @@ export class TransitionScene extends Phaser.Scene {
     const bandHeight = Math.floor(BASE_HEIGHT / TOTAL_FRAMES);
     const centerX = Math.floor(BASE_WIDTH / 2);
 
-    // 初始暖色 6 条横向色带 + 1 像素墨黑分隔线
+    // 初始暖色 6 条横向色带 + 2 像素墨黑分隔线
     for (let i = 0; i < TOTAL_FRAMES; i += 1) {
       const y = i * bandHeight + Math.floor(bandHeight / 2);
       const rect = this.add.rectangle(centerX, y, BASE_WIDTH, bandHeight, WARM_BAND_COLORS[i]);
       this.bands.push(rect);
       if (i > 0) {
-        this.add.rectangle(centerX, i * bandHeight, BASE_WIDTH, 1, PALETTE.ink.num);
+        this.add.rectangle(centerX, i * bandHeight, BASE_WIDTH, 2, PALETTE.ink.num);
       }
     }
 
     // 右侧拉灯绳与黄铜拉坠（随帧下移，无半透明）
-    const cordX = BASE_WIDTH - 24;
-    this.cordLine = this.add.rectangle(cordX, 18, 2, 36, PALETTE.ink.num);
+    const cordX = BASE_WIDTH - 48;
+    this.cordLine = this.add.rectangle(cordX, 36, 4, 72, PALETTE.ink.num);
     this.cordHandle = this.add
-      .rectangle(cordX, 38, 6, 8, PALETTE.brass.num)
-      .setStrokeStyle(1, PALETTE.ink.num);
+      .rectangle(cordX, 76, 12, 16, PALETTE.brass.num)
+      .setStrokeStyle(2, PALETTE.ink.num);
 
     // 每帧约 83ms（12 FPS），共 6 帧逐行翻转为冷色
     const stepFrame = (frameIndex: number): void => {
@@ -117,10 +117,10 @@ export class TransitionScene extends Phaser.Scene {
       this.bands[frameIndex].setFillStyle(COOL_BAND_COLORS[frameIndex]);
 
       // 拉灯绳向下拉动
-      const pullOffset = Math.min(this.currentFrame * 4, 20);
-      this.cordLine.setSize(2, 36 + pullOffset);
-      this.cordLine.setPosition(cordX, Math.floor((36 + pullOffset) / 2));
-      this.cordHandle.setPosition(cordX, 38 + pullOffset);
+      const pullOffset = Math.min(this.currentFrame * 8, 40);
+      this.cordLine.setSize(4, 72 + pullOffset);
+      this.cordLine.setPosition(cordX, Math.floor((72 + pullOffset) / 2));
+      this.cordHandle.setPosition(cordX, 76 + pullOffset);
       if (this.currentFrame >= 3) {
         this.cordHandle.setFillStyle(PALETTE.silverBlue.num);
       }

@@ -35,21 +35,27 @@
         image-rendering: crisp-edges;
       }
 
-      #portrait-hint {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 18px;
-        padding: 6px 12px;
-        background-color: #2e2118;
-        border: 2px solid #c9973f;
-        box-shadow: 0 0 0 2px #17120c;
-        color: #f2e3c6;
-        font-family: monospace;
-        font-size: 13px;
-        line-height: 1.2;
-        letter-spacing: 1px;
+      body.is-portrait #game-container {
+        position: fixed;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        visibility: hidden;
         pointer-events: none;
+      }
+
+      #portrait-hint {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 24px;
+        background-color: #120e16;
+        pointer-events: auto;
         user-select: none;
       }
 
@@ -57,17 +63,51 @@
         display: none;
       }
 
+      #portrait-hint .portrait-hint-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        background-color: #2e2118;
+        border: 2px solid #c9973f;
+        box-shadow: 0 0 0 2px #17120c;
+        padding: 20px 24px;
+        text-align: center;
+        color: #f2e3c6;
+        font-family: monospace;
+      }
+
       #portrait-hint .portrait-hint-icon {
         color: #e8b34b;
+        font-size: 28px;
+        line-height: 1;
         font-weight: bold;
+      }
+
+      #portrait-hint .portrait-hint-text {
+        color: #fbf6e9;
+        font-size: 18px;
+        line-height: 1.4;
+        letter-spacing: 2px;
+        font-weight: bold;
+      }
+
+      #portrait-hint .portrait-hint-sub {
+        color: #f2e3c6;
+        font-size: 13px;
+        line-height: 1.4;
+        letter-spacing: 1px;
       }
     </style>
   </head>
   <body>
     <div id="game-container"></div>
     <div id="portrait-hint" role="status" aria-live="polite" hidden>
-      <span class="portrait-hint-icon" aria-hidden="true">↻</span>
-      <span class="portrait-hint-text">横屏体验更佳</span>
+      <div class="portrait-hint-card">
+        <span class="portrait-hint-icon" aria-hidden="true">↻</span>
+        <span class="portrait-hint-text">请横屏游玩</span>
+        <span class="portrait-hint-sub">旋转屏幕至横屏后自动继续</span>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
