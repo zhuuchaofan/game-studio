@@ -80,7 +80,7 @@ export interface BattleDebugSnapshot {
   discardCount: number;
   pendingChoice?: PendingChoice | null;
   result: BattleResult | 'empty_deck';
-  resultView?: 'normal' | 'diary' | 'ending' | 'chapter_failed';
+  resultView?: 'normal' | 'diary' | 'ending' | 'epilogue' | 'chapter_failed';
   demonId: string;
   demonName: string;
   demonIntroLine?: string;
@@ -107,6 +107,19 @@ export interface BattleDebugSnapshot {
     tutorialCompleted?: boolean;
     chapter?: ChapterSaveState;
   } | null;
+  /** P11：Boss 组合快照（供 E2E 断言与战报展示）。 */
+  bossComponentCount?: number;
+  bossComposedChargeThreshold?: number;
+  bossFragmentNames?: string[];
+  bossContributionLines?: string[];
+  endingLedger?: {
+    returnedItems: string[];
+    retainedItems: string[];
+    bossFragmentItems: string[];
+    pawnedItems: string[];
+    lines: string[];
+  } | null;
+  epilogueLines?: string[] | null;
   /** 新手教程状态（供 E2E 测试断言用）。 */
   tutorialActive?: boolean;
   currentStep?: string | null;
@@ -141,6 +154,8 @@ export function buildCardMap(cards: readonly CardDef[]): Map<string, CardDef> {
 
 export interface CreateBattleOptions {
   demonHpBonus?: number;
+  /** P11：直接传入算好的心魔/Boss 定义（战斗引擎只接算好的 Boss，不做旧物特判）。 */
+  demonOverride?: DemonDef;
 }
 
 function activateRoundChargeIfAny(state: BattleState, events: BattleEvent[]): void {
@@ -186,7 +201,7 @@ export function createBattle(
   hooks?: HookRegistry,
   options?: CreateBattleOptions,
 ): BattleState {
-  const demon = demons.find((d) => d.id === demonId) ?? demons[0];
+  const demon = options?.demonOverride ?? demons.find((d) => d.id === demonId) ?? demons[0];
   if (!demon) {
     throw new Error(`Demon not found: ${demonId}`);
   }
@@ -195,6 +210,8 @@ export function createBattle(
   const shuffledDeck = shuffleArray(deckCardNames, rng);
   const maxRounds = demon.actions.length;
   const effectiveDemonHp = Math.max(1, demon.hp + (options?.demonHpBonus ?? 0));
+  const round1Action = demon.actions.find((a) => a.round === 1);
+  const initialDemonShield = round1Action && !round1Action.charge ? (round1Action.shield ?? 0) : 0;
 
   const initialDrawPhase: BattleState = {
     phase: 'draw',
@@ -216,7 +233,7 @@ export function createBattle(
     demonAftermathLine: demon.aftermathLine ?? '',
     demonHp: effectiveDemonHp,
     demonMaxHp: effectiveDemonHp,
-    demonShield: 0,
+    demonShield: initialDemonShield,
     demonActions: demon.actions.map((a) => ({
       ...a,
       ...(a.charge ? { charge: { ...a.charge } } : {}),

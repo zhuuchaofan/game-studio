@@ -87,6 +87,14 @@ export interface ChapterSaveState {
   day1RingPawned?: boolean;
   /** P10 子项 4：第 2 天新娘剧本化赎当是否已触发结算（仅触发后写入 true，防止重复触发）。 */
   day2BrideRedemptionDone?: boolean;
+  /** P11 子项 2②：第 7 天父亲过赎期回来事件是否已触发结算（唯一新增剧情持久字段，向后兼容 v3）。 */
+  day7FatherRedemptionDone?: boolean;
+  /** P11 子项 4 D1：旧物最近一次被赎回的天数映射（itemId -> day），供冷却与结局翻账本复用。 */
+  redeemedDayByItem?: Record<string, number>;
+  /** P11 子项 3 & 2③：本章已成交收下的旧物 ID 列表（供横幅条件文案与结局翻账本使用）。 */
+  pawnedItemIds?: string[];
+  /** P11 子项 2③：第 7 夜开战时实际构成 Boss 的旧物 ID 快照（供结局翻账本点名）。 */
+  bossComponentItemIds?: string[];
 }
 
 export const CHAPTERS_DATA: ChaptersDataFile = chaptersJson as ChaptersDataFile;
@@ -193,6 +201,18 @@ export function createInitialChapterState(
     ...(overrides.day2BrideRedemptionDone !== undefined
       ? { day2BrideRedemptionDone: overrides.day2BrideRedemptionDone }
       : {}),
+    ...(overrides.day7FatherRedemptionDone !== undefined
+      ? { day7FatherRedemptionDone: overrides.day7FatherRedemptionDone }
+      : {}),
+    ...(overrides.redeemedDayByItem !== undefined
+      ? { redeemedDayByItem: { ...overrides.redeemedDayByItem } }
+      : {}),
+    ...(overrides.pawnedItemIds !== undefined
+      ? { pawnedItemIds: [...overrides.pawnedItemIds] }
+      : {}),
+    ...(overrides.bossComponentItemIds !== undefined
+      ? { bossComponentItemIds: [...overrides.bossComponentItemIds] }
+      : {}),
   };
 }
 
@@ -201,6 +221,15 @@ export function cloneChapterState(chapter: ChapterSaveState): ChapterSaveState {
     ...chapter,
     daysCleared: [...chapter.daysCleared],
     daysVisited: [...chapter.daysVisited],
+    ...(chapter.redeemedDayByItem !== undefined
+      ? { redeemedDayByItem: { ...chapter.redeemedDayByItem } }
+      : {}),
+    ...(chapter.pawnedItemIds !== undefined
+      ? { pawnedItemIds: [...chapter.pawnedItemIds] }
+      : {}),
+    ...(chapter.bossComponentItemIds !== undefined
+      ? { bossComponentItemIds: [...chapter.bossComponentItemIds] }
+      : {}),
   };
 }
 

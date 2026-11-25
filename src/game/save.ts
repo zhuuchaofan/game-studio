@@ -190,6 +190,45 @@ function isValidChapterSaveState(raw: unknown): raw is ChapterSaveState {
   if (ch.day2BrideRedemptionDone !== undefined && typeof ch.day2BrideRedemptionDone !== 'boolean') {
     return false;
   }
+  if (
+    ch.day7FatherRedemptionDone !== undefined &&
+    typeof ch.day7FatherRedemptionDone !== 'boolean'
+  ) {
+    return false;
+  }
+  if (ch.redeemedDayByItem !== undefined) {
+    if (
+      typeof ch.redeemedDayByItem !== 'object' ||
+      ch.redeemedDayByItem === null ||
+      Array.isArray(ch.redeemedDayByItem)
+    ) {
+      return false;
+    }
+    for (const [key, val] of Object.entries(ch.redeemedDayByItem as Record<string, unknown>)) {
+      if (
+        typeof key !== 'string' ||
+        key.length === 0 ||
+        typeof val !== 'number' ||
+        !Number.isInteger(val) ||
+        val < 1
+      ) {
+        return false;
+      }
+    }
+  }
+  if (
+    ch.pawnedItemIds !== undefined &&
+    (!Array.isArray(ch.pawnedItemIds) || !ch.pawnedItemIds.every((id) => typeof id === 'string'))
+  ) {
+    return false;
+  }
+  if (
+    ch.bossComponentItemIds !== undefined &&
+    (!Array.isArray(ch.bossComponentItemIds) ||
+      !ch.bossComponentItemIds.every((id) => typeof id === 'string'))
+  ) {
+    return false;
+  }
   return true;
 }
 

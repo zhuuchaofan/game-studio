@@ -16,6 +16,7 @@ export type OfferTier = 'low' | 'fair' | 'high';
 export type CustomerTemperament = 'urgent' | 'proud' | 'sentimental';
 
 export type PawnshopPhase =
+  | 'boss_preview'
   | 'pact'
   | 'trim_deck'
   | 'redemption'
@@ -77,6 +78,8 @@ export interface RedemptionOffer {
   payout: number;
   /** P10 子项 4：第 2 天新娘剧本化赎当（故事事件，不耗赎当券、拒绝口碑-1、不占当日随机赎当名额）。 */
   isBrideScripted?: boolean;
+  /** P11 子项 2②：第 7 天父亲过赎期回来事件（手表在库触发一次，不耗券，破例赎回钱+1.2x/碑+1，留下碑-1）。 */
+  isFatherOverdueScripted?: boolean;
 }
 
 export interface PawnshopState {
@@ -141,7 +144,23 @@ export interface PawnshopDebugSnapshot {
     basePrice: number;
     payout: number;
     isBrideScripted?: boolean;
+    isFatherOverdueScripted?: boolean;
   } | null;
+  /** P11 子项 1：第 7 天白天封门预告数据（仅 boss_preview 阶段由场景钩子提供）。 */
+  bossPreview?: {
+    componentCount: number;
+    finalHp: number;
+    baseHp: number;
+    componentHpBonus: number;
+    pactHpBonus: number;
+    hpCapped: boolean;
+    r1Shield: number;
+    chargeThreshold: number;
+    fragmentNames: string[];
+    hpLine: string;
+  } | null;
+  /** P11 子项 2①：开场掌柜交代文案（标题页钩子提供）。 */
+  shopkeeperNote?: string | null;
   /** 新手教程状态（供 E2E 测试断言用）。 */
   tutorialActive?: boolean;
   currentStep?: string | null;
@@ -214,6 +233,19 @@ export const DAY1_GUARANTEED_DAMAGE_ITEM_IDS: readonly string[] = ['bicycle', 'e
 /** P10 子项 4：第 2 天新娘剧本化赎当对应的婚戒旧物与牌名。 */
 export const BRIDE_RING_ITEM_ID = 'ring';
 export const BRIDE_RING_CARD_NAME = '守诺';
+
+/** P11 子项 2②：第 7 天父亲过赎期回来事件对应的旧手表旧物与牌名。 */
+export const FATHER_WATCH_ITEM_ID = 'watch';
+export const FATHER_WATCH_CARD_NAME = '倒转';
+
+/** P11 子项 4 D1 方案 B：旧物被赎回后的冷却天数（N = 2，6 件池/日 3 位/7 天章下不抽干池子且次日与隔日均不重现）。 */
+export const REDEMPTION_COOLDOWN_DAYS = 2;
+
+/** P11 子项 2①：开场掌柜交代（1987 口吻，21 天结构不变，叙事“出门一个月，前三周 + 月末对账尾声”）。 */
+export const SHOPKEEPER_OPENING_NOTE_LINES: readonly [string, string] = [
+  '掌柜交代：我出门一个月，前三周你看铺，月底对账。',
+  '有人回来赎东西，先找当票，别让人白跑。',
+];
 
 /** P10 子项 6：第 3 天老街风声折行宽度上限（完整居中在 276px 面板内）。 */
 export const DAY3_RUMOR_WRAP_CHARS = 17;
@@ -491,13 +523,41 @@ export interface PickDailyItemsOptions {
     deck: readonly string[];
   };
   balance?: BalanceConfig;
+  /** P11 子项 4 D2 软版：当前牌库（用于优先抽未拥有的旧物，池子不足时自动放宽到已拥有）。 */
+  deck?: readonly string[];
+  /** P11 子项 4 D1 方案 B：旧物最近一次被赎回的天数映射（itemId -> day）。 */
+  redeemedDayByItem?: Readonly<Record<string, number>>;
+  /** P11 子项 4 D1 方案 B：赎回后冷却天数（默认 REDEMPTION_COOLDOWN_DAYS = 2）。 */
+  cooldownDays?: number;
 }
 
 /**
- * Picks daily customers (default 3) via Fisher-Yates shuffle.
- * On Day 1 (P6 B2), guarantees at least 1 damage-card item (bicycle/erhu) appears.
- * On Day 2 after a Night 1 loss (P10), guarantees at least 1 affordable (low <= money)
- * damage-card item (preferring unowned).
+ * Checks whether an item is currently under D1 post-redemption cooldown on `day`.
+ * An item redeemed on `redeemedDay` is excluded for `cooldownDays` days (0 <= day - redeemedDay <= cooldownDays).
+ */
+export function isItemOnRedemptionCooldown(
+  itemId: string,
+  day: number,
+  redeemedDayByItem?: Readonly<Record<string, number>>,
+  cooldownDays: number = REDEMPTION_COOLDOWN_DAYS,
+): boolean {
+  if (!redeemedDayByItem || cooldownDays <= 0) {
+    return false;
+  }
+  const redeemedDay = redeemedDayByItem[itemId];
+  if (redeemedDay === undefined) {
+    return false;
+  }
+  const elapsed = day - redeemedDay;
+  return elapsed >= 0 && elapsed <= cooldownDays;
+}
+
+/**
+ * Picks daily customers (default 3) via Fisher-Yates shuffle with unified P11 D1+D2 rules:
+ * 1. D1 cooldown exclusion: items redeemed within the last N days are excluded (fallback only if pool < count).
+ * 2. D2 soft unowned preference: unowned eligible items are prioritized first, relaxing to owned eligible items when pool is insufficient.
+ * 3. Fallback: if eligible pool is smaller than `count`, relaxes to cooldown items (oldest redemption first) so pool is never empty.
+ * Also preserves Day 1 damage guarantee (P6 B2) and Day 2 post-Night-1-loss recovery (P10).
  */
 export function pickDailyItems(
   items: readonly PawnItem[],
@@ -507,14 +567,42 @@ export function pickDailyItems(
   options?: PickDailyItemsOptions,
 ): PawnItem[] {
   const shuffled = shuffleItems(items, rng);
-  const picked = shuffled.slice(0, count);
+  const cooldownDays = options?.cooldownDays ?? REDEMPTION_COOLDOWN_DAYS;
+  const redeemedDayByItem = options?.redeemedDayByItem;
+
+  const eligible: PawnItem[] = [];
+  const onCooldown: PawnItem[] = [];
+  for (const item of shuffled) {
+    if (isItemOnRedemptionCooldown(item.id, day, redeemedDayByItem, cooldownDays)) {
+      onCooldown.push(item);
+    } else {
+      eligible.push(item);
+    }
+  }
+
+  // Sort cooldown fallback oldest-redeemed first so if forced to fall back, the least recently redeemed returns first
+  if (onCooldown.length > 1 && redeemedDayByItem) {
+    onCooldown.sort((a, b) => (redeemedDayByItem[a.id] ?? 0) - (redeemedDayByItem[b.id] ?? 0));
+  }
+
+  const ownedCards = options?.deck && options.deck.length > 0 ? new Set(options.deck) : null;
+  let orderedPool: PawnItem[];
+  if (ownedCards) {
+    const eligibleUnowned = eligible.filter((item) => !ownedCards.has(item.cardName));
+    const eligibleOwned = eligible.filter((item) => ownedCards.has(item.cardName));
+    orderedPool = [...eligibleUnowned, ...eligibleOwned, ...onCooldown];
+  } else {
+    orderedPool = [...eligible, ...onCooldown];
+  }
+
+  const picked = orderedPool.slice(0, count);
 
   if (day === 1 && picked.length > 0) {
     const hasDamageItem = picked.some((item) =>
       DAY1_GUARANTEED_DAMAGE_ITEM_IDS.includes(item.id),
     );
     if (!hasDamageItem) {
-      const replacement = shuffled
+      const replacement = orderedPool
         .slice(count)
         .find((item) => DAY1_GUARANTEED_DAMAGE_ITEM_IDS.includes(item.id));
       if (replacement) {
@@ -535,7 +623,7 @@ export function pickDailyItems(
       (item) => isAffordableDamage(item) && !owned.has(item.cardName),
     );
     if (!hasUnownedAffordable) {
-      const unownedReplacement = shuffled
+      const unownedReplacement = orderedPool
         .slice(count)
         .find((item) => isAffordableDamage(item) && !owned.has(item.cardName));
       if (unownedReplacement) {
@@ -550,7 +638,7 @@ export function pickDailyItems(
       } else {
         const hasAnyAffordable = picked.some(isAffordableDamage);
         if (!hasAnyAffordable) {
-          const fallbackReplacement = shuffled.slice(count).find(isAffordableDamage);
+          const fallbackReplacement = orderedPool.slice(count).find(isAffordableDamage);
           if (fallbackReplacement) {
             picked[picked.length - 1] = fallbackReplacement;
           }
@@ -659,6 +747,47 @@ export function createBrideRedemptionOffer(
   };
 }
 
+/**
+ * P11 子项 2②：第 7 天父亲过赎期回来事件（复用新娘事件模式，独立分支，不改动随机赎当）。
+ * 触发条件：第 7 天白天开张前、牌库里仍有「倒转」（旧手表在库）、且本事件尚未触发（只触发一次）。
+ * 倍率固定 1.2（REDEMPTION_PRICE_MULTIPLIER），不要求/不消耗赎当券。
+ */
+export function createFatherOverdueRedemptionOffer(
+  dayInChapter: number,
+  deck: readonly string[],
+  pawnPrices: PawnPriceLedger,
+  alreadyTriggered: boolean,
+  items: readonly PawnItem[] = ITEMS,
+  priceMultiplier: number = REDEMPTION_PRICE_MULTIPLIER,
+): RedemptionOffer | null {
+  if (dayInChapter !== 7 || alreadyTriggered) {
+    return null;
+  }
+
+  const deckIndex = deck.indexOf(FATHER_WATCH_CARD_NAME);
+  if (deckIndex < 0) {
+    return null;
+  }
+
+  const watchItem = items.find((item) => item.id === FATHER_WATCH_ITEM_ID);
+  if (!watchItem) {
+    return null;
+  }
+
+  const recorded = peekPawnPrice(pawnPrices, FATHER_WATCH_CARD_NAME);
+  const basePrice = recorded !== null ? recorded : watchItem.trueValue;
+  const payout = Math.round(basePrice * priceMultiplier);
+
+  return {
+    item: { ...watchItem },
+    deckIndex,
+    cardName: FATHER_WATCH_CARD_NAME,
+    basePrice,
+    payout,
+    isFatherOverdueScripted: true,
+  };
+}
+
 function isBalanceConfig(value: unknown): value is BalanceConfig {
   return typeof value === 'object' && value !== null && 'tiers' in value;
 }
@@ -721,14 +850,15 @@ export function resolveRedemption(state: PawnshopState, accept: boolean): Pawnsh
   const currentTickets = state.redeemTickets ?? 0;
   const currentPrices = clonePawnPrices(state.pawnPrices);
 
-  if (offer.isBrideScripted) {
+  if (offer.isBrideScripted || offer.isFatherOverdueScripted) {
+    const logPrefix = offer.isFatherOverdueScripted ? '父亲过赎期赎当' : '新娘赎当';
     if (!accept) {
       return {
         ...state,
         phase: 'negotiating',
         reputation: state.reputation - 1,
         deck: [...state.deck],
-        log: [...state.log, `新娘赎当:${offer.item.name}->拒绝(口碑-1)`],
+        log: [...state.log, `${logPrefix}:${offer.item.name}->拒绝(口碑-1)`],
         items: state.items.map((item) => ({ ...item })),
         lastOutcome: null,
         redeemTickets: currentTickets,
@@ -759,7 +889,7 @@ export function resolveRedemption(state: PawnshopState, accept: boolean): Pawnsh
       money: state.money + offer.payout,
       reputation: state.reputation + 1,
       deck: nextDeck,
-      log: [...state.log, `新娘赎当:${offer.item.name}(+${offer.payout},牌-${offer.cardName},口碑+1)`],
+      log: [...state.log, `${logPrefix}:${offer.item.name}(+${offer.payout},牌-${offer.cardName},口碑+1)`],
       items: state.items.map((item) => ({ ...item })),
       lastOutcome: null,
       redeemTickets: currentTickets,

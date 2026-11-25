@@ -11,7 +11,12 @@ import {
   type PactDef,
 } from './chapters';
 import type { CardDef, CardEffectType, DemonDef } from './effects';
-import type { CustomerTemperament, PawnItem } from './pawnshop';
+import {
+  DAILY_CUSTOMER_COUNT,
+  REDEMPTION_COOLDOWN_DAYS,
+  type CustomerTemperament,
+  type PawnItem,
+} from './pawnshop';
 import { PIXEL_PALETTE } from './pixelart';
 
 export interface DataValidationResult {
@@ -279,17 +284,71 @@ export function validateChapters(
       errors.push(`${label}: days must be ${CHAPTER_DAYS}, got ${String(chapter.days)}`);
     }
 
-    // Validate Boss reference and 4-round action length
+    // Validate Boss reference, 4-round action length, and P11 Boss composition table
     const boss = demonById.get(chapter.bossId);
     if (!boss) {
       errors.push(`${label}: bossId "${String(chapter.bossId)}" does not exist in demons.json`);
-    } else if (!Array.isArray(boss.actions) || boss.actions.length !== 4) {
-      errors.push(
-        `${label}: boss "${boss.id}" actions length must be 4, got ${boss.actions?.length ?? 0}`,
-      );
+    } else {
+      if (!Array.isArray(boss.actions) || boss.actions.length !== 4) {
+        errors.push(
+          `${label}: boss "${boss.id}" actions length must be 4, got ${boss.actions?.length ?? 0}`,
+        );
+      }
+      if (boss.composition) {
+        const comp = boss.composition;
+        if (!isPositiveFinite(comp.baseHp)) {
+          errors.push(`${label}: boss "${boss.id}" composition.baseHp must be > 0`);
+        }
+        if (
+          !isPositiveFinite(comp.maxCompositionHp) ||
+          comp.maxCompositionHp < comp.baseHp
+        ) {
+          errors.push(
+            `${label}: boss "${boss.id}" composition.maxCompositionHp must be >= baseHp`,
+          );
+        }
+        if (
+          !isPositiveFinite(comp.absoluteMaxHp) ||
+          comp.absoluteMaxHp < comp.maxCompositionHp
+        ) {
+          errors.push(
+            `${label}: boss "${boss.id}" composition.absoluteMaxHp must be >= maxCompositionHp`,
+          );
+        }
+        if (!Array.isArray(comp.components) || comp.components.length === 0) {
+          errors.push(`${label}: boss "${boss.id}" composition.components must be non-empty`);
+        } else {
+          const seenCompItems = new Set<string>();
+          comp.components.forEach((entry, cIdx) => {
+            const compLabel = `${label}: boss "${boss.id}" composition.components[${cIdx}]`;
+            const refItem = itemById.get(entry.itemId);
+            if (!refItem) {
+              errors.push(`${compLabel}: unknown itemId "${String(entry.itemId)}"`);
+            } else if (refItem.cardName !== entry.cardName) {
+              errors.push(
+                `${compLabel}: cardName "${String(entry.cardName)}" does not match item "${refItem.id}" cardName "${refItem.cardName}"`,
+              );
+            }
+            if (seenCompItems.has(entry.itemId)) {
+              errors.push(`${compLabel}: duplicate itemId "${entry.itemId}"`);
+            } else {
+              seenCompItems.add(entry.itemId);
+            }
+            if (!isNonNegativeFinite(entry.hpBonus)) {
+              errors.push(`${compLabel}: hpBonus must be non-negative`);
+            }
+            if (!isNonNegativeFinite(entry.shield)) {
+              errors.push(`${compLabel}: shield must be non-negative`);
+            }
+            if (!isNonNegativeFinite(entry.chargeThresholdDelta)) {
+              errors.push(`${compLabel}: chargeThresholdDelta must be non-negative`);
+            }
+          });
+        }
+      }
     }
 
-    // Validate itemPool references
+    // Validate itemPool references & P11 D1 post-exclusion pool non-emptiness
     if (!Array.isArray(chapter.itemPool) || chapter.itemPool.length === 0) {
       errors.push(`${label}: itemPool must be a non-empty array`);
     } else {
@@ -298,6 +357,13 @@ export function validateChapters(
           errors.push(`${label}: itemPool references unknown item "${itemId}"`);
         }
       });
+      const uniquePoolCount = new Set(chapter.itemPool).size;
+      const maxSimultaneousRedemptions = REDEMPTION_COOLDOWN_DAYS;
+      if (uniquePoolCount - maxSimultaneousRedemptions < DAILY_CUSTOMER_COUNT) {
+        errors.push(
+          `${label}: itemPool (${uniquePoolCount} unique items) must retain at least ${DAILY_CUSTOMER_COUNT} items after ${maxSimultaneousRedemptions}-day D1 redemption cooldown exclusion`,
+        );
+      }
     }
 
     // Validate dailyDemonPools cover days 1..7, each non-empty, all demonIds valid

@@ -10,8 +10,15 @@ import {
   type DemonDef,
   type WinReward,
 } from '../game/battle';
+import {
+  buildEndingLedger,
+  buildMonthEndEpilogueLines,
+  MONTH_END_EPILOGUE_TITLE,
+  resolveDemonNarrative,
+  type EndingLedgerSummary,
+} from '../game/bossComposition';
 import { cloneChapterState, getChapterConfig } from '../game/chapters';
-import { PALETTE, wrapCjkText } from '../game/pawnshop';
+import { ITEMS, PALETTE, wrapCjkText } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
 import {
   applyDayResult,
@@ -46,6 +53,7 @@ export interface ResultSceneData {
   maxRounds: number;
   save?: SaveData;
   tutorial?: TutorialState;
+  bossContributionLines?: string[];
 }
 
 const CARDS: readonly CardDef[] = cardsJson as CardDef[];
@@ -65,6 +73,7 @@ export const RESULT_RETURN_BUTTON = { x: 222, y: 148, width: 136, height: 24 } a
 export const DIARY_CONTINUE_BUTTON = { x: 160, y: 158, width: 116, height: 22 } as const;
 export const ENDING_RESTART_BUTTON = { x: 96, y: 152, width: 116, height: 24 } as const;
 export const ENDING_TITLE_BUTTON = { x: 224, y: 152, width: 116, height: 24 } as const;
+export const ENDING_EPILOGUE_BUTTON = { x: 160, y: 152, width: 120, height: 24 } as const;
 export const CHAPTER_FAIL_TITLE_BUTTON = { x: 160, y: 148, width: 120, height: 24 } as const;
 
 function splitVictoryNarrative(line: string): [string, string] {
@@ -79,7 +88,10 @@ export class ResultScene extends Phaser.Scene {
   private tutorial!: TutorialState;
   private tutorialBubble?: Phaser.GameObjects.Container;
   private contentLayer!: Phaser.GameObjects.Container;
-  private resultView: 'normal' | 'diary' | 'ending' | 'chapter_failed' = 'normal';
+  private resultView: 'normal' | 'diary' | 'ending' | 'epilogue' | 'chapter_failed' = 'normal';
+  private bossContributionLines: string[] = [];
+  private endingLedger: EndingLedgerSummary | null = null;
+  private epilogueLines: string[] | null = null;
   private handleWindowResize?: () => void;
 
   constructor() {
@@ -88,14 +100,36 @@ export class ResultScene extends Phaser.Scene {
 
   create(data?: ResultSceneData): void {
     this.tutorialBubble = undefined;
+    this.bossContributionLines = data?.bossContributionLines ? [...data.bossContributionLines] : [];
+    this.endingLedger = null;
+    this.epilogueLines = null;
     const result = data?.result ?? 'lose_timeout';
     const deck = data?.deck ?? [];
     const demonId = data?.demonId ?? 'a';
     const demonDef = DEMONS.find((d) => d.id === demonId) ?? DEMONS[0];
     const isBossBattle = Boolean(demonDef?.isBoss);
     const demonName = data?.demonName || demonDef?.name || '';
+    const currentSavePreview: SaveData = data?.save
+      ? {
+          ...data.save,
+          deck: [...data.save.deck],
+          chapter: cloneChapterState(data.save.chapter),
+        }
+      : { ...createNewGame(), deck: [...deck] };
+    const resolvedNarrative =
+      !isBossBattle && demonDef
+        ? resolveDemonNarrative(
+            demonDef,
+            deck,
+            currentSavePreview.chapter.pawnedItemIds ?? [],
+            ITEMS,
+          )
+        : null;
     const victoryLine = result === 'win' ? (demonDef?.victoryLine ?? null) : null;
-    const aftermathLine = result === 'win' ? (demonDef?.aftermathLine ?? null) : null;
+    const aftermathLine =
+      result === 'win'
+        ? (resolvedNarrative?.aftermathLine ?? demonDef?.aftermathLine ?? null)
+        : null;
     const playerHp = data?.playerHp ?? 0;
     const round = data?.round ?? 1;
     const maxRounds = data?.maxRounds ?? round;
@@ -116,13 +150,7 @@ export class ResultScene extends Phaser.Scene {
     }
 
     // 胜负结算后立即自动存档（A1 时机 + P9 章节完成/失败）
-    const currentSave: SaveData = data?.save
-      ? {
-          ...data.save,
-          deck: [...data.save.deck],
-          chapter: cloneChapterState(data.save.chapter),
-        }
-      : { ...createNewGame(), deck: [...deck] };
+    const currentSave: SaveData = currentSavePreview;
 
     const nextSave = applyDayResult(currentSave, {
       outcome: result === 'win' ? 'win' : 'lose',
@@ -130,6 +158,14 @@ export class ResultScene extends Phaser.Scene {
       isBossBattle,
     });
     saveGame(nextSave);
+
+    if (isBossBattle && result === 'win') {
+      this.endingLedger = buildEndingLedger(nextSave.deck, nextSave.chapter, ITEMS);
+      this.epilogueLines =
+        nextSave.chapter.currentChapter >= 3
+          ? buildMonthEndEpilogueLines(this.endingLedger, nextSave.chapter.currentChapter)
+          : null;
+    }
 
     this.resultView = isBossBattle
       ? result === 'win'
@@ -173,7 +209,7 @@ export class ResultScene extends Phaser.Scene {
         resultView: this.resultView,
         demonId,
         demonName,
-        demonCustomerLink: demonDef?.customerLink ?? '',
+        demonCustomerLink: resolvedNarrative?.customerLink ?? demonDef?.customerLink ?? '',
         victoryLine,
         aftermathLine,
         intent: { current: null, next: null, upcomingSkill: null },
@@ -183,6 +219,9 @@ export class ResultScene extends Phaser.Scene {
         day: currentSave.day,
         shopLevel: nextSave.shopLevel,
         savedData: nextSave,
+        bossContributionLines: this.bossContributionLines.length > 0 ? [...this.bossContributionLines] : undefined,
+        endingLedger: this.endingLedger,
+        epilogueLines: this.epilogueLines,
         tutorialActive: this.tutorial.active,
         currentStep: this.tutorial.currentStep,
         tutorialDone: this.tutorial.done || loadTutorialDone(),
@@ -241,6 +280,18 @@ export class ResultScene extends Phaser.Scene {
       }),
     ]);
 
+    const ledger = this.endingLedger ?? buildEndingLedger(nextSave.deck, nextSave.chapter, ITEMS);
+    const diaryObsessionSummary =
+      ledger.bossFragmentItems.length > 0
+        ? `本战执念(${ledger.bossFragmentItems.length}块):${ledger.bossFragmentItems.join('·')}`
+        : '本战执念:素体(债主只身前来)';
+    this.contentLayer.add(
+      addPixelText(this, centerX, 130, diaryObsessionSummary, {
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+      }),
+    );
+
     this.createResultButton(
       DIARY_CONTINUE_BUTTON.x,
       DIARY_CONTINUE_BUTTON.y,
@@ -259,49 +310,133 @@ export class ResultScene extends Phaser.Scene {
     const centerX = Math.floor(BASE_WIDTH / 2);
     const centerY = Math.floor(BASE_HEIGHT / 2);
     const chapterCfg = getChapterConfig(nextSave.chapter.currentChapter);
+    const ledger = this.endingLedger ?? buildEndingLedger(nextSave.deck, nextSave.chapter, ITEMS);
+    this.endingLedger = ledger;
+
+    const chapterId = nextSave.chapter.currentChapter;
+    const endingTitle =
+      chapterId === chapterCfg.id
+        ? `第${chapterCfg.id}章「${chapterCfg.name}」· 结局翻账本`
+        : `第${chapterId}章 · 结局翻账本`;
 
     this.contentLayer.add([
       this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.nightBlack.num),
       this.add
         .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.deepBlue.num)
         .setStrokeStyle(2, PALETTE.brass.num),
-      this.add.rectangle(centerX, 20, BASE_WIDTH - 24, 20, PALETTE.nightBlack.num),
-      addPixelText(this, centerX, 20, `第${chapterCfg.id}章 · 完成`, {
+      this.add.rectangle(centerX, 18, BASE_WIDTH - 24, 18, PALETTE.nightBlack.num),
+      addPixelText(this, centerX, 18, endingTitle, {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
-      addPixelText(this, centerX, 40, `「${chapterCfg.name}」圆满收官`, {
-        color: PALETTE.jade.hex,
-        origin: 0.5,
-      }),
+      addPixelText(
+        this,
+        centerX,
+        35,
+        `${chapterCfg.days}天 · 钱${nextSave.money} · 碑${nextSave.reputation} · 收${nextSave.chapter.pawnsCollected} · 胜${nextSave.chapter.demonsDefeated} · ${nextSave.deck.length}牌`,
+        {
+          color: PALETTE.jade.hex,
+          origin: 0.5,
+        },
+      ),
       this.add
-        .rectangle(centerX, 88, 260, 74, PALETTE.nightBlack.num)
+        .rectangle(centerX, 90, 284, 88, PALETTE.nightBlack.num)
         .setStrokeStyle(1, PALETTE.mistBlue.num),
-      addPixelText(this, 42, 62, `本章天数: ${chapterCfg.days}天`, {
-        color: PALETTE.paperWhite.hex,
-        origin: [0, 0.5],
-      }),
-      addPixelText(this, 174, 62, `剩余钱: ${nextSave.money}元`, {
+    ]);
+
+    // 逐件点名账本（物归原主 / 留柜未赎 / 化作执念），按实际行数推进 Y，零写死、零溢出
+    let cursorY = 50;
+    const lineColors = [PALETTE.jade.hex, PALETTE.candle.hex, PALETTE.vermilion.hex];
+    ledger.lines.forEach((rawLine, idx) => {
+      const wrapped = wrapCjkText(rawLine, 21);
+      const lineCount = wrapped.split('\n').length;
+      this.contentLayer.add(
+        addPixelText(this, 24, cursorY, wrapped, {
+          color: lineColors[idx] ?? PALETTE.paperWhite.hex,
+          origin: [0, 0],
+          lineSpacing: 1,
+        }),
+      );
+      cursorY += lineCount * 13 + 3;
+    });
+
+    if (nextSave.chapter.currentChapter >= 3) {
+      this.createResultButton(
+        ENDING_EPILOGUE_BUTTON.x,
+        ENDING_EPILOGUE_BUTTON.y,
+        ENDING_EPILOGUE_BUTTON.width,
+        ENDING_EPILOGUE_BUTTON.height,
+        '月末结算',
+        () => {
+          this.resultView = 'epilogue';
+          this.renderMonthEndEpilogue(nextSave);
+        },
+      );
+      return;
+    }
+
+    this.createResultButton(
+      ENDING_RESTART_BUTTON.x,
+      ENDING_RESTART_BUTTON.y,
+      ENDING_RESTART_BUTTON.width,
+      ENDING_RESTART_BUTTON.height,
+      '再开一局',
+      () => {
+        const fresh = createNewGame(undefined, nextSave.chapter);
+        clearPawnPrices();
+        saveGame(fresh);
+        this.scene.start('PawnshopScene', { save: fresh });
+      },
+    );
+
+    this.createResultButton(
+      ENDING_TITLE_BUTTON.x,
+      ENDING_TITLE_BUTTON.y,
+      ENDING_TITLE_BUTTON.width,
+      ENDING_TITLE_BUTTON.height,
+      '回到标题',
+      () => {
+        this.scene.start('TitleScene');
+      },
+    );
+  }
+
+  private renderMonthEndEpilogue(nextSave: SaveData): void {
+    this.contentLayer.removeAll(true);
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const centerY = Math.floor(BASE_HEIGHT / 2);
+    const ledger = this.endingLedger ?? buildEndingLedger(nextSave.deck, nextSave.chapter, ITEMS);
+    const epilogueLines =
+      this.epilogueLines ?? buildMonthEndEpilogueLines(ledger, nextSave.chapter.currentChapter);
+    this.epilogueLines = epilogueLines;
+
+    this.contentLayer.add([
+      this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.ink.num),
+      this.add
+        .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.candle.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
+      this.add.rectangle(centerX, 20, BASE_WIDTH - 24, 18, PALETTE.deepWood.num),
+      addPixelText(this, centerX, 20, MONTH_END_EPILOGUE_TITLE, {
         color: PALETTE.lampYellow.hex,
-        origin: [0, 0.5],
-      }),
-      addPixelText(this, 42, 86, `最终口碑: ${nextSave.reputation}`, {
-        color: PALETTE.brass.hex,
-        origin: [0, 0.5],
-      }),
-      addPixelText(this, 174, 86, `收当件数: ${nextSave.chapter.pawnsCollected}件`, {
-        color: PALETTE.candle.hex,
-        origin: [0, 0.5],
-      }),
-      addPixelText(this, 42, 110, `打赢心魔: ${nextSave.chapter.demonsDefeated}次`, {
-        color: PALETTE.jade.hex,
-        origin: [0, 0.5],
-      }),
-      addPixelText(this, 174, 110, `终局牌组: ${nextSave.deck.length}张`, {
-        color: PALETTE.silverBlue.hex,
-        origin: [0, 0.5],
+        origin: 0.5,
       }),
     ]);
+
+    let cursorY = 36;
+    epilogueLines.forEach((rawLine, idx) => {
+      const wrapped = wrapCjkText(rawLine, 22);
+      const lineCount = wrapped.split('\n').length;
+      const color =
+        idx === 0 || idx === epilogueLines.length - 1 ? PALETTE.ink.hex : PALETTE.deepWood.hex;
+      this.contentLayer.add(
+        addPixelText(this, 22, cursorY, wrapped, {
+          color,
+          origin: [0, 0],
+          lineSpacing: 1,
+        }),
+      );
+      cursorY += lineCount * 13 + 3;
+    });
 
     this.createResultButton(
       ENDING_RESTART_BUTTON.x,

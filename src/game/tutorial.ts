@@ -290,6 +290,7 @@ export function syncTutorialForPawnshop(
 
   const next = cloneTutorialState(state);
   if (
+    phase === 'boss_preview' ||
     phase === 'redemption' ||
     phase === 'pact' ||
     phase === 'trim_deck' ||

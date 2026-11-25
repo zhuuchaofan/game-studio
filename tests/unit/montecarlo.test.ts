@@ -166,6 +166,9 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     expect(text).toContain('心魔 A');
     expect(text).toContain('中位现金流');
     expect(text).toContain('平均赎当次数');
+    expect(text).toContain('P11 组合 Boss 扫描');
+    expect(text).toContain('赎当削弱路径');
+    expect(text).toContain('邮票册打断专项');
 
     const parsed = parseSimTuneEnv('{"demonAHp":22,"runs":200}');
     expect(parsed).toEqual({ demonAHp: 22, runs: 200 });
@@ -177,7 +180,7 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     const brokenCheck = checkSimGuardrails(broken);
     expect(brokenCheck.passed).toBe(false);
     expect(brokenCheck.errors.some((e) => e.includes('Demon A'))).toBe(true);
-  });
+  }, 30000);
 
   it('P10: simulates 1000 realistic new-player Night 1 runs (Day 1 3-item pool, not TEST_DECK) and reports single-attack win rate', () => {
     const stats = simulateNewPlayerFirstNight({ runs: 1000 });

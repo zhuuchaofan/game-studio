@@ -21,8 +21,13 @@ import {
   type CardDef,
   type DemonDef,
 } from '../game/battle';
+import {
+  composeBoss,
+  resolveDemonNarrative,
+  type ComposedBossResult,
+} from '../game/bossComposition';
 import { TEST_DECK } from '../game/montecarlo';
-import { PALETTE, parseHexColor, wrapCjkText } from '../game/pawnshop';
+import { ITEMS, PALETTE, parseHexColor, wrapCjkText } from '../game/pawnshop';
 import { pixelRowsToTexture } from '../game/pixelart';
 import { addPixelText } from '../game/pixelFont';
 import { loadTutorialDone, maxRenqingForLevel, saveTutorialDone, type SaveData } from '../game/save';
@@ -144,6 +149,8 @@ export class CardBattleScene extends Phaser.Scene {
   private originalDeck: string[] = [];
   private isAnimating = false;
   private isEmptyDeck = false;
+  private composedBoss: ComposedBossResult | null = null;
+  private isDemonLinked = false;
   private feedbackMessage = '';
   private inspectedCardName: string | null = null;
   private detailMode: 'effect' | 'story' = 'effect';
@@ -173,6 +180,8 @@ export class CardBattleScene extends Phaser.Scene {
   create(data?: CardBattleSceneData): void {
     this.isAnimating = false;
     this.isEmptyDeck = false;
+    this.composedBoss = null;
+    this.isDemonLinked = false;
     this.feedbackMessage = '';
     this.inspectedCardName = null;
     this.detailMode = 'effect';
@@ -233,6 +242,36 @@ export class CardBattleScene extends Phaser.Scene {
     }
 
     const { rng } = createRngFromUrl();
+    const baseDemon = DEMONS.find((d) => d.id === resolvedDemonId) ?? DEMONS[0];
+    let createOpts: { demonHpBonus?: number; demonOverride?: DemonDef } = {
+      demonHpBonus: data?.demonHpBonus ?? 0,
+    };
+
+    if (baseDemon?.isBoss && baseDemon.composition) {
+      const composed = composeBoss(resolvedDeck, this.save?.chapter.pactChoice ?? null, baseDemon);
+      this.composedBoss = composed;
+      if (this.save) {
+        this.save.chapter.bossComponentItemIds = composed.activeComponents.map((c) => c.itemId);
+      }
+      createOpts = { demonOverride: composed.bossDef };
+    } else if (baseDemon) {
+      const narrative = resolveDemonNarrative(
+        baseDemon,
+        resolvedDeck,
+        this.save?.chapter.pawnedItemIds ?? [],
+        ITEMS,
+      );
+      this.isDemonLinked = narrative.isLinked;
+      createOpts = {
+        demonHpBonus: data?.demonHpBonus ?? 0,
+        demonOverride: {
+          ...baseDemon,
+          customerLink: narrative.customerLink,
+          aftermathLine: narrative.aftermathLine,
+        },
+      };
+    }
+
     this.state = createBattle(
       resolvedDeck,
       resolvedDemonId,
@@ -241,7 +280,7 @@ export class CardBattleScene extends Phaser.Scene {
       DEMONS,
       battleBalance,
       undefined,
-      { demonHpBonus: data?.demonHpBonus ?? 0 },
+      createOpts,
     );
     this.tutorial = syncTutorialForBattle(this.tutorial, 'play');
 
@@ -253,6 +292,12 @@ export class CardBattleScene extends Phaser.Scene {
         queuedCount: this.playQueue.length,
         day: this.save?.day ?? 1,
         shopLevel: this.save?.shopLevel ?? 1,
+        bossComponentCount: this.composedBoss?.componentCount,
+        bossComposedChargeThreshold: this.composedBoss?.chargeThreshold,
+        bossFragmentNames: this.composedBoss ? [...this.composedBoss.fragmentNames] : undefined,
+        bossContributionLines: this.composedBoss
+          ? [...this.composedBoss.contributionLines]
+          : undefined,
         tutorialActive: this.tutorial.active,
         currentStep: this.tutorial.currentStep,
         tutorialDone: this.tutorial.done || loadTutorialDone(),
@@ -273,7 +318,31 @@ export class CardBattleScene extends Phaser.Scene {
     this.syncInputBounds();
   }
 
+  private formatBossBannerLines(composed: ComposedBossResult): string[] {
+    if (composed.isBare) {
+      return [composed.introSummary];
+    }
+    const frags = composed.fragmentNames;
+    if (frags.length <= 2) {
+      return [frags.join('·'), composed.introSummary];
+    }
+    // 3–6 个碎片按字数均衡分两行（每行 <= 18 字 = 216px），确保在 228px 横幅内左右留白
+    if (frags.length === 6) {
+      const lineA = [frags[0], frags[2], frags[3]].join('·'); // 表·书·车 (18字)
+      const lineB = [frags[1], frags[4], frags[5]].join('·'); // 戒·琴·邮 (18字)
+      return [lineA, lineB, composed.introSummary];
+    }
+    const splitAt = Math.ceil(frags.length / 2);
+    const row1 = frags.slice(0, splitAt).join('·');
+    const row2 = frags.slice(splitAt).join('·');
+    return [row1, row2, composed.introSummary];
+  }
+
   private buildDemonIntroBannerText(): string {
+    if (this.composedBoss) {
+      const header = `${this.state.demonName} 现身`;
+      return [header, ...this.formatBossBannerLines(this.composedBoss)].join('\n');
+    }
     const parts: string[] = [`心魔「${this.state.demonName}」现身`];
     if (this.state.demonCustomerLink) {
       parts.push(this.state.demonCustomerLink);
@@ -286,17 +355,77 @@ export class CardBattleScene extends Phaser.Scene {
 
   private showDemonIntroBanner(): void {
     this.dismissIntroBanner();
-    if (!this.state.demonIntroLine && !this.state.demonCustomerLink) {
+    if (!this.composedBoss && !this.state.demonIntroLine && !this.state.demonCustomerLink) {
       return;
     }
-    // P10 子项 5 + 子项 6 修 2：横幅置于中部带（x=24..248, y=67..107），全程非阻塞、
-    // 不遮挡上方心魔血条（y=38..41）、下方手牌（y=112..176）、左侧[故]钮与右侧结束回合按钮
+    // P10 子项 5 + 子项 6 修 2 + P11：横幅置于中部带（常规 y=67..107，Boss 2 行 y=66..108，Boss 3 行 y=57..111，含描边落在 y=56..112），
+    // 全程非阻塞、不遮挡上方心魔血条（y=38..41）、下方手牌（y=112..176）、左侧[故]钮与右侧结束回合按钮
+    const isBoss3Line = Boolean(
+      this.composedBoss && !this.composedBoss.isBare && this.composedBoss.fragmentNames.length > 2,
+    );
+    const isBoss2Line = Boolean(
+      this.composedBoss && !this.composedBoss.isBare && this.composedBoss.fragmentNames.length <= 2,
+    );
+    const bannerH = isBoss3Line ? 54 : isBoss2Line ? 42 : 40;
+    const bannerW = this.composedBoss ? 228 : DEMON_INTRO_BANNER_RECT.width;
     const cx = Math.floor(DEMON_INTRO_BANNER_RECT.x + DEMON_INTRO_BANNER_RECT.width / 2);
-    const cy = Math.floor(DEMON_INTRO_BANNER_RECT.y + DEMON_INTRO_BANNER_RECT.height / 2);
+    const cy = isBoss3Line
+      ? 84
+      : Math.floor(DEMON_INTRO_BANNER_RECT.y + DEMON_INTRO_BANNER_RECT.height / 2);
+    const topY = cy - Math.floor(bannerH / 2);
     const banner = this.add.container(0, 0).setDepth(90);
     const bg = this.add
-      .rectangle(cx, cy, DEMON_INTRO_BANNER_RECT.width, DEMON_INTRO_BANNER_RECT.height, PALETTE.nightBlack.num)
+      .rectangle(cx, cy, bannerW, bannerH, PALETTE.nightBlack.num)
       .setStrokeStyle(2, PALETTE.vermilion.num);
+
+    if (this.composedBoss) {
+      const lines = this.formatBossBannerLines(this.composedBoss);
+      const children: Phaser.GameObjects.GameObject[] = [
+        bg,
+        addPixelText(this, cx, isBoss2Line ? topY + 8 : topY + 7, `${this.state.demonName} 现身`, {
+          color: PALETTE.lampYellow.hex,
+          origin: 0.5,
+        }),
+      ];
+      if (this.composedBoss.isBare) {
+        children.push(
+          addPixelText(this, cx, topY + 24, lines[0], {
+            color: PALETTE.paperWhite.hex,
+            origin: 0.5,
+          }),
+        );
+      } else if (lines.length === 2) {
+        children.push(
+          addPixelText(this, cx, topY + 21, lines[0], {
+            color: PALETTE.vermilion.hex,
+            origin: 0.5,
+          }),
+          addPixelText(this, cx, topY + 34, lines[1], {
+            color: PALETTE.paperWhite.hex,
+            origin: 0.5,
+          }),
+        );
+      } else {
+        children.push(
+          addPixelText(this, cx, topY + 20, lines[0], {
+            color: PALETTE.vermilion.hex,
+            origin: 0.5,
+          }),
+          addPixelText(this, cx, topY + 33, lines[1], {
+            color: PALETTE.vermilion.hex,
+            origin: 0.5,
+          }),
+          addPixelText(this, cx, topY + 46, lines[2], {
+            color: PALETTE.paperWhite.hex,
+            origin: 0.5,
+          }),
+        );
+      }
+      banner.add(children);
+      this.introBanner = banner;
+      this.introBannerTimer = this.time.delayedCall(INTRO_BANNER_MS, () => this.dismissIntroBanner());
+      return;
+    }
 
     const children: Phaser.GameObjects.GameObject[] = [
       bg,
@@ -644,12 +773,30 @@ export class CardBattleScene extends Phaser.Scene {
             },
           ),
         ]);
+      } else if (this.composedBoss) {
+        const badgeText = this.composedBoss.isBare
+          ? '素体 · 柜子空了，债主只身前来'
+          : this.composedBoss.componentCount <= 3
+            ? `执念:${this.composedBoss.fragmentNames.join('·')}`
+            : `执念(${this.composedBoss.componentCount}块):${this.composedBoss.activeComponents.map((c) => c.shortLabel).join('·')} 阈${this.composedBoss.chargeThreshold}`;
+        this.detailLayer.add([
+          this.add
+            .rectangle(cx, 73, BASE_WIDTH - 8, 13, PALETTE.nightBlack.num)
+            .setStrokeStyle(1, PALETTE.vermilion.num),
+          addPixelText(this, cx, 73, badgeText, {
+            color: PALETTE.silverBlue.hex,
+            origin: 0.5,
+          }),
+        ]);
       } else if (this.state.demonCustomerLink) {
+        const linkText = this.isDemonLinked
+          ? `这是${this.state.demonCustomerLink}`
+          : this.state.demonCustomerLink;
         this.detailLayer.add([
           this.add
             .rectangle(cx, 73, BASE_WIDTH - 8, 13, PALETTE.nightBlack.num)
             .setStrokeStyle(1, PALETTE.nightBlue.num),
-          addPixelText(this, cx, 73, `这是${this.state.demonCustomerLink}`, {
+          addPixelText(this, cx, 73, linkText, {
             color: PALETTE.silverBlue.hex,
             origin: 0.5,
           }),
@@ -1239,6 +1386,9 @@ export class CardBattleScene extends Phaser.Scene {
       maxRounds: this.state.maxRounds,
       save: this.save,
       tutorial: cloneTutorialState(this.tutorial),
+      ...(this.composedBoss
+        ? { bossContributionLines: [...this.composedBoss.contributionLines] }
+        : {}),
     };
     this.scene.start('ResultScene', payload);
   }
