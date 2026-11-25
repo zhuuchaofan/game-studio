@@ -1,17 +1,29 @@
 import balanceJson from '../data/balance.json';
 import type { WinReward } from './battle';
+import {
+  CHAPTER_DAYS,
+  CHAPTER_ONE_ID,
+  cloneChapterState,
+  createInitialChapterState,
+  getPactEffectDelta,
+  isValidChapterStatus,
+  isValidPactId,
+  isValidSideQuestChoice,
+  type ChapterSaveState,
+  type PactId,
+} from './chapters';
 
 export const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 export const CORRUPT_SAVE_STORAGE_KEY = 'pawnshop-cards-save-corrupt-v1';
 export const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
 export const AUDIO_STORAGE_KEY = 'pawnshop-cards-audio-v1';
 export const PAWN_PRICES_STORAGE_KEY = 'pawnshop-cards-pawn-prices-v1';
-export const SAVE_VERSION = 2 as const;
+export const SAVE_VERSION = 3 as const;
 
 export type PawnPriceLedger = Record<string, number[]>;
 
 export interface SaveData {
-  version: 2;
+  version: 3;
   day: number;
   money: number;
   reputation: number;
@@ -20,6 +32,8 @@ export interface SaveData {
   redeemTickets: number;
   /** Optional backward-compatible tutorial completion flag (defaults to incomplete when omitted). */
   tutorialCompleted?: boolean;
+  /** P9 Chapter progression block (v3). */
+  chapter: ChapterSaveState;
 }
 
 export interface SaveMigration {
@@ -28,9 +42,38 @@ export interface SaveMigration {
   migrate: (raw: Record<string, unknown>) => Record<string, unknown>;
 }
 
+function buildDefaultChapterFromLegacy(raw: Record<string, unknown>): ChapterSaveState {
+  const rawDay = typeof raw.day === 'number' && Number.isFinite(raw.day) ? Math.floor(raw.day) : 1;
+  const clampedDay = Math.min(CHAPTER_DAYS, Math.max(1, rawDay));
+  const rawDeckLen = Array.isArray(raw.deck) ? raw.deck.length : 0;
+  const rawShopLevel =
+    typeof raw.shopLevel === 'number' && Number.isFinite(raw.shopLevel) ? Math.floor(raw.shopLevel) : 1;
+  const visited: number[] = [];
+  for (let d = 1; d < clampedDay; d += 1) {
+    visited.push(d);
+  }
+  return createInitialChapterState({
+    currentChapter: CHAPTER_ONE_ID,
+    dayInChapter: clampedDay,
+    chapter1Completed: false,
+    chapter1FailedCount: 0,
+    status: 'in_progress',
+    bossBattleActive: false,
+    pactChoice: null,
+    sideQuestChoice: null,
+    daysCleared: [],
+    daysVisited: visited,
+    pawnsCollected: rawDeckLen,
+    demonsDefeated: Math.max(0, rawShopLevel - 1),
+    day4TrimDone: clampedDay > 4,
+    day6SideQuestDone: clampedDay > 6,
+  });
+}
+
 /**
  * Ordered sequential save schema migrations.
- * v1 -> v2: placeholder schema version bump preparing for future deck card instances & merged pawnPrices.
+ * v1 -> v2: schema version bump (P7).
+ * v2 -> v3: adds P9 7-day chapter block (chapter progress, pact, side quest, completion/failure flags).
  */
 export const MIGRATIONS: readonly SaveMigration[] = [
   {
@@ -39,6 +82,15 @@ export const MIGRATIONS: readonly SaveMigration[] = [
     migrate: (raw) => ({
       ...raw,
       version: 2,
+    }),
+  },
+  {
+    from: 2,
+    to: 3,
+    migrate: (raw) => ({
+      ...raw,
+      version: 3,
+      chapter: buildDefaultChapterFromLegacy(raw),
     }),
   },
 ];
@@ -66,6 +118,7 @@ export interface StorageLike {
 export interface DayResultInput {
   outcome: 'win' | 'lose';
   reward?: WinReward | null;
+  isBossBattle?: boolean;
 }
 
 export const SAVE_BALANCE: SaveBalanceConfig = {
@@ -85,6 +138,53 @@ function getDefaultStorage(): StorageLike | null {
     return null;
   }
   return null;
+}
+
+function isValidChapterSaveState(raw: unknown): raw is ChapterSaveState {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return false;
+  }
+  const ch = raw as Record<string, unknown>;
+  if (
+    typeof ch.currentChapter !== 'number' ||
+    !Number.isInteger(ch.currentChapter) ||
+    ch.currentChapter < 1 ||
+    typeof ch.dayInChapter !== 'number' ||
+    !Number.isInteger(ch.dayInChapter) ||
+    ch.dayInChapter < 1 ||
+    ch.dayInChapter > CHAPTER_DAYS ||
+    typeof ch.chapter1Completed !== 'boolean' ||
+    typeof ch.chapter1FailedCount !== 'number' ||
+    !Number.isInteger(ch.chapter1FailedCount) ||
+    ch.chapter1FailedCount < 0 ||
+    !isValidChapterStatus(ch.status) ||
+    typeof ch.bossBattleActive !== 'boolean' ||
+    (ch.pactChoice !== null && !isValidPactId(ch.pactChoice)) ||
+    (ch.sideQuestChoice !== null && !isValidSideQuestChoice(ch.sideQuestChoice)) ||
+    typeof ch.pawnsCollected !== 'number' ||
+    !Number.isFinite(ch.pawnsCollected) ||
+    ch.pawnsCollected < 0 ||
+    typeof ch.demonsDefeated !== 'number' ||
+    !Number.isFinite(ch.demonsDefeated) ||
+    ch.demonsDefeated < 0 ||
+    typeof ch.day4TrimDone !== 'boolean' ||
+    typeof ch.day6SideQuestDone !== 'boolean'
+  ) {
+    return false;
+  }
+  if (
+    !Array.isArray(ch.daysCleared) ||
+    !ch.daysCleared.every((d) => typeof d === 'number' && Number.isInteger(d) && d >= 1 && d <= CHAPTER_DAYS)
+  ) {
+    return false;
+  }
+  if (
+    !Array.isArray(ch.daysVisited) ||
+    !ch.daysVisited.every((d) => typeof d === 'number' && Number.isInteger(d) && d >= 1 && d <= CHAPTER_DAYS)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function isValidSaveData(raw: unknown): raw is SaveData {
@@ -116,6 +216,9 @@ function isValidSaveData(raw: unknown): raw is SaveData {
     return false;
   }
   if (obj.tutorialCompleted !== undefined && typeof obj.tutorialCompleted !== 'boolean') {
+    return false;
+  }
+  if (!isValidChapterSaveState(obj.chapter)) {
     return false;
   }
   return true;
@@ -181,10 +284,12 @@ export function quarantineCorruptSave(raw: string, storage?: StorageLike | null)
 }
 
 /**
- * Creates a fresh Day 1 save record using balance.json starting fields.
+ * Creates a fresh Day 1 Chapter 1 save record using balance.json starting fields.
+ * Optionally preserves cross-run Chapter 1 completion/failure flags when restarting.
  */
 export function createNewGame(
   balance: Pick<SaveBalanceConfig, 'startingMoney' | 'startingReputation'> = SAVE_BALANCE,
+  preserveChapterMeta?: Pick<ChapterSaveState, 'chapter1Completed' | 'chapter1FailedCount'>,
 ): SaveData {
   return {
     version: SAVE_VERSION,
@@ -194,6 +299,26 @@ export function createNewGame(
     deck: [],
     shopLevel: 1,
     redeemTickets: 0,
+    chapter: createInitialChapterState({
+      chapter1Completed: preserveChapterMeta?.chapter1Completed ?? false,
+      chapter1FailedCount: preserveChapterMeta?.chapter1FailedCount ?? 0,
+    }),
+  };
+}
+
+/**
+ * Applies a Day 4 "掌柜契约" selection to SaveData immutably.
+ */
+export function applyPactToSave(save: SaveData, pactId: PactId): SaveData {
+  const delta = getPactEffectDelta(pactId, save.chapter.currentChapter);
+  const nextChapter = cloneChapterState(save.chapter);
+  nextChapter.pactChoice = pactId;
+  return {
+    ...save,
+    deck: [...save.deck],
+    money: save.money + delta.moneyDelta,
+    reputation: save.reputation + delta.reputationDelta,
+    chapter: nextChapter,
   };
 }
 
@@ -235,6 +360,7 @@ export function loadSaveDetailed(storage?: StorageLike | null): SaveLoadResult {
       deck: [...valid.deck],
       shopLevel: Math.floor(valid.shopLevel),
       redeemTickets: Math.floor(valid.redeemTickets),
+      chapter: cloneChapterState(valid.chapter),
     };
     if (typeof valid.tutorialCompleted === 'boolean') {
       loaded.tutorialCompleted = valid.tutorialCompleted;
@@ -275,6 +401,7 @@ export function saveGame(data: SaveData, storage?: StorageLike | null): void {
       deck: [...data.deck],
       shopLevel: data.shopLevel,
       redeemTickets: data.redeemTickets,
+      chapter: cloneChapterState(data.chapter),
     };
     if (typeof data.tutorialCompleted === 'boolean') {
       normalized.tutorialCompleted = data.tutorialCompleted;
@@ -485,15 +612,85 @@ export function clearSave(storage?: StorageLike | null): void {
   }
 }
 
+function appendUniqueDay(list: readonly number[], day: number): number[] {
+  const clamped = Math.min(CHAPTER_DAYS, Math.max(1, Math.floor(day)));
+  if (list.includes(clamped)) {
+    return [...list];
+  }
+  return [...list, clamped].sort((a, b) => a - b);
+}
+
 export function applyDayResult(save: SaveData, result: DayResultInput): SaveData {
   const baseTutorial =
     typeof save.tutorialCompleted === 'boolean'
       ? { tutorialCompleted: save.tutorialCompleted }
       : {};
+  const prevChapter = cloneChapterState(save.chapter);
+  const currentDayInChapter = prevChapter.dayInChapter;
+  const isBoss = result.isBossBattle ?? (prevChapter.bossBattleActive || currentDayInChapter >= CHAPTER_DAYS);
+
+  if (isBoss) {
+    if (result.outcome === 'win') {
+      const reward = result.reward ?? null;
+      const nextDeck = reward?.cardName ? [...save.deck, reward.cardName] : [...save.deck];
+      const nextChapter: ChapterSaveState = {
+        ...prevChapter,
+        dayInChapter: CHAPTER_DAYS,
+        chapter1Completed: true,
+        status: 'completed',
+        bossBattleActive: false,
+        daysCleared: appendUniqueDay(prevChapter.daysCleared, currentDayInChapter),
+        daysVisited: appendUniqueDay(prevChapter.daysVisited, currentDayInChapter),
+        demonsDefeated: prevChapter.demonsDefeated + 1,
+      };
+      return {
+        version: SAVE_VERSION,
+        day: save.day,
+        money: save.money + (reward?.money ?? 0),
+        reputation: save.reputation,
+        deck: nextDeck,
+        shopLevel: save.shopLevel + 1,
+        redeemTickets: save.redeemTickets + (reward?.redeemTicket ?? 0),
+        chapter: nextChapter,
+        ...baseTutorial,
+      };
+    }
+
+    // Chapter failure on Boss defeat: record failed attempt, never deduct money or cards
+    const failedChapter: ChapterSaveState = {
+      ...prevChapter,
+      dayInChapter: CHAPTER_DAYS,
+      chapter1FailedCount: prevChapter.chapter1FailedCount + 1,
+      status: 'failed',
+      bossBattleActive: false,
+      daysVisited: appendUniqueDay(prevChapter.daysVisited, currentDayInChapter),
+    };
+    return {
+      version: SAVE_VERSION,
+      day: save.day,
+      money: save.money,
+      reputation: save.reputation,
+      deck: [...save.deck],
+      shopLevel: save.shopLevel,
+      redeemTickets: save.redeemTickets,
+      chapter: failedChapter,
+      ...baseTutorial,
+    };
+  }
+
+  const nextDayInChapter = Math.min(CHAPTER_DAYS, currentDayInChapter + 1);
 
   if (result.outcome === 'win') {
     const reward = result.reward ?? null;
     const nextDeck = reward?.cardName ? [...save.deck, reward.cardName] : [...save.deck];
+    const nextChapter: ChapterSaveState = {
+      ...prevChapter,
+      dayInChapter: nextDayInChapter,
+      bossBattleActive: false,
+      daysCleared: appendUniqueDay(prevChapter.daysCleared, currentDayInChapter),
+      daysVisited: appendUniqueDay(prevChapter.daysVisited, currentDayInChapter),
+      demonsDefeated: prevChapter.demonsDefeated + 1,
+    };
     return {
       version: SAVE_VERSION,
       day: save.day + 1,
@@ -502,9 +699,17 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
       deck: nextDeck,
       shopLevel: save.shopLevel + 1,
       redeemTickets: save.redeemTickets + (reward?.redeemTicket ?? 0),
+      chapter: nextChapter,
       ...baseTutorial,
     };
   }
+
+  const nextChapter: ChapterSaveState = {
+    ...prevChapter,
+    dayInChapter: nextDayInChapter,
+    bossBattleActive: false,
+    daysVisited: appendUniqueDay(prevChapter.daysVisited, currentDayInChapter),
+  };
 
   return {
     version: SAVE_VERSION,
@@ -514,6 +719,7 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
     deck: [...save.deck],
     shopLevel: save.shopLevel,
     redeemTickets: save.redeemTickets,
+    chapter: nextChapter,
     ...baseTutorial,
   };
 }

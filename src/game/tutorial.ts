@@ -255,7 +255,12 @@ export function syncTutorialForPawnshop(
   }
 
   const next = cloneTutorialState(state);
-  if (phase === 'redemption') {
+  if (
+    phase === 'redemption' ||
+    phase === 'pact' ||
+    phase === 'trim_deck' ||
+    phase === 'side_quest'
+  ) {
     next.currentStep = null;
     return next;
   }

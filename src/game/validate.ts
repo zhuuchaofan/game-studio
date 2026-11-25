@@ -1,6 +1,15 @@
 import cardsJson from '../data/cards.json';
+import chaptersJson from '../data/chapters.json';
 import demonsJson from '../data/demons.json';
 import itemsJson from '../data/items.json';
+import {
+  CHAPTER_DAYS,
+  isValidPactId,
+  type ChapterConfig,
+  type ChapterDayConfig,
+  type ChaptersDataFile,
+  type PactDef,
+} from './chapters';
 import type { CardDef, CardEffectType, DemonDef } from './effects';
 import type { CustomerTemperament, PawnItem } from './pawnshop';
 import { PIXEL_PALETTE } from './pixelart';
@@ -226,15 +235,137 @@ export function validateDemons(demons: readonly DemonDef[]): DataValidationResul
   return { valid: errors.length === 0, errors };
 }
 
+export function validateChapters(
+  chaptersFile: ChaptersDataFile | readonly ChapterConfig[],
+  demons: readonly DemonDef[],
+  items: readonly PawnItem[],
+): DataValidationResult {
+  const errors: string[] = [];
+  const chapters = Array.isArray(chaptersFile)
+    ? chaptersFile
+    : (chaptersFile as ChaptersDataFile)?.chapters;
+
+  if (!Array.isArray(chapters) || chapters.length === 0) {
+    return { valid: false, errors: ['chapters.json must contain a non-empty chapters array'] };
+  }
+
+  const demonById = new Map<string, DemonDef>();
+  for (const d of demons) {
+    demonById.set(d.id, d);
+  }
+  const itemById = new Map<string, PawnItem>();
+  for (const item of items) {
+    itemById.set(item.id, item);
+  }
+
+  const seenChapterIds = new Set<number>();
+
+  chapters.forEach((chapter, index) => {
+    const label = `chapters[${index}] (id=${String(chapter?.id)})`;
+
+    if (typeof chapter.id !== 'number' || !Number.isInteger(chapter.id) || chapter.id < 1) {
+      errors.push(`${label}: id must be a positive integer`);
+    } else if (seenChapterIds.has(chapter.id)) {
+      errors.push(`${label}: duplicate chapter id ${chapter.id}`);
+    } else {
+      seenChapterIds.add(chapter.id);
+    }
+
+    if (!isNonEmptyString(chapter.name)) {
+      errors.push(`${label}: name must be a non-empty string`);
+    }
+
+    if (chapter.days !== CHAPTER_DAYS) {
+      errors.push(`${label}: days must be ${CHAPTER_DAYS}, got ${String(chapter.days)}`);
+    }
+
+    // Validate Boss reference and 4-round action length
+    const boss = demonById.get(chapter.bossId);
+    if (!boss) {
+      errors.push(`${label}: bossId "${String(chapter.bossId)}" does not exist in demons.json`);
+    } else if (!Array.isArray(boss.actions) || boss.actions.length !== 4) {
+      errors.push(
+        `${label}: boss "${boss.id}" actions length must be 4, got ${boss.actions?.length ?? 0}`,
+      );
+    }
+
+    // Validate itemPool references
+    if (!Array.isArray(chapter.itemPool) || chapter.itemPool.length === 0) {
+      errors.push(`${label}: itemPool must be a non-empty array`);
+    } else {
+      chapter.itemPool.forEach((itemId: string) => {
+        if (!itemById.has(itemId)) {
+          errors.push(`${label}: itemPool references unknown item "${itemId}"`);
+        }
+      });
+    }
+
+    // Validate dailyDemonPools cover days 1..7, each non-empty, all demonIds valid
+    if (!Array.isArray(chapter.dailyDemonPools) || chapter.dailyDemonPools.length !== CHAPTER_DAYS) {
+      errors.push(
+        `${label}: dailyDemonPools must have exactly ${CHAPTER_DAYS} entries, got ${chapter.dailyDemonPools?.length ?? 0}`,
+      );
+    } else {
+      chapter.dailyDemonPools.forEach((dayCfg: ChapterDayConfig, dayIdx: number) => {
+        const expectedDay = dayIdx + 1;
+        const dayLabel = `${label}.dailyDemonPools[${dayIdx}]`;
+        if (dayCfg.day !== expectedDay) {
+          errors.push(`${dayLabel}: expected day ${expectedDay}, got ${String(dayCfg.day)}`);
+        }
+        if (!Array.isArray(dayCfg.demonPool) || dayCfg.demonPool.length === 0) {
+          errors.push(`${dayLabel}: demonPool must be non-empty`);
+        } else {
+          dayCfg.demonPool.forEach((demonId: string) => {
+            if (!demonById.has(demonId)) {
+              errors.push(`${dayLabel}: demonPool references unknown demon "${demonId}"`);
+            }
+          });
+        }
+      });
+    }
+
+    // Validate Day 4 pacts
+    if (!Array.isArray(chapter.day4Pacts) || chapter.day4Pacts.length !== 3) {
+      errors.push(`${label}: day4Pacts must contain exactly 3 pacts`);
+    } else {
+      const seenPacts = new Set<string>();
+      chapter.day4Pacts.forEach((pact: PactDef, pIdx: number) => {
+        if (!isValidPactId(pact.id)) {
+          errors.push(`${label}.day4Pacts[${pIdx}]: invalid pact id "${String(pact.id)}"`);
+        } else if (seenPacts.has(pact.id)) {
+          errors.push(`${label}.day4Pacts[${pIdx}]: duplicate pact id "${pact.id}"`);
+        } else {
+          seenPacts.add(pact.id);
+        }
+        if (!isNonEmptyString(pact.name)) {
+          errors.push(`${label}.day4Pacts[${pIdx}]: name must be non-empty`);
+        }
+      });
+    }
+
+    if (!isNonEmptyString(chapter.day3Rumor)) {
+      errors.push(`${label}: day3Rumor must be non-empty`);
+    }
+
+    if (!chapter.diary || !isNonEmptyString(chapter.diary.body)) {
+      errors.push(`${label}: diary.body must be non-empty`);
+    }
+  });
+
+  return { valid: errors.length === 0, errors };
+}
+
 export function validateAllGameData(
   cards: readonly CardDef[] = cardsJson as CardDef[],
   items: readonly PawnItem[] = itemsJson as PawnItem[],
   demons: readonly DemonDef[] = demonsJson as DemonDef[],
+  chaptersFile: ChaptersDataFile | readonly ChapterConfig[] = chaptersJson as ChaptersDataFile,
 ): DataValidationResult {
   const cardRes = validateCards(cards);
   const itemRes = validateItems(items, cards);
   const demonRes = validateDemons(demons);
-  const errors = [...cardRes.errors, ...itemRes.errors, ...demonRes.errors];
+  const chapterRes = validateChapters(chaptersFile, demons, items);
+  const errors = [...cardRes.errors, ...itemRes.errors, ...demonRes.errors, ...chapterRes.errors];
   return { valid: errors.length === 0, errors };
 }
 
@@ -242,8 +373,9 @@ export function assertValidGameData(
   cards: readonly CardDef[] = cardsJson as CardDef[],
   items: readonly PawnItem[] = itemsJson as PawnItem[],
   demons: readonly DemonDef[] = demonsJson as DemonDef[],
+  chaptersFile: ChaptersDataFile | readonly ChapterConfig[] = chaptersJson as ChaptersDataFile,
 ): void {
-  const res = validateAllGameData(cards, items, demons);
+  const res = validateAllGameData(cards, items, demons, chaptersFile);
   if (!res.valid) {
     throw new Error(`Game data validation failed:\n- ${res.errors.join('\n- ')}`);
   }

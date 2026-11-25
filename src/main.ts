@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { audio, installAudioDebugHook } from './game/audio';
 import { BootScene } from './scenes/BootScene';
+import { CalendarMapScene } from './scenes/CalendarMapScene';
 import { CardBattleScene } from './scenes/CardBattleScene';
 import { PawnshopScene } from './scenes/PawnshopScene';
 import { ResultScene } from './scenes/ResultScene';
@@ -28,7 +29,15 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.NONE,
   },
-  scene: [BootScene, TitleScene, PawnshopScene, TransitionScene, CardBattleScene, ResultScene],
+  scene: [
+    BootScene,
+    TitleScene,
+    CalendarMapScene,
+    PawnshopScene,
+    TransitionScene,
+    CardBattleScene,
+    ResultScene,
+  ],
 };
 
 const game = new Phaser.Game(config);

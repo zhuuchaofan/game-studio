@@ -9,13 +9,22 @@ import {
   type PawnPriceLedger,
 } from './save';
 
+import type { ChapterSaveState, PactId, SideQuestChoice } from './chapters';
+
 export type OfferTier = 'low' | 'fair' | 'high';
 
 export type CustomerTemperament = 'urgent' | 'proud' | 'sentimental';
 
-export type PawnshopPhase = 'redemption' | 'negotiating' | 'feedback' | 'summary';
+export type PawnshopPhase =
+  | 'pact'
+  | 'trim_deck'
+  | 'redemption'
+  | 'negotiating'
+  | 'feedback'
+  | 'side_quest'
+  | 'summary';
 
-export type DebugPhase = 'title' | PawnshopPhase;
+export type DebugPhase = 'title' | 'calendar' | PawnshopPhase;
 
 export const TEMPERAMENT_LABELS: Record<CustomerTemperament, string> = {
   urgent: '急用钱',
@@ -135,6 +144,12 @@ export interface PawnshopDebugSnapshot {
   currentStep?: string | null;
   tutorialDone?: boolean;
   tutorialCopy?: string | null;
+  /** P9 章节状态（供 E2E 测试断言用）。 */
+  chapter?: ChapterSaveState;
+  pactChoice?: PactId | null;
+  sideQuestChoice?: SideQuestChoice | null;
+  day3Rumor?: string | null;
+  sideQuestItemId?: string | null;
 }
 
 /**
@@ -499,6 +514,7 @@ export function createRedemptionOffer(
   pawnPrices: PawnPriceLedger,
   rng: RngFn,
   items: readonly PawnItem[] = ITEMS,
+  priceMultiplier: number = REDEMPTION_PRICE_MULTIPLIER,
 ): RedemptionOffer | null {
   if (redeemTickets < 1 || deck.length === 0) {
     return null;
@@ -529,7 +545,7 @@ export function createRedemptionOffer(
   const chosen = pool[Math.min(pickedIdx, pool.length - 1)];
   const recorded = peekPawnPrice(pawnPrices, chosen.cardName);
   const basePrice = recorded !== null ? recorded : chosen.item.trueValue;
-  const payout = Math.round(basePrice * REDEMPTION_PRICE_MULTIPLIER);
+  const payout = Math.round(basePrice * priceMultiplier);
 
   return {
     item: { ...chosen.item },
@@ -718,7 +734,14 @@ export function settle(
   };
 }
 
-export function skipCustomer(state: PawnshopState): PawnshopState {
+export interface SkipCustomerOptions {
+  reputationDelta?: number;
+}
+
+export function skipCustomer(
+  state: PawnshopState,
+  options?: SkipCustomerOptions,
+): PawnshopState {
   const currentItem = state.items[state.customerIndex];
   if (state.phase !== 'negotiating' || !currentItem) {
     return {
@@ -730,17 +753,22 @@ export function skipCustomer(state: PawnshopState): PawnshopState {
     };
   }
 
+  const repDelta = options?.reputationDelta ?? 0;
   const nextIndex = state.customerIndex + 1;
   const isFinished = nextIndex >= state.items.length;
+  const logEntry =
+    repDelta !== 0
+      ? `${currentItem.name}:跳过(口碑${formatSignedDelta(repDelta)})`
+      : `${currentItem.name}:跳过`;
 
   return {
     day: state.day,
     phase: isFinished ? 'summary' : 'negotiating',
     customerIndex: nextIndex,
     money: state.money,
-    reputation: state.reputation,
+    reputation: state.reputation + repDelta,
     deck: [...state.deck],
-    log: [...state.log, `${currentItem.name}:跳过`],
+    log: [...state.log, logEntry],
     items: state.items.map((item) => ({ ...item })),
     lastOutcome: null,
     ...(state.redeemTickets !== undefined ? { redeemTickets: state.redeemTickets } : {}),

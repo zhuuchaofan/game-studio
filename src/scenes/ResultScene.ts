@@ -10,10 +10,12 @@ import {
   type DemonDef,
   type WinReward,
 } from '../game/battle';
-import { PALETTE } from '../game/pawnshop';
+import { cloneChapterState, getChapterConfig } from '../game/chapters';
+import { PALETTE, wrapCjkText } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
 import {
   applyDayResult,
+  clearPawnPrices,
   createNewGame,
   loadTutorialDone,
   saveGame,
@@ -60,6 +62,10 @@ const RESULT_BALANCE: BattleBalanceConfig = {
 // 保留 (160, 148) 在“返回标题”命中区内，兼容 P2 既有 E2E 测试
 export const RESULT_NEXT_DAY_BUTTON = { x: 88, y: 148, width: 116, height: 24 } as const;
 export const RESULT_RETURN_BUTTON = { x: 222, y: 148, width: 136, height: 24 } as const;
+export const DIARY_CONTINUE_BUTTON = { x: 160, y: 158, width: 116, height: 22 } as const;
+export const ENDING_RESTART_BUTTON = { x: 96, y: 152, width: 116, height: 24 } as const;
+export const ENDING_TITLE_BUTTON = { x: 224, y: 152, width: 116, height: 24 } as const;
+export const CHAPTER_FAIL_TITLE_BUTTON = { x: 160, y: 148, width: 120, height: 24 } as const;
 
 function splitVictoryNarrative(line: string): [string, string] {
   const firstPeriod = line.indexOf('。');
@@ -72,6 +78,8 @@ function splitVictoryNarrative(line: string): [string, string] {
 export class ResultScene extends Phaser.Scene {
   private tutorial!: TutorialState;
   private tutorialBubble?: Phaser.GameObjects.Container;
+  private contentLayer!: Phaser.GameObjects.Container;
+  private resultView: 'normal' | 'diary' | 'ending' | 'chapter_failed' = 'normal';
   private handleWindowResize?: () => void;
 
   constructor() {
@@ -84,6 +92,7 @@ export class ResultScene extends Phaser.Scene {
     const deck = data?.deck ?? [];
     const demonId = data?.demonId ?? 'a';
     const demonDef = DEMONS.find((d) => d.id === demonId) ?? DEMONS[0];
+    const isBossBattle = Boolean(demonDef?.isBoss);
     const demonName = data?.demonName || demonDef?.name || '';
     const victoryLine = result === 'win' ? (demonDef?.victoryLine ?? null) : null;
     const playerHp = data?.playerHp ?? 0;
@@ -105,16 +114,27 @@ export class ResultScene extends Phaser.Scene {
       loseReason = `${maxRounds} 回合未分胜负`;
     }
 
-    // 胜负结算后立即自动存档（A1 时机）
+    // 胜负结算后立即自动存档（A1 时机 + P9 章节完成/失败）
     const currentSave: SaveData = data?.save
-      ? { ...data.save, deck: [...data.save.deck] }
+      ? {
+          ...data.save,
+          deck: [...data.save.deck],
+          chapter: cloneChapterState(data.save.chapter),
+        }
       : { ...createNewGame(), deck: [...deck] };
 
     const nextSave = applyDayResult(currentSave, {
       outcome: result === 'win' ? 'win' : 'lose',
       reward,
+      isBossBattle,
     });
     saveGame(nextSave);
+
+    this.resultView = isBossBattle
+      ? result === 'win'
+        ? 'diary'
+        : 'chapter_failed'
+      : 'normal';
 
     const incomingTutorial = data?.tutorial
       ? cloneTutorialState(data.tutorial)
@@ -122,7 +142,9 @@ export class ResultScene extends Phaser.Scene {
           day: currentSave.day,
           tutorialDone: true,
         });
-    this.tutorial = syncTutorialForResult(incomingTutorial);
+    this.tutorial = isBossBattle
+      ? createTutorialState({ day: currentSave.day, tutorialDone: true })
+      : syncTutorialForResult(incomingTutorial);
 
     // 只要第 1 天打完进入结算且未处于教程气泡展示中，即落盘完成标记
     if (currentSave.day === 1 && !this.tutorial.active) {
@@ -136,14 +158,17 @@ export class ResultScene extends Phaser.Scene {
       getState: () => ({
         phase: 'result_scene',
         round,
+        maxRounds,
         playerHp,
         shield: 0,
         renqing: 0,
         demonHp: result === 'win' ? 0 : 1,
+        isBoss: isBossBattle,
         hand: [],
         deckCount: nextSave.deck.length,
         discardCount: 0,
         result,
+        resultView: this.resultView,
         demonId,
         demonName,
         victoryLine,
@@ -161,75 +186,261 @@ export class ResultScene extends Phaser.Scene {
       }),
     };
 
+    this.contentLayer = this.add.container(0, 0);
+
+    if (this.resultView === 'diary') {
+      this.renderDiaryPage(nextSave);
+    } else if (this.resultView === 'chapter_failed') {
+      this.renderChapterFailed(demonName, loseReason ?? '');
+    } else {
+      this.renderNormalResult(result, demonName, victoryLine, reward, loseReason, currentSave, nextSave);
+    }
+
+    this.renderTutorialBubble();
+    this.syncInputBounds();
+  }
+
+  private renderDiaryPage(nextSave: SaveData): void {
+    this.contentLayer.removeAll(true);
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const centerY = Math.floor(BASE_HEIGHT / 2);
+    const chapterCfg = getChapterConfig(nextSave.chapter.currentChapter);
+
+    this.contentLayer.add([
+      this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.ink.num),
+      this.add
+        .rectangle(centerX, 78, 296, 128, PALETTE.candle.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
+      this.add.rectangle(centerX, 24, 292, 18, PALETTE.deepWood.num),
+      addPixelText(this, centerX, 24, `周日休市 · 《${chapterCfg.diary.title}》`, {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      }),
+      addPixelText(this, centerX, 42, chapterCfg.diary.subtitle, {
+        color: PALETTE.copperBrown.hex,
+        origin: 0.5,
+      }),
+      this.add.rectangle(centerX, 52, 260, 1, PALETTE.oldPaper.num),
+      addPixelText(this, 24, 58, wrapCjkText(chapterCfg.diary.body, 22), {
+        color: PALETTE.ink.hex,
+        origin: [0, 0],
+        lineSpacing: 3,
+      }),
+    ]);
+
+    this.createResultButton(
+      DIARY_CONTINUE_BUTTON.x,
+      DIARY_CONTINUE_BUTTON.y,
+      DIARY_CONTINUE_BUTTON.width,
+      DIARY_CONTINUE_BUTTON.height,
+      '翻到结局',
+      () => {
+        this.resultView = 'ending';
+        this.renderEndingScreen(nextSave);
+      },
+    );
+  }
+
+  private renderEndingScreen(nextSave: SaveData): void {
+    this.contentLayer.removeAll(true);
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const centerY = Math.floor(BASE_HEIGHT / 2);
+    const chapterCfg = getChapterConfig(nextSave.chapter.currentChapter);
+
+    this.contentLayer.add([
+      this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.nightBlack.num),
+      this.add
+        .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.deepBlue.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
+      this.add.rectangle(centerX, 20, BASE_WIDTH - 24, 20, PALETTE.nightBlack.num),
+      addPixelText(this, centerX, 20, `第${chapterCfg.id}章 · 完成`, {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      }),
+      addPixelText(this, centerX, 40, `「${chapterCfg.name}」圆满收官`, {
+        color: PALETTE.jade.hex,
+        origin: 0.5,
+      }),
+      this.add
+        .rectangle(centerX, 88, 260, 74, PALETTE.nightBlack.num)
+        .setStrokeStyle(1, PALETTE.mistBlue.num),
+      addPixelText(this, 42, 62, `本章天数: ${chapterCfg.days}天`, {
+        color: PALETTE.paperWhite.hex,
+        origin: [0, 0.5],
+      }),
+      addPixelText(this, 174, 62, `剩余钱: ${nextSave.money}元`, {
+        color: PALETTE.lampYellow.hex,
+        origin: [0, 0.5],
+      }),
+      addPixelText(this, 42, 86, `最终口碑: ${nextSave.reputation}`, {
+        color: PALETTE.brass.hex,
+        origin: [0, 0.5],
+      }),
+      addPixelText(this, 174, 86, `收当件数: ${nextSave.chapter.pawnsCollected}件`, {
+        color: PALETTE.candle.hex,
+        origin: [0, 0.5],
+      }),
+      addPixelText(this, 42, 110, `打赢心魔: ${nextSave.chapter.demonsDefeated}次`, {
+        color: PALETTE.jade.hex,
+        origin: [0, 0.5],
+      }),
+      addPixelText(this, 174, 110, `终局牌组: ${nextSave.deck.length}张`, {
+        color: PALETTE.silverBlue.hex,
+        origin: [0, 0.5],
+      }),
+    ]);
+
+    this.createResultButton(
+      ENDING_RESTART_BUTTON.x,
+      ENDING_RESTART_BUTTON.y,
+      ENDING_RESTART_BUTTON.width,
+      ENDING_RESTART_BUTTON.height,
+      '再开一局',
+      () => {
+        const fresh = createNewGame(undefined, nextSave.chapter);
+        clearPawnPrices();
+        saveGame(fresh);
+        this.scene.start('PawnshopScene', { save: fresh });
+      },
+    );
+
+    this.createResultButton(
+      ENDING_TITLE_BUTTON.x,
+      ENDING_TITLE_BUTTON.y,
+      ENDING_TITLE_BUTTON.width,
+      ENDING_TITLE_BUTTON.height,
+      '回到标题',
+      () => {
+        this.scene.start('TitleScene');
+      },
+    );
+  }
+
+  private renderChapterFailed(demonName: string, loseReason: string): void {
+    this.contentLayer.removeAll(true);
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const centerY = Math.floor(BASE_HEIGHT / 2);
+
+    this.contentLayer.add([
+      this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.nightBlack.num),
+      this.add
+        .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.deepBlue.num)
+        .setStrokeStyle(2, PALETTE.vermilion.num),
+      this.add.rectangle(centerX, 20, BASE_WIDTH - 24, 20, PALETTE.nightBlack.num),
+      addPixelText(this, centerX, 20, '章节失败 · 第1章未通关', {
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+      }),
+      addPixelText(this, centerX, 54, `大心魔「${demonName}」未能击退`, {
+        color: PALETTE.paperWhite.hex,
+        origin: 0.5,
+      }),
+      addPixelText(this, centerX, 78, `失败原因：${loseReason}`, {
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+      }),
+      addPixelText(this, centerX, 106, '钱与牌组未扣除，可回标题重开第1章', {
+        color: PALETTE.silverBlue.hex,
+        origin: 0.5,
+      }),
+    ]);
+
+    this.createResultButton(
+      CHAPTER_FAIL_TITLE_BUTTON.x,
+      CHAPTER_FAIL_TITLE_BUTTON.y,
+      CHAPTER_FAIL_TITLE_BUTTON.width,
+      CHAPTER_FAIL_TITLE_BUTTON.height,
+      '回到标题',
+      () => {
+        this.scene.start('TitleScene');
+      },
+    );
+  }
+
+  private renderNormalResult(
+    result: 'win' | 'lose_hp' | 'lose_timeout',
+    demonName: string,
+    victoryLine: string | null,
+    reward: WinReward | null,
+    loseReason: string | null,
+    currentSave: SaveData,
+    nextSave: SaveData,
+  ): void {
+    this.contentLayer.removeAll(true);
     const centerX = Math.floor(BASE_WIDTH / 2);
     const centerY = Math.floor(BASE_HEIGHT / 2);
 
     // 夜里深蓝结算背景与卡片
-    this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.nightBlack.num);
-    this.add
-      .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.deepBlue.num)
-      .setStrokeStyle(1, result === 'win' ? PALETTE.brass.num : PALETTE.mistBlue.num);
-
-    // 顶部紧凑标题条（y=8..24，所有结算与 C5 胜利叙事排布在 y=8..82，完全避开 6/6 教程气泡 y=86..132）
-    this.add.rectangle(centerX, 16, BASE_WIDTH - 22, 16, PALETTE.nightBlack.num);
-    addPixelText(this, 18, 16, result === 'win' ? '赢了！' : '心魔还在……', {
-      color: result === 'win' ? PALETTE.lampYellow.hex : PALETTE.vermilion.hex,
-      origin: [0, 0.5],
-    });
-    addPixelText(this, BASE_WIDTH - 18, 16, `第${currentSave.day}天 · 当铺Lv.${nextSave.shopLevel}`, {
-      color: PALETTE.silverBlue.hex,
-      origin: [1, 0.5],
-    });
+    this.contentLayer.add([
+      this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.nightBlack.num),
+      this.add
+        .rectangle(centerX, centerY, BASE_WIDTH - 20, BASE_HEIGHT - 12, PALETTE.deepBlue.num)
+        .setStrokeStyle(1, result === 'win' ? PALETTE.brass.num : PALETTE.mistBlue.num),
+      // 顶部紧凑标题条（y=8..24，所有结算与 C5 胜利叙事排布在 y=8..82，完全避开 6/6 教程气泡 y=86..132）
+      this.add.rectangle(centerX, 16, BASE_WIDTH - 22, 16, PALETTE.nightBlack.num),
+      addPixelText(this, 18, 16, result === 'win' ? '赢了！' : '心魔还在……', {
+        color: result === 'win' ? PALETTE.lampYellow.hex : PALETTE.vermilion.hex,
+        origin: [0, 0.5],
+      }),
+      addPixelText(this, BASE_WIDTH - 18, 16, `第${currentSave.day}天 · 当铺Lv.${nextSave.shopLevel}`, {
+        color: PALETTE.silverBlue.hex,
+        origin: [1, 0.5],
+      }),
+    ]);
 
     if (result === 'win' && reward) {
       const moneyTag = reward.allOwnedBonus
         ? `得钱+${reward.money}(全牌加赠)`
         : `得钱:+${reward.money}`;
-      addPixelText(this, 20, 32, `击败心魔「${demonName}」`, {
-        color: PALETTE.jade.hex,
-        origin: [0, 0.5],
-      });
-      addPixelText(this, BASE_WIDTH - 20, 32, moneyTag, {
-        color: PALETTE.lampYellow.hex,
-        origin: [1, 0.5],
-      });
-
-      const cardLabel = reward.cardName ? `得牌:${reward.cardName}` : '全牌已集齐';
-      addPixelText(this, 20, 46, cardLabel, {
-        color: PALETTE.paperWhite.hex,
-        origin: [0, 0.5],
-      });
-      addPixelText(this, BASE_WIDTH - 20, 46, `赎当券×${reward.redeemTicket}`, {
-        color: PALETTE.brass.hex,
-        origin: [1, 0.5],
-      });
-
-      this.add.rectangle(centerX, 55, BASE_WIDTH - 36, 1, PALETTE.nightBlue.num);
+      this.contentLayer.add([
+        addPixelText(this, 20, 32, `击败心魔「${demonName}」`, {
+          color: PALETTE.jade.hex,
+          origin: [0, 0.5],
+        }),
+        addPixelText(this, BASE_WIDTH - 20, 32, moneyTag, {
+          color: PALETTE.lampYellow.hex,
+          origin: [1, 0.5],
+        }),
+        addPixelText(this, 20, 46, reward.cardName ? `得牌:${reward.cardName}` : '全牌已集齐', {
+          color: PALETTE.paperWhite.hex,
+          origin: [0, 0.5],
+        }),
+        addPixelText(this, BASE_WIDTH - 20, 46, `赎当券×${reward.redeemTicket}`, {
+          color: PALETTE.brass.hex,
+          origin: [1, 0.5],
+        }),
+        this.add.rectangle(centerX, 55, BASE_WIDTH - 36, 1, PALETTE.nightBlue.num),
+      ]);
 
       // C5：按心魔显示胜利叙事句（两行居中，y=58..82，不被 6/6 气泡遮挡）
       if (victoryLine) {
         const [line1, line2] = splitVictoryNarrative(victoryLine);
-        addPixelText(this, centerX, 64, line1, {
-          color: PALETTE.candle.hex,
-          origin: 0.5,
-        });
-        if (line2) {
-          addPixelText(this, centerX, 77, line2, {
-            color: PALETTE.paperWhite.hex,
+        this.contentLayer.add(
+          addPixelText(this, centerX, 64, line1, {
+            color: PALETTE.candle.hex,
             origin: 0.5,
-          });
+          }),
+        );
+        if (line2) {
+          this.contentLayer.add(
+            addPixelText(this, centerX, 77, line2, {
+              color: PALETTE.paperWhite.hex,
+              origin: 0.5,
+            }),
+          );
         }
       }
     } else {
-      addPixelText(this, centerX, 42, `心魔「${demonName}」未能平息`, {
-        color: PALETTE.silverBlue.hex,
-        origin: 0.5,
-      });
-
-      addPixelText(this, centerX, 62, `失败原因：${loseReason ?? ''}`, {
-        color: PALETTE.vermilion.hex,
-        origin: 0.5,
-      });
+      this.contentLayer.add([
+        addPixelText(this, centerX, 42, `心魔「${demonName}」未能平息`, {
+          color: PALETTE.silverBlue.hex,
+          origin: 0.5,
+        }),
+        addPixelText(this, centerX, 62, `失败原因：${loseReason ?? ''}`, {
+          color: PALETTE.vermilion.hex,
+          origin: 0.5,
+        }),
+      ]);
     }
 
     const completeIfDayOne = (): void => {
@@ -266,9 +477,6 @@ export class ResultScene extends Phaser.Scene {
         this.scene.start('TitleScene');
       },
     );
-
-    this.renderTutorialBubble();
-    this.syncInputBounds();
   }
 
   private renderTutorialBubble(): void {
@@ -310,7 +518,7 @@ export class ResultScene extends Phaser.Scene {
       .setStrokeStyle(1, PALETTE.brass.num)
       .setInteractive({ useHandCursor: true });
 
-    addPixelText(this, x, y, label, {
+    const txt = addPixelText(this, x, y, label, {
       color: PALETTE.paperWhite.hex,
       origin: 0.5,
     });
@@ -322,6 +530,8 @@ export class ResultScene extends Phaser.Scene {
       audio.playSfx('button_click');
       onClick();
     });
+
+    this.contentLayer.add([btn, txt]);
   }
 
   private syncInputBounds(): void {

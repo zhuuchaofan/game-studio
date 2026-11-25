@@ -31,16 +31,26 @@ export interface CardDef {
   color?: string;
 }
 
+export interface DemonChargeConfig {
+  threshold: number;
+  refundRenqing: number;
+  interruptedNextDamage: number;
+}
+
 export interface DemonAction {
   round: number;
   damage: number;
   skill?: string;
+  shield?: number;
+  charge?: DemonChargeConfig;
 }
 
 export interface DemonDef {
   id: string;
   name: string;
   hp: number;
+  isBoss?: boolean;
+  chapter?: number;
   introLine?: string;
   victoryLine?: string;
   actions: DemonAction[];
@@ -87,6 +97,9 @@ export type BattleEvent =
       amount: number;
       source: string;
       demonHpAfter?: number;
+      demonShieldAfter?: number;
+      shieldAbsorbed?: number;
+      hpDamage?: number;
       playerHpAfter?: number;
     }
   | { type: 'SHIELD_GAINED'; amount: number; shieldAfter: number; source: string }
@@ -106,6 +119,24 @@ export type BattleEvent =
       absorbed: number;
       hpDamage: number;
       reflected: boolean;
+    }
+  | {
+      type: 'BOSS_CHARGE_STARTED';
+      round: number;
+      skill: string;
+      shieldGained: number;
+      threshold: number;
+      refundRenqing: number;
+    }
+  | {
+      type: 'BOSS_CHARGE_INTERRUPTED';
+      round: number;
+      skill: string;
+      damageDealt: number;
+      threshold: number;
+      refundRenqing: number;
+      renqingAfter: number;
+      reducedNextDamage: number;
     }
   | { type: 'BATTLE_ENDED'; result: Exclude<BattleResult, 'ongoing'>; round: number }
   | { type: 'CARD_DISCARDED'; cardName: string; handIndex: number }
@@ -132,12 +163,22 @@ export interface BattleState {
   nextRoundRenqingBonus: number;
   demonId: string;
   demonName: string;
+  isBoss: boolean;
   demonIntroLine: string;
   demonVictoryLine: string;
   demonHp: number;
   demonMaxHp: number;
+  demonShield: number;
   demonActions: DemonAction[];
   demonHasActed: boolean;
+  bossCharging: boolean;
+  bossChargeSkill: string | null;
+  bossChargeDamage: number;
+  bossChargeThreshold: number;
+  bossChargeRefundRenqing: number;
+  bossChargeInterrupted: boolean;
+  bossInterruptedNextDamage: number | null;
+  bossChargeRound: number | null;
   hand: string[];
   drawPile: string[];
   discardPile: string[];
@@ -208,7 +249,10 @@ export function isAttackCard(card: CardDef | undefined): boolean {
 export function cloneBattleState(state: BattleState): BattleState {
   return {
     ...state,
-    demonActions: state.demonActions.map((a) => ({ ...a })),
+    demonActions: state.demonActions.map((a) => ({
+      ...a,
+      ...(a.charge ? { charge: { ...a.charge } } : {}),
+    })),
     hand: [...state.hand],
     drawPile: [...state.drawPile],
     discardPile: [...state.discardPile],
@@ -287,6 +331,65 @@ export function drawCardsWithEvents(
   };
 }
 
+function applyDamageToDemon(
+  next: BattleState,
+  amount: number,
+  sourceName: string,
+  events: BattleEvent[],
+): void {
+  const shieldAbsorbed = Math.min(next.demonShield, Math.max(0, amount));
+  const hpDamage = Math.max(0, amount - shieldAbsorbed);
+  next.demonShield -= shieldAbsorbed;
+  next.demonHp = Math.max(0, next.demonHp - hpDamage);
+
+  events.push({
+    type: 'DAMAGE_DEALT',
+    target: 'demon',
+    amount,
+    source: sourceName,
+    demonHpAfter: next.demonHp,
+    ...(shieldAbsorbed > 0 || next.isBoss
+      ? {
+          shieldAbsorbed,
+          hpDamage,
+          demonShieldAfter: next.demonShield,
+        }
+      : {}),
+  });
+
+  if (next.bossCharging && !next.bossChargeInterrupted && amount > 0) {
+    next.bossChargeDamage += amount;
+    if (next.bossChargeDamage >= next.bossChargeThreshold) {
+      next.bossChargeInterrupted = true;
+      next.bossCharging = false;
+      next.renqing += next.bossChargeRefundRenqing;
+      const reducedDamage = next.bossInterruptedNextDamage ?? 3;
+      const nextRoundIdx = next.demonActions.findIndex((a) => a.round === next.round + 1);
+      if (nextRoundIdx >= 0) {
+        next.demonActions[nextRoundIdx] = {
+          ...next.demonActions[nextRoundIdx],
+          damage: reducedDamage,
+          skill: `${next.bossChargeSkill ?? '封门'}(破)`,
+        };
+      }
+      const skillName = next.bossChargeSkill ?? '封门';
+      next.log.push(
+        `R${next.round}:打断「${skillName}」(累伤${next.bossChargeDamage}/${next.bossChargeThreshold})返还+${next.bossChargeRefundRenqing}人情`,
+      );
+      events.push({
+        type: 'BOSS_CHARGE_INTERRUPTED',
+        round: next.round,
+        skill: skillName,
+        damageDealt: next.bossChargeDamage,
+        threshold: next.bossChargeThreshold,
+        refundRenqing: next.bossChargeRefundRenqing,
+        renqingAfter: next.renqing,
+        reducedNextDamage: reducedDamage,
+      });
+    }
+  }
+}
+
 /**
  * EffectRunner with structured BattleEvent output.
  * Does not mutate the input state.
@@ -303,14 +406,7 @@ export function applyEffectWithEvents(
   switch (effect.type) {
     case 'damage': {
       const amount = effect.value ?? 0;
-      next.demonHp = Math.max(0, next.demonHp - amount);
-      events.push({
-        type: 'DAMAGE_DEALT',
-        target: 'demon',
-        amount,
-        source: sourceName,
-        demonHpAfter: next.demonHp,
-      });
+      applyDamageToDemon(next, amount, sourceName, events);
       return { state: next, events };
     }
 
@@ -318,14 +414,7 @@ export function applyEffectWithEvents(
       const base = effect.value ?? 0;
       const bonus = effect.bonus ?? 0;
       const amount = next.demonHasActed ? base + bonus : base;
-      next.demonHp = Math.max(0, next.demonHp - amount);
-      events.push({
-        type: 'DAMAGE_DEALT',
-        target: 'demon',
-        amount,
-        source: sourceName,
-        demonHpAfter: next.demonHp,
-      });
+      applyDamageToDemon(next, amount, sourceName, events);
       return { state: next, events };
     }
 

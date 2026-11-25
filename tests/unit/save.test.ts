@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import balanceJson from '../../src/data/balance.json';
+import { createInitialChapterState } from '../../src/game/chapters';
 import {
   createInitialState,
   DAILY_CUSTOMER_COUNT,
@@ -47,17 +48,18 @@ function createMemoryStorage(): StorageLike & { store: Map<string, string> } {
 }
 
 describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
-  it('createNewGame initializes Day 1 defaults at SAVE_VERSION = 2 from balance.json', () => {
-    expect(SAVE_VERSION).toBe(2);
+  it('createNewGame initializes Day 1 defaults at SAVE_VERSION = 3 from balance.json', () => {
+    expect(SAVE_VERSION).toBe(3);
     const save = createNewGame();
     expect(save).toEqual({
-      version: 2,
+      version: 3,
       day: 1,
       money: balanceJson.startingMoney,
       reputation: balanceJson.startingReputation,
       deck: [],
       shopLevel: 1,
       redeemTickets: 0,
+      chapter: createInitialChapterState(),
     });
   });
 
@@ -66,13 +68,20 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
     expect(loadSave(storage)).toBeNull();
 
     const sample: SaveData = {
-      version: 2,
+      version: 3,
       day: 2,
       money: 150,
       reputation: 1,
       deck: ['倒转', '守诺', '钢笔'],
       shopLevel: 2,
       redeemTickets: 1,
+      chapter: createInitialChapterState({
+        dayInChapter: 2,
+        daysCleared: [1],
+        daysVisited: [1],
+        pawnsCollected: 2,
+        demonsDefeated: 1,
+      }),
     };
 
     saveGame(sample, storage);
@@ -87,8 +96,9 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
     expect(loadSave(storage)).toBeNull();
   });
 
-  it('migrates legacy v1 SaveData sequentially to v2 via MIGRATIONS without data loss', () => {
+  it('migrates legacy v1 and v2 SaveData sequentially to v3 via MIGRATIONS without data loss', () => {
     expect(MIGRATIONS.some((m) => m.from === 1 && m.to === 2)).toBe(true);
+    expect(MIGRATIONS.some((m) => m.from === 2 && m.to === 3)).toBe(true);
 
     const storage = createMemoryStorage();
     const v1Save = {
@@ -104,16 +114,40 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
 
     const migratedRaw = migrateSaveData(v1Save);
     expect(migratedRaw?.migratedFrom).toBe(1);
-    expect(migratedRaw?.data.version).toBe(2);
+    expect(migratedRaw?.data.version).toBe(3);
 
     const detailed = loadSaveDetailed(storage);
     expect(detailed.quarantinedCorrupt).toBe(false);
     expect(detailed.migratedFrom).toBe(1);
-    expect(detailed.save).toEqual({
-      ...v1Save,
-      version: 2,
-    });
+    expect(detailed.save?.version).toBe(3);
+    expect(detailed.save?.day).toBe(3);
+    expect(detailed.save?.money).toBe(120);
+    expect(detailed.save?.deck).toEqual(['倒转', '守诺', '余音']);
+    expect(detailed.save?.chapter.currentChapter).toBe(1);
+    expect(detailed.save?.chapter.dayInChapter).toBe(3);
+    expect(detailed.save?.chapter.daysVisited).toEqual([1, 2]);
     expect(storage.store.has(CORRUPT_SAVE_STORAGE_KEY)).toBe(false);
+
+    // Also test v2 -> v3 direct migration
+    const v2Save = {
+      version: 2,
+      day: 4,
+      money: 180,
+      reputation: 3,
+      deck: ['倒转', '守诺', '飞驰', '钢笔'],
+      shopLevel: 3,
+      redeemTickets: 2,
+    };
+    storage.setItem(SAVE_STORAGE_KEY, JSON.stringify(v2Save));
+    const v2Loaded = loadSaveDetailed(storage);
+    expect(v2Loaded.quarantinedCorrupt).toBe(false);
+    expect(v2Loaded.migratedFrom).toBe(2);
+    expect(v2Loaded.save?.version).toBe(3);
+    expect(v2Loaded.save?.money).toBe(180);
+    expect(v2Loaded.save?.chapter.currentChapter).toBe(1);
+    expect(v2Loaded.save?.chapter.dayInChapter).toBe(4);
+    expect(v2Loaded.save?.chapter.pactChoice).toBeNull();
+    expect(v2Loaded.save?.chapter.chapter1Completed).toBe(false);
   });
 
   it('quarantines corrupted JSON, unsupported future versions, or invalid fields to pawnshop-cards-save-corrupt-v1 without throwing', () => {
@@ -160,13 +194,14 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
 
   it('applyDayResult updates money, deck, redeemTickets, shopLevel, and day on win (immutably)', () => {
     const initial: SaveData = {
-      version: 2,
+      version: 3,
       day: 1,
       money: 120,
       reputation: 1,
       deck: ['倒转', '守诺'],
       shopLevel: 1,
       redeemTickets: 0,
+      chapter: createInitialChapterState(),
     };
     const snapshot = structuredClone(initial);
 
@@ -182,13 +217,19 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
 
     expect(initial).toEqual(snapshot);
     expect(afterWin).toEqual({
-      version: 2,
+      version: 3,
       day: 2,
       money: 140,
       reputation: 1,
       deck: ['倒转', '守诺', '钢笔'],
       shopLevel: 2,
       redeemTickets: 1,
+      chapter: createInitialChapterState({
+        dayInChapter: 2,
+        daysCleared: [1],
+        daysVisited: [1],
+        demonsDefeated: 1,
+      }),
     });
 
     const afterFullWin = applyDayResult(afterWin, {
@@ -205,33 +246,42 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
     expect(afterFullWin.shopLevel).toBe(3);
     expect(afterFullWin.redeemTickets).toBe(2);
     expect(afterFullWin.day).toBe(3);
+    expect(afterFullWin.chapter.dayInChapter).toBe(3);
+    expect(afterFullWin.chapter.daysCleared).toEqual([1, 2]);
   });
 
   it('applyDayResult increments only day on lose while keeping money, deck, level, tickets unchanged', () => {
     const initial: SaveData = {
-      version: 2,
+      version: 3,
       day: 1,
       money: 90,
       reputation: -1,
       deck: ['倒转', '旧书'],
       shopLevel: 2,
       redeemTickets: 1,
+      chapter: createInitialChapterState(),
     };
 
     const afterLose = applyDayResult(initial, { outcome: 'lose' });
     expect(afterLose).toEqual({
-      version: 2,
+      version: 3,
       day: 2,
       money: 90,
       reputation: -1,
       deck: ['倒转', '旧书'],
       shopLevel: 2,
       redeemTickets: 1,
+      chapter: createInitialChapterState({
+        dayInChapter: 2,
+        daysCleared: [],
+        daysVisited: [1],
+        demonsDefeated: 0,
+      }),
     });
     expect(afterLose.deck).not.toBe(initial.deck);
   });
 
-  it('persists tutorial completion backward-compatibly across v1->v2 migration', () => {
+  it('persists tutorial completion backward-compatibly across v1->v2->v3 migration', () => {
     const storage = createMemoryStorage();
     expect(loadTutorialDone(storage)).toBe(false);
 
@@ -245,7 +295,8 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
       redeemTickets: 0,
     };
     storage.setItem(SAVE_STORAGE_KEY, JSON.stringify(legacySave));
-    expect(loadSave(storage)).toEqual({ ...legacySave, version: 2 });
+    expect(loadSave(storage)?.version).toBe(3);
+    expect(loadSave(storage)?.day).toBe(1);
     expect(loadTutorialDone(storage)).toBe(false);
 
     storage.setItem(

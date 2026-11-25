@@ -1,0 +1,74 @@
+{
+  "chapters": [
+    {
+      "id": 1,
+      "name": "立脚老街",
+      "days": 7,
+      "bossId": "boss_ch1",
+      "itemPool": ["watch", "ring", "old_book", "bicycle", "erhu", "stamp_album"],
+      "day3Rumor": "老街风声：明日集市开张，几位老主顾要来谈份掌柜契约。",
+      "dailyDemonPools": [
+        { "day": 1, "demonPool": ["a"], "label": "首夜" },
+        { "day": 2, "demonPool": ["b"], "label": "次夜" },
+        { "day": 3, "demonPool": ["c"], "label": "风声" },
+        { "day": 4, "demonPool": ["d"], "tag": "集市日", "label": "集市" },
+        { "day": 5, "demonPool": ["b", "c", "d"], "label": "升压" },
+        { "day": 6, "demonPool": ["b", "c", "d"], "tag": "暗当", "label": "前夜" },
+        { "day": 7, "demonPool": ["boss_ch1"], "isBossDay": true, "tag": "大心魔", "label": "封门" }
+      ],
+      "day4Pacts": [
+        {
+          "id": "high_margin",
+          "name": "厚利当单",
+          "benefit": "赎当倍率1.2变1.5",
+          "cost": "跳过当客口碑-1",
+          "redemptionMultiplier": 1.5,
+          "skipReputationDelta": -1
+        },
+        {
+          "id": "credit_stock",
+          "name": "赊账进货",
+          "benefit": "立刻得80元",
+          "cost": "第7夜Boss血量+6",
+          "immediateMoney": 80,
+          "bossHpBonus": 6
+        },
+        {
+          "id": "steady_shop",
+          "name": "稳扎稳打",
+          "benefit": "口碑+1",
+          "cost": "无额外代价",
+          "immediateReputation": 1
+        }
+      ],
+      "day6SideQuest": {
+        "name": "偏巷暗当",
+        "extraItemCount": 1,
+        "nightDemonHpBonus": 4,
+        "benefitText": "多收1件未拥有旧物（正常三档报价）",
+        "costText": "代价：今夜心魔血量 +4"
+      },
+      "diary": {
+        "title": "老掌柜的日记",
+        "subtitle": "一九八七年秋 · 周日休市",
+        "body": "腊月前的账总算平了。老债主拍桌要封门那晚，柜台灯芯燃到见底。当铺收的从不是铁器旧表，是街坊喘口气的工夫。门后抽屉还留着半本旧账，明天开市，把灰擦干净再往下翻。"
+      }
+    }
+  ],
+  "reservedChapters": [
+    {
+      "id": 2,
+      "name": "站稳招牌",
+      "days": 7,
+      "implemented": false,
+      "bossId": null
+    },
+    {
+      "id": 3,
+      "name": "寻踪旧账",
+      "days": 7,
+      "implemented": false,
+      "bossId": null
+    }
+  ]
+}

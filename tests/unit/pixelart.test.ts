@@ -72,9 +72,9 @@ describe('Pixel art validation (23 cards + 6 items + 4 demons)', () => {
     }
   });
 
-  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 4 demons in demons.json', () => {
-    expect(demonsJson).toHaveLength(4);
-    expect(Object.keys(DEMON_PIXEL_ART)).toHaveLength(4);
+  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 5 demons (4 regular + Ch1 Boss) in demons.json', () => {
+    expect(demonsJson).toHaveLength(5);
+    expect(Object.keys(DEMON_PIXEL_ART)).toHaveLength(5);
 
     for (const demon of demonsJson) {
       const sprite = DEMON_PIXEL_ART[demon.id];

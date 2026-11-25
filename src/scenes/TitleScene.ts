@@ -15,6 +15,7 @@ import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 export const TITLE_START_BUTTON = { x: 160, y: 122, width: 96, height: 24 } as const;
 export const TITLE_CONTINUE_BUTTON = { x: 160, y: 156, width: 96, height: 24 } as const;
 export const TITLE_VOLUME_BUTTON = { x: 54, y: 154, width: 60, height: 22 } as const;
+export const TITLE_CALENDAR_BUTTON = { x: 266, y: 122, width: 60, height: 22 } as const;
 export const TITLE_TUTORIAL_BUTTON = { x: 266, y: 154, width: 60, height: 22 } as const;
 
 export class TitleScene extends Phaser.Scene {
@@ -48,6 +49,7 @@ export class TitleScene extends Phaser.Scene {
         maxRenqing: maxRenqingForLevel(existingSave?.shopLevel ?? 1),
         hasSave: existingSave !== null,
         corruptSaveQuarantined: loadResult.quarantinedCorrupt,
+        chapter: existingSave?.chapter,
         tutorialActive: false,
         currentStep: null,
         tutorialDone: loadTutorialDone(),
@@ -97,6 +99,18 @@ export class TitleScene extends Phaser.Scene {
         color: PALETTE.vermilion.hex,
         origin: 0.5,
       });
+    } else if (existingSave?.chapter.status === 'failed') {
+      addPixelText(this, centerX, 102, '第1章未通关 · 可重开第1章', {
+        size: 12,
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+      });
+    } else if (existingSave?.chapter.chapter1Completed) {
+      addPixelText(this, centerX, 102, '第1章·已完成', {
+        size: 12,
+        color: PALETTE.jade.hex,
+        origin: 0.5,
+      });
     }
 
     // “开始”按钮：烛光底 + 墨黑字 + 1 像素墨黑描边
@@ -107,15 +121,15 @@ export class TitleScene extends Phaser.Scene {
       TITLE_START_BUTTON.height,
       '开始',
       () => {
-        const fresh = createNewGame();
+        const fresh = createNewGame(undefined, existingSave?.chapter);
         clearPawnPrices();
         saveGame(fresh);
         this.scene.start('PawnshopScene', { save: fresh });
       },
     );
 
-    // 有存档时在“开始”按钮下方约 34 像素处显示“继续”按钮；无存档时不画
-    if (existingSave !== null) {
+    // 有存档且章节进行中时在“开始”按钮下方约 34 像素处显示“继续”按钮；章节已结束/失败时可点“开始”重开第1章
+    if (existingSave !== null && existingSave.chapter.status === 'in_progress') {
       this.createMenuButton(
         TITLE_CONTINUE_BUTTON.x,
         TITLE_CONTINUE_BUTTON.y,
@@ -131,6 +145,22 @@ export class TitleScene extends Phaser.Scene {
     // 左下角常驻音量开关（开/关，16 色像素风，状态持久化至 localStorage）
     this.createVolumeToggleButton();
 
+    // 右侧常驻“台历”入口：打开独立全屏 7 天老街台历屏
+    this.createMenuButton(
+      TITLE_CALENDAR_BUTTON.x,
+      TITLE_CALENDAR_BUTTON.y,
+      TITLE_CALENDAR_BUTTON.width,
+      TITLE_CALENDAR_BUTTON.height,
+      '台历',
+      () => {
+        this.scene.start('CalendarMapScene', {
+          returnTo: 'TitleScene',
+          save: existingSave,
+        });
+      },
+      PALETTE.oldPaper.num,
+    );
+
     // 右下角常驻“教程”入口：重看教程（重新进入第 1 天带引导）
     this.createMenuButton(
       TITLE_TUTORIAL_BUTTON.x,
@@ -139,7 +169,7 @@ export class TitleScene extends Phaser.Scene {
       TITLE_TUTORIAL_BUTTON.height,
       '教程',
       () => {
-        const fresh = createNewGame();
+        const fresh = createNewGame(undefined, existingSave?.chapter);
         clearPawnPrices();
         this.scene.start('PawnshopScene', { save: fresh, forceTutorial: true });
       },
