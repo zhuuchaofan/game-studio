@@ -75,6 +75,8 @@ export interface RedemptionOffer {
   cardName: string;
   basePrice: number;
   payout: number;
+  /** P10 子项 4：第 2 天新娘剧本化赎当（故事事件，不耗赎当券、拒绝口碑-1、不占当日随机赎当名额）。 */
+  isBrideScripted?: boolean;
 }
 
 export interface PawnshopState {
@@ -138,6 +140,7 @@ export interface PawnshopDebugSnapshot {
     cardName: string;
     basePrice: number;
     payout: number;
+    isBrideScripted?: boolean;
   } | null;
   /** 新手教程状态（供 E2E 测试断言用）。 */
   tutorialActive?: boolean;
@@ -207,6 +210,13 @@ export const DAILY_CUSTOMER_COUNT = 3;
 
 /** 第 1 天当客池保底：至少 1 件出伤害牌的旧物（永久自行车→飞驰 / 二胡→余音，P6 B2）。 */
 export const DAY1_GUARANTEED_DAMAGE_ITEM_IDS: readonly string[] = ['bicycle', 'erhu'];
+
+/** P10 子项 4：第 2 天新娘剧本化赎当对应的婚戒旧物与牌名。 */
+export const BRIDE_RING_ITEM_ID = 'ring';
+export const BRIDE_RING_CARD_NAME = '守诺';
+
+/** P10 子项 6：第 3 天老街风声折行宽度上限（完整居中在 276px 面板内）。 */
+export const DAY3_RUMOR_WRAP_CHARS = 17;
 
 /** P6 C4 赎当倍率：当价 × 1.2 */
 export const REDEMPTION_PRICE_MULTIPLIER = 1.2;
@@ -471,15 +481,30 @@ export function shuffleItems(items: readonly PawnItem[], rng: RngFn): PawnItem[]
   return result;
 }
 
+export interface PickDailyItemsOptions {
+  /**
+   * P10 子项 3 落败恢复：玩家输掉第 1 夜时，第 2 天保底至少 1 件低价 <= money 的伤害型旧物
+   * （二胡余音 / 自行车飞驰，优先未拥有）。
+   */
+  recoverDamageAfterDay1Loss?: {
+    money: number;
+    deck: readonly string[];
+  };
+  balance?: BalanceConfig;
+}
+
 /**
  * Picks daily customers (default 3) via Fisher-Yates shuffle.
  * On Day 1 (P6 B2), guarantees at least 1 damage-card item (bicycle/erhu) appears.
+ * On Day 2 after a Night 1 loss (P10), guarantees at least 1 affordable (low <= money)
+ * damage-card item (preferring unowned).
  */
 export function pickDailyItems(
   items: readonly PawnItem[],
   day: number,
   rng: RngFn,
   count: number = DAILY_CUSTOMER_COUNT,
+  options?: PickDailyItemsOptions,
 ): PawnItem[] {
   const shuffled = shuffleItems(items, rng);
   const picked = shuffled.slice(0, count);
@@ -494,6 +519,42 @@ export function pickDailyItems(
         .find((item) => DAY1_GUARANTEED_DAMAGE_ITEM_IDS.includes(item.id));
       if (replacement) {
         picked[picked.length - 1] = replacement;
+      }
+    }
+  }
+
+  if (day === 2 && options?.recoverDamageAfterDay1Loss && picked.length > 0) {
+    const { money, deck } = options.recoverDamageAfterDay1Loss;
+    const balance = options.balance ?? BALANCE;
+    const owned = new Set(deck);
+    const isAffordableDamage = (item: PawnItem): boolean =>
+      DAY1_GUARANTEED_DAMAGE_ITEM_IDS.includes(item.id) &&
+      canAffordTier(money, item.trueValue, 'low', balance);
+
+    const hasUnownedAffordable = picked.some(
+      (item) => isAffordableDamage(item) && !owned.has(item.cardName),
+    );
+    if (!hasUnownedAffordable) {
+      const unownedReplacement = shuffled
+        .slice(count)
+        .find((item) => isAffordableDamage(item) && !owned.has(item.cardName));
+      if (unownedReplacement) {
+        let replaceIdx = picked.length - 1;
+        for (let i = picked.length - 1; i >= 0; i -= 1) {
+          if (!isAffordableDamage(picked[i])) {
+            replaceIdx = i;
+            break;
+          }
+        }
+        picked[replaceIdx] = unownedReplacement;
+      } else {
+        const hasAnyAffordable = picked.some(isAffordableDamage);
+        if (!hasAnyAffordable) {
+          const fallbackReplacement = shuffled.slice(count).find(isAffordableDamage);
+          if (fallbackReplacement) {
+            picked[picked.length - 1] = fallbackReplacement;
+          }
+        }
       }
     }
   }
@@ -553,6 +614,48 @@ export function createRedemptionOffer(
     cardName: chosen.cardName,
     basePrice,
     payout,
+  };
+}
+
+/**
+ * P10 子项 4：第 2 天新娘剧本化赎当（独立触发分支，不改动随机赎当 createRedemptionOffer）。
+ * 若玩家第 1 天收下了婚戒（牌库里有「守诺」）且本事件尚未触发，第 2 天开张前必定触发。
+ * 不要求持有赎当券、不消耗赎当券、不占当日随机赎当名额；倍率固定 1.2（复用 REDEMPTION_PRICE_MULTIPLIER）。
+ */
+export function createBrideRedemptionOffer(
+  day: number,
+  deck: readonly string[],
+  pawnPrices: PawnPriceLedger,
+  day1RingPawned: boolean,
+  alreadyTriggered: boolean,
+  items: readonly PawnItem[] = ITEMS,
+  priceMultiplier: number = REDEMPTION_PRICE_MULTIPLIER,
+): RedemptionOffer | null {
+  if (day !== 2 || !day1RingPawned || alreadyTriggered) {
+    return null;
+  }
+
+  const deckIndex = deck.indexOf(BRIDE_RING_CARD_NAME);
+  if (deckIndex < 0) {
+    return null;
+  }
+
+  const ringItem = items.find((item) => item.id === BRIDE_RING_ITEM_ID);
+  if (!ringItem) {
+    return null;
+  }
+
+  const recorded = peekPawnPrice(pawnPrices, BRIDE_RING_CARD_NAME);
+  const basePrice = recorded !== null ? recorded : ringItem.trueValue;
+  const payout = Math.round(basePrice * priceMultiplier);
+
+  return {
+    item: { ...ringItem },
+    deckIndex,
+    cardName: BRIDE_RING_CARD_NAME,
+    basePrice,
+    payout,
+    isBrideScripted: true,
   };
 }
 
@@ -617,6 +720,53 @@ export function resolveRedemption(state: PawnshopState, accept: boolean): Pawnsh
 
   const currentTickets = state.redeemTickets ?? 0;
   const currentPrices = clonePawnPrices(state.pawnPrices);
+
+  if (offer.isBrideScripted) {
+    if (!accept) {
+      return {
+        ...state,
+        phase: 'negotiating',
+        reputation: state.reputation - 1,
+        deck: [...state.deck],
+        log: [...state.log, `新娘赎当:${offer.item.name}->拒绝(口碑-1)`],
+        items: state.items.map((item) => ({ ...item })),
+        lastOutcome: null,
+        redeemTickets: currentTickets,
+        pawnPrices: currentPrices,
+        redemptionOffer: null,
+      };
+    }
+
+    const nextDeck = [...state.deck];
+    if (
+      offer.deckIndex >= 0 &&
+      offer.deckIndex < nextDeck.length &&
+      nextDeck[offer.deckIndex] === offer.cardName
+    ) {
+      nextDeck.splice(offer.deckIndex, 1);
+    } else {
+      const fallbackIdx = nextDeck.indexOf(offer.cardName);
+      if (fallbackIdx >= 0) {
+        nextDeck.splice(fallbackIdx, 1);
+      }
+    }
+
+    const nextPrices = consumePawnPrice(currentPrices, offer.cardName);
+
+    return {
+      ...state,
+      phase: 'negotiating',
+      money: state.money + offer.payout,
+      reputation: state.reputation + 1,
+      deck: nextDeck,
+      log: [...state.log, `新娘赎当:${offer.item.name}(+${offer.payout},牌-${offer.cardName},口碑+1)`],
+      items: state.items.map((item) => ({ ...item })),
+      lastOutcome: null,
+      redeemTickets: currentTickets,
+      pawnPrices: nextPrices,
+      redemptionOffer: null,
+    };
+  }
 
   if (!accept || currentTickets < 1) {
     return {
@@ -831,4 +981,8 @@ export function wrapCjkText(text: string, maxCharsPerLine: number): string {
   }
 
   return lines.join('\n');
+}
+
+export function formatDay3Rumor(text: string): string {
+  return wrapCjkText(text, DAY3_RUMOR_WRAP_CHARS);
 }

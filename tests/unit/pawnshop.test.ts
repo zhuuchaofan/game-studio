@@ -3,10 +3,12 @@ import {
   advanceCustomer,
   BALANCE,
   canAffordTier,
+  createBrideRedemptionOffer,
   createInitialState,
   createRedemptionOffer,
   DAY1_GUARANTEED_DAMAGE_ITEM_IDS,
   deriveDaySeed,
+  formatDay3Rumor,
   formatOfferDialogue,
   formatReputationHint,
   getEffectiveAcceptRate,
@@ -27,6 +29,7 @@ import {
   toDebugSnapshot,
   wrapCjkText,
 } from '../../src/game/pawnshop';
+import chaptersJson from '../../src/data/chapters.json';
 import { mulberry32 } from '../../src/utils/rng';
 
 describe('quotePrice', () => {
@@ -615,6 +618,122 @@ describe('P8 feedback story wrapping (all 6 items)', () => {
         expect(line.length).toBeLessThanOrEqual(maxChars);
         expect(textStartX + line.length * 12).toBeLessThanOrEqual(panelRight - 10);
       }
+    }
+  });
+});
+
+describe('P10: Day 2 loss recovery, Bride scripted redemption, and Day 3 rumor wrapping', () => {
+  it('Day 2 loss recovery guarantees an affordable damage item (low <= money), covering both erhu unowned and erhu owned', () => {
+    // 1. Erhu UNOWNED, money = 30 (can afford erhu low=25, cannot afford bicycle low=40)
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const picked = pickDailyItems(ITEMS, 2, mulberry32(deriveDaySeed(seed, 2)), 3, {
+        recoverDamageAfterDay1Loss: { money: 30, deck: ['倒转', '守诺', '旧书'] },
+      });
+      expect(picked).toHaveLength(3);
+      expect(new Set(picked.map((i) => i.id)).size).toBe(3);
+      expect(picked.some((i) => i.id === 'erhu')).toBe(true);
+      expect(
+        picked.some(
+          (i) =>
+            DAY1_GUARANTEED_DAMAGE_ITEM_IDS.includes(i.id) &&
+            canAffordTier(30, i.trueValue, 'low'),
+        ),
+      ).toBe(true);
+    }
+
+    // 2. Erhu OWNED, money = 45 (both erhu low=25 and bicycle low=40 affordable -> prefers UNOWNED bicycle!)
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const picked = pickDailyItems(ITEMS, 2, mulberry32(deriveDaySeed(seed, 2)), 3, {
+        recoverDamageAfterDay1Loss: { money: 45, deck: ['余音', '倒转', '旧书'] },
+      });
+      expect(picked).toHaveLength(3);
+      expect(new Set(picked.map((i) => i.id)).size).toBe(3);
+      expect(picked.some((i) => i.id === 'bicycle')).toBe(true);
+    }
+
+    // 3. Erhu OWNED, money = 30 (bicycle low=40 unaffordable -> falls back to affordable erhu low=25)
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const picked = pickDailyItems(ITEMS, 2, mulberry32(deriveDaySeed(seed, 2)), 3, {
+        recoverDamageAfterDay1Loss: { money: 30, deck: ['余音', '倒转', '旧书'] },
+      });
+      expect(picked).toHaveLength(3);
+      expect(new Set(picked.map((i) => i.id)).size).toBe(3);
+      expect(picked.some((i) => i.id === 'erhu')).toBe(true);
+    }
+  });
+
+  it('Bride scripted redemption triggers only on Day 2 when ring was pawned on Day 1, does not consume tickets, and settles accept (+1.2x, rep+1, card leaves) vs reject (card stays, rep-1)', () => {
+    // Does not trigger on Day 1 or Day 3, or if ring not pawned on Day 1, or if already triggered, or if 守诺 missing
+    expect(createBrideRedemptionOffer(1, ['守诺'], { 守诺: [60] }, true, false)).toBeNull();
+    expect(createBrideRedemptionOffer(3, ['守诺'], { 守诺: [60] }, true, false)).toBeNull();
+    expect(createBrideRedemptionOffer(2, ['守诺'], { 守诺: [60] }, false, false)).toBeNull();
+    expect(createBrideRedemptionOffer(2, ['守诺'], { 守诺: [60] }, true, true)).toBeNull();
+    expect(createBrideRedemptionOffer(2, ['倒转'], {}, true, false)).toBeNull();
+
+    // Triggers on Day 2 with 0 redeemTickets and uses recorded deal price * 1.2 (60 * 1.2 = 72)
+    const offer = createBrideRedemptionOffer(2, ['倒转', '守诺'], { 守诺: [60] }, true, false);
+    expect(offer).not.toBeNull();
+    expect(offer!.isBrideScripted).toBe(true);
+    expect(offer!.item.id).toBe('ring');
+    expect(offer!.cardName).toBe('守诺');
+    expect(offer!.basePrice).toBe(60);
+    expect(offer!.payout).toBe(72);
+
+    const baseState = createInitialState({
+      day: 2,
+      money: 40,
+      reputation: 1,
+      deck: ['倒转', '守诺'],
+      redeemTickets: 0, // Zero tickets! Bride event must still resolve cleanly
+      pawnPrices: { 守诺: [60], 倒转: [40] },
+      redemptionOffer: offer,
+    });
+    expect(baseState.phase).toBe('redemption');
+
+    // Accept: 守诺 removed, money +72 (40 -> 112), rep +1 (1 -> 2), redeemTickets unchanged (0)
+    const accepted = resolveRedemption(baseState, true);
+    expect(accepted.phase).toBe('negotiating');
+    expect(accepted.deck).toEqual(['倒转']);
+    expect(accepted.money).toBe(112);
+    expect(accepted.reputation).toBe(2);
+    expect(accepted.redeemTickets).toBe(0);
+    expect(accepted.pawnPrices).toEqual({ 倒转: [40] });
+    expect(accepted.redemptionOffer).toBeNull();
+
+    // Reject: 守诺 kept, money unchanged (40), rep -1 (1 -> 0), redeemTickets unchanged (0)
+    const rejected = resolveRedemption(baseState, false);
+    expect(rejected.phase).toBe('negotiating');
+    expect(rejected.deck).toEqual(['倒转', '守诺']);
+    expect(rejected.money).toBe(40);
+    expect(rejected.reputation).toBe(0);
+    expect(rejected.redeemTickets).toBe(0);
+    expect(rejected.pawnPrices).toEqual({ 守诺: [60], 倒转: [40] });
+    expect(rejected.redemptionOffer).toBeNull();
+
+    // With 1 redeemTicket, accepting Bride event MUST NOT consume the ticket
+    const withTicket = createInitialState({
+      day: 2,
+      money: 40,
+      reputation: 1,
+      deck: ['倒转', '守诺'],
+      redeemTickets: 1,
+      pawnPrices: { 守诺: [60], 倒转: [40] },
+      redemptionOffer: offer,
+    });
+    const acceptedWithTicket = resolveRedemption(withTicket, true);
+    expect(acceptedWithTicket.redeemTickets).toBe(1);
+    expect(acceptedWithTicket.deck).toEqual(['倒转']);
+  });
+
+  it('wraps day3Rumor cleanly into <=2 lines inside the 276px summary banner without altering a single character', () => {
+    const rumor = chaptersJson.chapters[0].day3Rumor;
+    const wrapped = formatDay3Rumor(rumor);
+    const lines = wrapped.split('\n');
+
+    expect(lines.join('')).toBe(rumor);
+    expect(lines.length).toBeLessThanOrEqual(2);
+    for (const line of lines) {
+      expect(line.length * 12).toBeLessThanOrEqual(264); // 276px banner with 6px padding each side
     }
   });
 });

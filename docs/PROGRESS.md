@@ -325,3 +325,20 @@
     - `src/scenes/CardBattleScene.ts` 按方案 C 将双行详情条合并瘦身为单行详情条（`y=81..95` + `[故]`/`[效]` 切换钮），净腾出 `y=66..79` 徽章带，保留 P8 选牌提示行间隙。
     - 重跑 `scripts/generate-pixel-font.py` 补全全部新增汉字（`src/data/pixel-font.json` 629 → 711 字形，155.5 KB，零缺字零方框，临时 TTF 用完即删）。
   - **文档与测试**：`docs/GAME_DESIGN.md` 文末增补 §17（v1.0 核心不动）；新增 `tests/unit/p9-chapter.test.ts` 与 `tests/e2e/p9-chapter-one.spec.ts`，实测截图核验台历、契约、第 6 天支线、Boss 蓄力与打断、日记与结局屏。
+
+## 2026-11-25 — P10 头两天打磨（feature/p10-first-two-days）
+- **范围**：按 `proto-tasks/13-p10-first-two-days.md` 全部完成 7 大子项、文档增补与浏览器实测截图核验，严格遵守红线（未改核心玩法/数值/章节结构/随机赎当逻辑，未引入新颜色/新旧物/新牌，未碰 `.github/workflows/`，任务书 `proto-tasks/13-p10-first-two-days.md` 随提交入库）：
+  - **子项 1（首夜引导）**：改写 `src/game/tutorial.ts` 第 1 步气泡 `pawnshop_intro`（1/6，3 行 1987 口吻）在首次报价前明确告知今晚目标（3 回合打掉心魔 20 血）与组牌路线（点名二胡余音每回 3 伤、自行车飞驰每回合 6 伤）；`tutorialBubble.ts` 扩展支持 3 行气泡且几何零遮挡；`night_play`（4/6）同步强化 20 血目标。
+  - **子项 2（文字可读性全量审计与修复）**：全量审计 `addPixelText` 浅底文字对比度，将白天卡片/成交结算/赎当/契约/整理柜台的浅底铜棕/玉绿文字提升为板内墨黑（`#17120C`）与深木（`#2E2118`），夜里手牌费用角标与效果字提至高对比（灯黄底+墨黑字、0 费玉绿底+纸白字、不可出牌银蓝底+夜黑字），深底文字不动；同步在 `src/game/pixelFont.ts` 修复 Phaser `CANVAS` 回退渲染器下 `BitmapText.setTint` 失效导致“浅底白字”的根因（Canvas2D 模式按需烘焙调色板着色图集并接管 `setTint`）。
+  - **子项 3（输首夜落败恢复 + 结算失败文案统一）**：`pickDailyItems` 新增第 1 夜落败后第 2 天保底选项，确保当客池至少含 1 件低价 ≤ 当前钱数的伤害型旧物（优先未拥有，覆盖二胡已拥有/未拥有）；`syncTutorialForResult` 拆分胜负两版 `settlement` 气泡文案（胜局保留原句、负局「头一天没打下来，不怕——账还在，铺子还在，明天再想办法。」与 `ResultScene`“3 回合未分胜负”一致）。
+  - **子项 4（第 2 天新娘剧本化赎当）**：`src/game/pawnshop.ts` 新增独立分支 `createBrideRedemptionOffer` 并复用 `resolveRedemption` 1.2 倍结算（`createRedemptionOffer` 随机赎当逻辑一字未动）；`ChapterSaveState` 新增可选向后兼容字段 `day1RingPawned` 与 `day2BrideRedemptionDone`；第 1 天收婚戒则第 2 天开张前必触发新娘赎当（不耗赎当券、不占当日随机赎当名额、仅触发一次），界面写明战术代价（「提醒：赎走戒指，今晚少张挡伤牌(守诺盾5)」），接受（守诺离库、钱 +1.2×、口碑 +1）与拒绝（守诺保留、口碑 −1）清晰二选一。
+  - **子项 5（心魔-客人关联显性化）**：`src/data/demons.json` 为全部 5 个心魔补充 `customerLink`、`customerTag` 与 `aftermathLine`；夜里开场横幅与中部详情带显性写明“这是谁的难处”，胜利结算页追加白天世界实情（如「白天手表还在柜台，下月账单还在。」）。
+  - **子项 6（P9 遗留两处小修）**：① `day3Rumor` 使用 `formatDay3Rumor`（`wrapCjkText` 17 字折行）2 行居中完整显示于 276px 横幅内、文案一字不改；② 夜里开场横幅下移至非阻塞中部区域（`x=24..248, y=67..107`），开场全程不遮挡心魔血条、`[故]` 钮、结束回合与手牌。
+  - **子项 7（新玩家首夜模拟）**：`src/game/montecarlo.ts` 新增 `simulateNewPlayerFirstNight`（真实第 1 天 3 件旧物分布，禁用 `TEST_DECK`，1,000 局对阵心魔 A），实测基线首夜总胜率 **28.5%**（285/1000）、单攻击牌对局胜率 **8.8%**（69/784）、双攻击牌对局胜率 **100.0%**（216/216），据此设定回归护栏（总胜率 `20%–45%`、单攻击牌 `5%–25%`）并接入 `npm run sim:check`。
+  - **字形与文档**：重跑 `scripts/generate-pixel-font.py` 补全新增汉字（`src/data/pixel-font.json` 711 → 729 字形，159.6 KB，零缺字零方框，临时 TTF 用完即删）；`docs/GAME_DESIGN.md` 文末增补 §18。
+- **验证证据**：
+  - `npm run build` 退出码 0；`npx tsc --noEmit` 0 错误；
+  - `npx vitest run` 14/14 文件、126/126 单测全过；
+  - `npm run sim:check` 全部护栏通过（含新玩家首夜模拟）；
+  - `npm run test:e2e`（Playwright，localhost）37/37 全过（含新增 `tests/e2e/p10-first-two-days.spec.ts` 4 用例，无失败请求、无 `pageerror`）；
+  - 浏览器实测修复前后同屏截图存 `/tmp/p10-shots-before/`（5 张）与 `/tmp/p10-shots-after/`（10 张，含 WebGL 对比、Canvas2D 回退验证、首夜引导、新娘赎当、风声折行、开场横幅不遮血条、胜负结算）并逐张目视核查通过。

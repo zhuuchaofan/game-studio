@@ -37,7 +37,7 @@ export interface TutorialStepDef {
   id: TutorialStepId;
   index: number;
   label: string;
-  lines: readonly [string, string];
+  lines: readonly string[];
   continueLabel: string;
   box: TutorialBubbleBox;
 }
@@ -56,12 +56,16 @@ export interface TutorialBubbleLayout {
   };
 }
 
+export type TutorialSettlementOutcome = 'win' | 'lose';
+
 export interface TutorialState {
   active: boolean;
   currentStep: TutorialStepId | null;
   completedSteps: TutorialStepId[];
   done: boolean;
   isReplay: boolean;
+  /** P10 子项 3：结算步骤胜负口径区分（默认 'win' 向后兼容）。 */
+  settlementOutcome?: TutorialSettlementOutcome;
 }
 
 export interface CreateTutorialOptions {
@@ -71,6 +75,16 @@ export interface CreateTutorialOptions {
 }
 
 export const TUTORIAL_SKIP_LABEL = '跳过教程';
+
+export const TUTORIAL_SETTLEMENT_WIN_LINES: readonly [string, string] = [
+  '掌柜：头一天算过关了！赢了得钱得新牌，',
+  '账已记好，往后就靠你自己看铺子啦。',
+];
+
+export const TUTORIAL_SETTLEMENT_LOSE_LINES: readonly [string, string] = [
+  '掌柜：头一天没打下来，不怕——',
+  '账还在，铺子还在，明天再想办法。',
+];
 
 /**
  * Day 1 guided tutorial steps in strict gameplay flow order:
@@ -84,13 +98,17 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     id: 'pawnshop_intro',
     index: 1,
     label: '收当',
-    lines: ['掌柜：学徒，开张了！白天看清旧物，', '跟当客谈好价收进来。'],
+    lines: [
+      '掌柜：开张了！今晚3回合打掉心魔20血，',
+      '先收张能打伤害的牌：二胡余音每回3伤，',
+      '自行车飞驰每回合能打6伤！',
+    ],
     continueLabel: '1/6 点击继续',
     box: {
       x: 6,
       y: 80,
-      width: 226,
-      height: 44,
+      width: 230,
+      height: 56,
       theme: 'day',
     },
   },
@@ -127,7 +145,7 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     id: 'night_play',
     index: 4,
     label: '夜里出牌',
-    lines: ['掌柜：天黑拉灯，心魔上门了！', '点下方手牌出招，三回合内打垮它。'],
+    lines: ['掌柜：天黑拉灯，心魔上门了！', '点下方手牌出招，3回合内打掉它20血。'],
     continueLabel: '4/6 点击继续',
     box: {
       x: 6,
@@ -157,13 +175,13 @@ export const TUTORIAL_STEPS: Record<TutorialStepId, TutorialStepDef> = {
     id: 'settlement',
     index: 6,
     label: '结算',
-    lines: ['掌柜：头一天算过关了！赢了得钱得新牌，', '账已记好，往后就靠你自己看铺子啦。'],
+    lines: TUTORIAL_SETTLEMENT_WIN_LINES,
     continueLabel: '6/6 点击完成',
     box: {
       x: 16,
-      y: 86,
+      y: 90,
       width: 288,
-      height: 46,
+      height: 44,
       theme: 'night',
     },
   },
@@ -178,9 +196,24 @@ export function getTutorialStepDef(step: TutorialStepId | null): TutorialStepDef
   return step ? TUTORIAL_STEPS[step] : null;
 }
 
-export function getTutorialCopy(step: TutorialStepId | null): string | null {
-  const def = getTutorialStepDef(step);
-  return def ? def.lines.join('\n') : null;
+export function getTutorialStepLines(
+  step: TutorialStepId,
+  settlementOutcome: TutorialSettlementOutcome = 'win',
+): readonly string[] {
+  if (step === 'settlement' && settlementOutcome === 'lose') {
+    return TUTORIAL_SETTLEMENT_LOSE_LINES;
+  }
+  return TUTORIAL_STEPS[step].lines;
+}
+
+export function getTutorialCopy(
+  step: TutorialStepId | null,
+  settlementOutcome: TutorialSettlementOutcome = 'win',
+): string | null {
+  if (!step) {
+    return null;
+  }
+  return getTutorialStepLines(step, settlementOutcome).join('\n');
 }
 
 export function getTutorialBubbleLayout(step: TutorialStepId): TutorialBubbleLayout {
@@ -225,6 +258,7 @@ export function cloneTutorialState(state: TutorialState): TutorialState {
     completedSteps: [...state.completedSteps],
     done: state.done,
     isReplay: state.isReplay,
+    ...(state.settlementOutcome !== undefined ? { settlementOutcome: state.settlementOutcome } : {}),
   };
 }
 
@@ -329,13 +363,18 @@ export function syncTutorialForBattle(
 
 /**
  * Syncs tutorial state when entering ResultScene at the end of Day 1.
+ * P10 子项 3：按胜负区分 settlement 气泡文案，输夜不说“过关”。
  */
-export function syncTutorialForResult(state: TutorialState): TutorialState {
+export function syncTutorialForResult(
+  state: TutorialState,
+  outcome: TutorialSettlementOutcome = 'win',
+): TutorialState {
   if (!state.active) {
     return cloneTutorialState(state);
   }
 
   const next = cloneTutorialState(state);
+  next.settlementOutcome = outcome;
   next.completedSteps = addCompleted(
     next.completedSteps,
     'pawnshop_intro',

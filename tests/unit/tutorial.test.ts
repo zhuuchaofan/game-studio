@@ -164,7 +164,7 @@ describe('Tutorial bubble geometry (320x180 non-overlapping layout)', () => {
     const resultButtons: Rect[] = [
       fromCenter(88, 148, 116, 24), // next day
       fromCenter(222, 148, 136, 24), // return title
-      { left: 12, top: 8, right: 308, bottom: 84 }, // A2/C5: result settlement & victory narrative
+      { left: 12, top: 8, right: 308, bottom: 88 }, // A2/C5/P10: result settlement, victory narrative & aftermath
     ];
 
     const sceneTargets: Record<string, Rect[]> = {
@@ -212,5 +212,34 @@ describe('Tutorial bubble geometry (320x180 non-overlapping layout)', () => {
           continueClickPoint.y <= skipRect.bottom,
       ).toBe(false);
     }
+  });
+
+  it('P10: pawnshop_intro gives Night 1 20HP/3-round goal and damage-card route, and settlement distinguishes win vs lose copy', () => {
+    const introCopy = getTutorialCopy('pawnshop_intro') ?? '';
+    expect(introCopy).toContain('3回合');
+    expect(introCopy).toContain('20血');
+    expect(introCopy).toContain('二胡余音');
+    expect(introCopy).toContain('3伤');
+    expect(introCopy).toContain('自行车飞驰');
+    expect(introCopy).toContain('6伤');
+    expect(TUTORIAL_STEPS.pawnshop_intro.lines.length).toBeLessThanOrEqual(3);
+
+    // Win settlement keeps original copy
+    let winState = createTutorialState({ day: 1, tutorialDone: false });
+    winState = syncTutorialForResult(winState, 'win');
+    expect(winState.currentStep).toBe('settlement');
+    expect(winState.settlementOutcome).toBe('win');
+    const winCopy = getTutorialCopy(winState.currentStep, winState.settlementOutcome) ?? '';
+    expect(winCopy).toContain('头一天算过关了！赢了得钱得新牌');
+
+    // Lose settlement never says "过关" and matches Night 1 defeat tone
+    let loseState = createTutorialState({ day: 1, tutorialDone: false });
+    loseState = syncTutorialForResult(loseState, 'lose');
+    expect(loseState.currentStep).toBe('settlement');
+    expect(loseState.settlementOutcome).toBe('lose');
+    const loseCopy = getTutorialCopy(loseState.currentStep, loseState.settlementOutcome) ?? '';
+    expect(loseCopy).toContain('头一天没打下来');
+    expect(loseCopy).not.toContain('过关');
+    expect(loseCopy).not.toContain('赢了得钱');
   });
 });

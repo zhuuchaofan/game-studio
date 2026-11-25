@@ -83,6 +83,10 @@ export interface ChapterSaveState {
   demonsDefeated: number;
   day4TrimDone: boolean;
   day6SideQuestDone: boolean;
+  /** P10 子项 4：第 1 天是否收下婚戒（仅收下时写入 true，向后兼容既有 v3 存档）。 */
+  day1RingPawned?: boolean;
+  /** P10 子项 4：第 2 天新娘剧本化赎当是否已触发结算（仅触发后写入 true，防止重复触发）。 */
+  day2BrideRedemptionDone?: boolean;
 }
 
 export const CHAPTERS_DATA: ChaptersDataFile = chaptersJson as ChaptersDataFile;
@@ -183,6 +187,12 @@ export function createInitialChapterState(
     demonsDefeated: overrides.demonsDefeated ?? 0,
     day4TrimDone: overrides.day4TrimDone ?? false,
     day6SideQuestDone: overrides.day6SideQuestDone ?? false,
+    ...(overrides.day1RingPawned !== undefined
+      ? { day1RingPawned: overrides.day1RingPawned }
+      : {}),
+    ...(overrides.day2BrideRedemptionDone !== undefined
+      ? { day2BrideRedemptionDone: overrides.day2BrideRedemptionDone }
+      : {}),
   };
 }
 

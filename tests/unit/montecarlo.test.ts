@@ -9,6 +9,7 @@ import {
   parseSimTuneEnv,
   runBalanceSimulation,
   runMonteCarlo,
+  simulateNewPlayerFirstNight,
   simulateSevenDayEconomy,
   TEST_DECK,
 } from '../../src/game/montecarlo';
@@ -176,5 +177,18 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     const brokenCheck = checkSimGuardrails(broken);
     expect(brokenCheck.passed).toBe(false);
     expect(brokenCheck.errors.some((e) => e.includes('Demon A'))).toBe(true);
+  });
+
+  it('P10: simulates 1000 realistic new-player Night 1 runs (Day 1 3-item pool, not TEST_DECK) and reports single-attack win rate', () => {
+    const stats = simulateNewPlayerFirstNight({ runs: 1000 });
+    expect(stats.runs).toBe(1000);
+    expect(stats.wins + stats.lossesHp + stats.lossesTimeout).toBe(1000);
+    expect(stats.singleAttackRuns + stats.doubleAttackRuns).toBe(1000);
+    expect(stats.singleAttackRuns).toBeGreaterThan(500);
+    expect(stats.doubleAttackRuns).toBeGreaterThan(100);
+    expect(stats.winRate).toBeGreaterThan(0);
+    expect(stats.winRate).toBeLessThan(0.9); // Realistic 3-card Day 1 pool, NOT TEST_DECK's 91.3%
+    expect(stats.singleAttackWinRate).toBeGreaterThanOrEqual(0);
+    expect(stats.singleAttackWinRate).toBeLessThanOrEqual(1);
   });
 });

@@ -3,14 +3,20 @@ import { PALETTE } from './pawnshop';
 import { addPixelText } from './pixelFont';
 import {
   getTutorialBubbleLayout,
+  getTutorialStepLines,
   TUTORIAL_SKIP_LABEL,
   TUTORIAL_STEPS,
+  type TutorialSettlementOutcome,
   type TutorialStepId,
 } from './tutorial';
 
 export interface TutorialBubbleCallbacks {
   onAdvance: () => void;
   onSkip: () => void;
+}
+
+export interface TutorialBubbleOptions {
+  settlementOutcome?: TutorialSettlementOutcome;
 }
 
 /**
@@ -24,8 +30,10 @@ export function createTutorialBubble(
   scene: Phaser.Scene,
   step: TutorialStepId,
   callbacks: TutorialBubbleCallbacks,
+  options?: TutorialBubbleOptions,
 ): Phaser.GameObjects.Container {
   const def = TUTORIAL_STEPS[step];
+  const lines = getTutorialStepLines(step, options?.settlementOutcome ?? 'win');
   const layout = getTutorialBubbleLayout(step);
   const { box, centerX, centerY, skipButton } = layout;
   const isDay = box.theme === 'day';
@@ -34,7 +42,8 @@ export function createTutorialBubble(
   const borderColor = isDay ? PALETTE.ink.num : PALETTE.lampYellow.num;
   const accentColor = isDay ? PALETTE.brass.num : PALETTE.brass.num;
   const textColor = isDay ? PALETTE.ink.hex : PALETTE.paperWhite.hex;
-  const hintColor = isDay ? PALETTE.copperBrown.hex : PALETTE.lampYellow.hex;
+  // P10 子项 2：浅底提示字由铜棕(#8A5A33, CR 5.4)改深木(#2E2118, CR 14.45)，保证浅底清晰可读
+  const hintColor = isDay ? PALETTE.deepWood.hex : PALETTE.lampYellow.hex;
   const skipFill = isDay ? PALETTE.oldPaper.num : PALETTE.deepBlue.num;
   const skipHover = isDay ? PALETTE.lampYellow.num : PALETTE.nightBlue.num;
   const skipStroke = isDay ? PALETTE.ink.num : PALETTE.silverBlue.num;
@@ -69,24 +78,17 @@ export function createTutorialBubble(
     }
   }
 
-  // Two short lines of 1980s pawnshop keeper copy (12px bitmap pixel font)
+  // Two or three short lines of 1980s pawnshop keeper copy (12px bitmap pixel font)
   const textX = box.x + 6;
-  const line1Y = box.y + 4;
-  const line2Y = box.y + 17;
-
-  container.add(
-    addPixelText(scene, textX, line1Y, def.lines[0], {
-      color: textColor,
-      origin: [0, 0],
-    }),
-  );
-
-  container.add(
-    addPixelText(scene, textX, line2Y, def.lines[1], {
-      color: textColor,
-      origin: [0, 0],
-    }),
-  );
+  const lineStep = lines.length >= 3 ? 12 : 13;
+  lines.forEach((line, idx) => {
+    container.add(
+      addPixelText(scene, textX, box.y + 4 + idx * lineStep, line, {
+        color: textColor,
+        origin: [0, 0],
+      }),
+    );
+  });
 
   // Bottom-left progress + click hint
   container.add(
