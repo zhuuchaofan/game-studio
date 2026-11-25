@@ -84,50 +84,54 @@ import {
   type TutorialState,
 } from '../game/tutorial';
 import { createTutorialBubble } from '../game/tutorialBubble';
+import {
+  BOSS_PREVIEW_CONFIRM_BUTTON,
+  PACT_OPTION_BUTTONS,
+  PAWNSHOP_CALENDAR_BUTTON,
+  PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  PAWNSHOP_HUD_HEIGHT,
+  PAWNSHOP_SKIP_BUTTON,
+  PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  PAWNSHOP_SUMMARY_RETURN_TITLE_BUTTON,
+  PAWNSHOP_TIER_BUTTONS,
+  PAWNSHOP_TRIM_NEXT_BUTTON,
+  PAWNSHOP_TRIM_PREV_BUTTON,
+  REDEMPTION_ACCEPT_BUTTON,
+  REDEMPTION_REJECT_BUTTON,
+  SIDE_QUEST_ACCEPT_BUTTON,
+  SIDE_QUEST_REJECT_BUTTON,
+  TRIM_CARD_SLOTS,
+  TRIM_SKIP_BUTTON,
+} from '../game/layout';
 import { createRngFromUrl, mulberry32, type RngFn } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
+
+export {
+  BOSS_PREVIEW_CONFIRM_BUTTON,
+  PACT_OPTION_BUTTONS,
+  PAWNSHOP_CALENDAR_BUTTON,
+  REDEMPTION_ACCEPT_BUTTON,
+  REDEMPTION_REJECT_BUTTON,
+  SIDE_QUEST_ACCEPT_BUTTON,
+  SIDE_QUEST_REJECT_BUTTON,
+  TRIM_CARD_SLOTS,
+  TRIM_SKIP_BUTTON,
+} from '../game/layout';
 
 export interface PawnshopSceneData {
   save?: SaveData;
   forceTutorial?: boolean;
 }
 
-export const REDEMPTION_ACCEPT_BUTTON = { x: 96, y: 151, width: 124, height: 32 } as const;
-export const REDEMPTION_REJECT_BUTTON = { x: 224, y: 151, width: 124, height: 32 } as const;
-export const PAWNSHOP_CALENDAR_BUTTON = { x: 298, y: 11, width: 36, height: 16 } as const;
-export const PACT_OPTION_BUTTONS = [
-  { id: 'high_margin' as PactId, x: 58, y: 106, width: 92, height: 116 },
-  { id: 'credit_stock' as PactId, x: 160, y: 106, width: 92, height: 116 },
-  { id: 'steady_shop' as PactId, x: 262, y: 106, width: 92, height: 116 },
-] as const;
-export const TRIM_CARD_SLOTS = [
-  { x: 64, y: 74, width: 84, height: 34 },
-  { x: 160, y: 74, width: 84, height: 34 },
-  { x: 256, y: 74, width: 84, height: 34 },
-  { x: 64, y: 116, width: 84, height: 34 },
-  { x: 160, y: 116, width: 84, height: 34 },
-  { x: 256, y: 116, width: 84, height: 34 },
-] as const;
-export const TRIM_SKIP_BUTTON = { x: 160, y: 158, width: 92, height: 22 } as const;
-export const SIDE_QUEST_ACCEPT_BUTTON = { x: 96, y: 151, width: 124, height: 32 } as const;
-export const SIDE_QUEST_REJECT_BUTTON = { x: 224, y: 151, width: 124, height: 32 } as const;
-export const BOSS_PREVIEW_CONFIRM_BUTTON = { x: 160, y: 158, width: 120, height: 22 } as const;
-
 const CARDS_BY_NAME = buildCardMap(cardsJson as CardDef[]);
 
-const HUD_HEIGHT = 22;
-const NEGOTIATING_PANEL_CENTER_Y = 73;
-const NEGOTIATING_PANEL_HEIGHT = 96;
-const FEEDBACK_PANEL_CENTER_Y = 56;
-const FEEDBACK_PANEL_HEIGHT = 64;
-const BUTTON_ROW_Y = 154;
-const FEEDBACK_NEXT_BUTTON_Y = 154;
+const HUD_HEIGHT = PAWNSHOP_HUD_HEIGHT;
+const NEGOTIATING_PANEL_CENTER_Y = 97;
+const NEGOTIATING_PANEL_HEIGHT = 122;
+const FEEDBACK_PANEL_CENTER_Y = 108;
+const FEEDBACK_PANEL_HEIGHT = 136;
 const STORY_WRAP_CHARS = 18;
 const FEEDBACK_STORY_WRAP_CHARS = 20;
-const SKIP_BUTTON_X = 270;
-const SKIP_BUTTON_Y = 107;
-const SKIP_BUTTON_WIDTH = 64;
-const SKIP_BUTTON_HEIGHT = 18;
 const TOAST_DURATION_MS = 1400;
 
 export class PawnshopScene extends Phaser.Scene {
@@ -389,7 +393,7 @@ export class PawnshopScene extends Phaser.Scene {
   private drawDaytimeBackdrop(): void {
     const centerX = Math.floor(BASE_WIDTH / 2);
 
-    // 白天当铺暖色木墙
+    // 白天当铺暖色木墙（640×360）
     this.add.rectangle(
       centerX,
       Math.floor((BASE_HEIGHT + HUD_HEIGHT) / 2),
@@ -400,20 +404,20 @@ export class PawnshopScene extends Phaser.Scene {
 
     // 墙面暖色窗格
     this.add
-      .rectangle(BASE_WIDTH - 48, 48, 44, 34, PALETTE.candle.num)
-      .setStrokeStyle(1, PALETTE.deepWood.num);
-    this.add.rectangle(BASE_WIDTH - 48, 48, 36, 26, PALETTE.oldPaper.num);
-    this.add.rectangle(BASE_WIDTH - 48, 48, 2, 34, PALETTE.deepWood.num);
-    this.add.rectangle(BASE_WIDTH - 48, 48, 44, 2, PALETTE.deepWood.num);
+      .rectangle(BASE_WIDTH - 96, 96, 88, 68, PALETTE.candle.num)
+      .setStrokeStyle(2, PALETTE.deepWood.num);
+    this.add.rectangle(BASE_WIDTH - 96, 96, 72, 52, PALETTE.oldPaper.num);
+    this.add.rectangle(BASE_WIDTH - 96, 96, 4, 68, PALETTE.deepWood.num);
+    this.add.rectangle(BASE_WIDTH - 96, 96, 88, 4, PALETTE.deepWood.num);
 
     // 货架木格线
-    this.add.rectangle(centerX, 34, BASE_WIDTH, 2, PALETTE.deepWood.num);
-    this.add.rectangle(centerX, 68, BASE_WIDTH, 2, PALETTE.deepWood.num);
+    this.add.rectangle(centerX, 68, BASE_WIDTH, 4, PALETTE.deepWood.num);
+    this.add.rectangle(centerX, 136, BASE_WIDTH, 4, PALETTE.deepWood.num);
 
     // 当铺木柜台与操作区底板
-    this.add.rectangle(centerX, 122, BASE_WIDTH, 3, PALETTE.copperBrown.num);
-    this.add.rectangle(centerX, 124, BASE_WIDTH, 1, PALETTE.ink.num);
-    this.add.rectangle(centerX, 152, BASE_WIDTH, 56, PALETTE.deepWood.num);
+    this.add.rectangle(centerX, 298, BASE_WIDTH, 6, PALETTE.copperBrown.num);
+    this.add.rectangle(centerX, 301, BASE_WIDTH, 2, PALETTE.ink.num);
+    this.add.rectangle(centerX, 331, BASE_WIDTH, 58, PALETTE.deepWood.num);
   }
 
   private createHud(): void {
@@ -421,33 +425,33 @@ export class PawnshopScene extends Phaser.Scene {
     const hudY = Math.floor(HUD_HEIGHT / 2);
 
     this.add.rectangle(centerX, hudY, BASE_WIDTH, HUD_HEIGHT, PALETTE.deepWood.num);
-    this.add.rectangle(centerX, HUD_HEIGHT - 1, BASE_WIDTH, 1, PALETTE.brass.num);
-    this.add.rectangle(centerX, HUD_HEIGHT, BASE_WIDTH, 1, PALETTE.ink.num);
+    this.add.rectangle(centerX, HUD_HEIGHT - 2, BASE_WIDTH, 2, PALETTE.brass.num);
+    this.add.rectangle(centerX, HUD_HEIGHT, BASE_WIDTH, 2, PALETTE.ink.num);
 
-    addPixelText(this, 4, hudY, '钱:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudMoneyText = addPixelText(this, 22, hudY, '', {
+    addPixelText(this, 10, hudY, '钱:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudMoneyText = addPixelText(this, 46, hudY, '', {
       color: PALETTE.lampYellow.hex,
       origin: [0, 0.5],
     });
 
-    addPixelText(this, 50, hudY, '口碑:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudRepText = addPixelText(this, 80, hudY, '', {
+    addPixelText(this, 104, hudY, '口碑:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudRepText = addPixelText(this, 166, hudY, '', {
       color: PALETTE.brass.hex,
       origin: [0, 0.5],
     });
 
-    addPixelText(this, 102, hudY, '牌:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudDeckText = addPixelText(this, 120, hudY, '', {
+    addPixelText(this, 218, hudY, '牌:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudDeckText = addPixelText(this, 254, hudY, '', {
       color: PALETTE.lampYellow.hex,
       origin: [0, 0.5],
     });
 
-    this.hudProgressText = addPixelText(this, 140, hudY, '', {
+    this.hudProgressText = addPixelText(this, 310, hudY, '', {
       color: PALETTE.oldPaper.hex,
       origin: [0, 0.5],
     });
 
-    this.hudDayText = addPixelText(this, 276, hudY, '', {
+    this.hudDayText = addPixelText(this, 548, hudY, '', {
       color: PALETTE.paperWhite.hex,
       origin: [1, 0.5],
     });
@@ -461,7 +465,7 @@ export class PawnshopScene extends Phaser.Scene {
         PAWNSHOP_CALENDAR_BUTTON.height,
         PALETTE.oldPaper.num,
       )
-      .setStrokeStyle(1, PALETTE.ink.num)
+      .setStrokeStyle(2, PALETTE.ink.num)
       .setInteractive({ useHandCursor: true });
 
     addPixelText(this, PAWNSHOP_CALENDAR_BUTTON.x, PAWNSHOP_CALENDAR_BUTTON.y, '台历', {
@@ -552,24 +556,28 @@ export class PawnshopScene extends Phaser.Scene {
       this.state.phase !== 'negotiating' ||
       this.state.customerIndex !== 0 ||
       this.shopkeeperBannerDismissed ||
-      this.shopkeeperBanner
+      this.shopkeeperBanner ||
+      (this.tutorial.active && this.tutorial.currentStep !== null)
     ) {
       return;
     }
 
+    // 掌柜交代横幅置于当客卡片下方空档（y=167..227），任何时刻不遮挡当客卡片、教程气泡与按钮
     const centerX = Math.floor(BASE_WIDTH / 2);
     const banner = this.add.container(0, 0).setDepth(95);
     const bg = this.add
-      .rectangle(centerX, 41, BASE_WIDTH - 24, 34, PALETTE.nightBlack.num)
-      .setStrokeStyle(1, PALETTE.lampYellow.num);
-    const line1 = addPixelText(this, centerX, 33, SHOPKEEPER_OPENING_NOTE_LINES[0], {
+      .rectangle(centerX, 197, 576, 60, PALETTE.nightBlack.num)
+      .setStrokeStyle(2, PALETTE.lampYellow.num)
+      .setInteractive({ useHandCursor: true });
+    const line1 = addPixelText(this, centerX, 182, SHOPKEEPER_OPENING_NOTE_LINES[0], {
       color: PALETTE.candle.hex,
       origin: 0.5,
     });
-    const line2 = addPixelText(this, centerX, 48, SHOPKEEPER_OPENING_NOTE_LINES[1], {
+    const line2 = addPixelText(this, centerX, 211, SHOPKEEPER_OPENING_NOTE_LINES[1], {
       color: PALETTE.lampYellow.hex,
       origin: 0.5,
     });
+    bg.on('pointerdown', () => this.dismissShopkeeperBanner());
     banner.add([bg, line1, line2]);
     this.shopkeeperBanner = banner;
     this.shopkeeperBannerTimer = this.time.delayedCall(3800, () => {
@@ -656,24 +664,24 @@ export class PawnshopScene extends Phaser.Scene {
     const centerX = Math.floor(BASE_WIDTH / 2);
     const composed = this.getComposedBossPreview();
 
-    // 封门预告底板（y=24..176，居中 304×150）
+    // 封门预告底板（y=42..348，居中 608×306）
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, 99, BASE_WIDTH - 16, 150, PALETTE.nightBlack.num)
-        .setStrokeStyle(1, PALETTE.vermilion.num),
+        .rectangle(centerX, 195, BASE_WIDTH - 32, 306, PALETTE.nightBlack.num)
+        .setStrokeStyle(2, PALETTE.vermilion.num),
     );
-    this.contentLayer.add(this.add.rectangle(centerX, 34, BASE_WIDTH - 18, 18, PALETTE.deepWood.num));
+    this.contentLayer.add(this.add.rectangle(centerX, 60, BASE_WIDTH - 36, 34, PALETTE.deepWood.num));
     this.contentLayer.add(
-      addPixelText(this, centerX, 34, '第7天 · 封门预告（今夜大心魔）', {
+      addPixelText(this, centerX, 60, '第7天 · 封门预告（今夜大心魔）', {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
     );
 
-    // 血量明细（含上限48与“已到顶”注明）
+    // 血量明细（含上限48与“已到顶”注明，深底高对比）
     this.contentLayer.add(
-      addPixelText(this, centerX, 50, formatBossPreviewHpLine(composed), {
-        color: composed.hpCapped ? PALETTE.vermilion.hex : PALETTE.paperWhite.hex,
+      addPixelText(this, centerX, 94, formatBossPreviewHpLine(composed), {
+        color: composed.hpCapped ? PALETTE.lampYellow.hex : PALETTE.paperWhite.hex,
         origin: 0.5,
       }),
     );
@@ -684,39 +692,39 @@ export class PawnshopScene extends Phaser.Scene {
       addPixelText(
         this,
         centerX,
-        64,
+        124,
         `封门打断阈值:${composed.chargeThreshold}(R2累伤打断返+1情)${shieldPart}`,
         {
-          color: composed.chargeThreshold > 10 ? PALETTE.vermilion.hex : PALETTE.brass.hex,
+          color: composed.chargeThreshold > 10 ? PALETTE.lampYellow.hex : PALETTE.brass.hex,
           origin: 0.5,
         },
       ),
     );
 
-    this.contentLayer.add(this.add.rectangle(centerX, 72, BASE_WIDTH - 28, 1, PALETTE.deepWood.num));
+    this.contentLayer.add(this.add.rectangle(centerX, 142, BASE_WIDTH - 56, 2, PALETTE.deepWood.num));
 
     // 组件构成列表（0 块素体 vs 1–6 块两列网格）
     if (composed.isBare) {
       this.contentLayer.add(
-        addPixelText(this, centerX, 94, '柜子空了，债主只身前来', {
+        addPixelText(this, centerX, 184, '柜子空了，债主只身前来', {
           color: PALETTE.candle.hex,
           origin: 0.5,
         }),
       );
       this.contentLayer.add(
-        addPixelText(this, centerX, 112, '当前无旧物执念加成，保持素体形态', {
+        addPixelText(this, centerX, 220, '当前无旧物执念加成，保持素体形态', {
           color: PALETTE.silverBlue.hex,
           origin: 0.5,
         }),
       );
     } else {
-      const colXs = [14, 158];
-      const rowYs = [80, 96, 112];
+      const colXs = [28, 322];
+      const rowYs = [154, 188, 222];
       composed.activeComponents.forEach((comp, idx) => {
         const col = idx % 2;
         const row = Math.floor(idx / 2);
         const x = colXs[col];
-        const y = rowYs[row] ?? 112;
+        const y = rowYs[row] ?? 222;
         this.contentLayer.add(
           addPixelText(this, x, y, `${comp.fragmentName}:${comp.effectText}`, {
             color: PALETTE.candle.hex,
@@ -727,7 +735,7 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     this.contentLayer.add(
-      addPixelText(this, centerX, 134, '今日白天收当/赎当仍可改变今夜Boss构成', {
+      addPixelText(this, centerX, 268, '今日白天收当/赎当仍可改变今夜Boss构成', {
         color: PALETTE.silverBlue.hex,
         origin: 0.5,
       }),
@@ -758,18 +766,17 @@ export class PawnshopScene extends Phaser.Scene {
     this.clearToast(false);
     this.lastToast = message;
 
-    const centerX = Math.floor(BASE_WIDTH / 2);
-    // 轻提示置于当客卡片下半部空白处（y=107），不遮住 y=130 的口碑修正条
-    //（原 y=126 会短暂盖住口碑条中间几字，P6 协调员验收时发现并修正）。
-    const toastY = 107;
-    const width = Math.max(76, message.length * 12 + 20);
-    const height = 18;
+    // 轻提示置于右侧空档（x=498..626, y=182..214），位于跳过当客钮上方、远离 1/6 与 2/6 教程气泡
+    const toastY = 198;
+    const width = Math.max(128, message.length * 24 + 28);
+    const height = 32;
+    const toastX = BASE_WIDTH - 14 - Math.floor(width / 2);
 
     const container = this.add.container(0, 0).setDepth(120);
     const bg = this.add
-      .rectangle(centerX, toastY, width, height, PALETTE.ink.num)
-      .setStrokeStyle(1, PALETTE.vermilion.num);
-    const text = addPixelText(this, centerX, toastY, message, {
+      .rectangle(toastX, toastY, width, height, PALETTE.ink.num)
+      .setStrokeStyle(2, PALETTE.vermilion.num);
+    const text = addPixelText(this, toastX, toastY, message, {
       color: PALETTE.paperWhite.hex,
       origin: 0.5,
     });
@@ -825,11 +832,11 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, 34, BASE_WIDTH - 16, 18, PALETTE.deepWood.num)
-        .setStrokeStyle(1, PALETTE.brass.num),
+        .rectangle(centerX, 64, BASE_WIDTH - 32, 34, PALETTE.deepWood.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
     );
     this.contentLayer.add(
-      addPixelText(this, centerX, 34, '第4天集市 · 掌柜契约(三选一)', {
+      addPixelText(this, centerX, 64, '第4天集市 · 掌柜契约(三选一)', {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
@@ -851,41 +858,41 @@ export class PawnshopScene extends Phaser.Scene {
 
       const bg = this.add
         .rectangle(slot.x, slot.y, slot.width, slot.height, PALETTE.candle.num)
-        .setStrokeStyle(1, PALETTE.ink.num)
+        .setStrokeStyle(2, PALETTE.ink.num)
         .setInteractive({ useHandCursor: true });
 
-      const header = this.add.rectangle(slot.x, slot.y - 49, slot.width - 2, 16, PALETTE.deepWood.num);
-      const title = addPixelText(this, slot.x, slot.y - 49, pact.name, {
+      const header = this.add.rectangle(slot.x, slot.y - 101, slot.width - 4, 34, PALETTE.deepWood.num);
+      const title = addPixelText(this, slot.x, slot.y - 101, pact.name, {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       });
 
-      const benefitTitle = addPixelText(this, slot.x, slot.y - 33, '收益', {
+      const benefitTitle = addPixelText(this, slot.x, slot.y - 68, '收益', {
         color: PALETTE.ink.hex,
         origin: 0.5,
       });
-      const benefitBody = addPixelText(this, slot.x, slot.y - 14, formatPactTwoLines(pact.benefit), {
+      const benefitBody = addPixelText(this, slot.x, slot.y - 30, formatPactTwoLines(pact.benefit), {
         color: PALETTE.ink.hex,
         origin: 0.5,
         lineSpacing: 1,
       });
 
-      const divider = this.add.rectangle(slot.x, slot.y + 1, slot.width - 12, 1, PALETTE.oldPaper.num);
+      const divider = this.add.rectangle(slot.x, slot.y - 2, slot.width - 24, 2, PALETTE.oldPaper.num);
 
-      const costTitle = addPixelText(this, slot.x, slot.y + 9, '代价', {
+      const costTitle = addPixelText(this, slot.x, slot.y + 14, '代价', {
         color: PALETTE.vermilion.hex,
         origin: 0.5,
       });
-      const costBody = addPixelText(this, slot.x, slot.y + 27, formatPactTwoLines(pact.cost), {
+      const costBody = addPixelText(this, slot.x, slot.y + 49, formatPactTwoLines(pact.cost), {
         color: PALETTE.vermilion.hex,
         origin: 0.5,
         lineSpacing: 1,
       });
 
       const ctaBg = this.add
-        .rectangle(slot.x, slot.y + 50, slot.width - 10, 14, PALETTE.oldPaper.num)
-        .setStrokeStyle(1, PALETTE.ink.num);
-      const ctaText = addPixelText(this, slot.x, slot.y + 50, '选此契约', {
+        .rectangle(slot.x, slot.y + 98, slot.width - 20, 28, PALETTE.oldPaper.num)
+        .setStrokeStyle(2, PALETTE.ink.num);
+      const ctaText = addPixelText(this, slot.x, slot.y + 98, '选此契约', {
         color: PALETTE.ink.hex,
         origin: 0.5,
       });
@@ -962,14 +969,14 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, 34, BASE_WIDTH - 16, 18, PALETTE.deepWood.num)
-        .setStrokeStyle(1, PALETTE.brass.num),
+        .rectangle(centerX, 64, BASE_WIDTH - 32, 34, PALETTE.deepWood.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
     );
     this.contentLayer.add(
       addPixelText(
         this,
         centerX,
-        34,
+        64,
         `整理柜台 · 免费删1张牌(${this.trimPage + 1}/${totalPages})`,
         {
           color: PALETTE.lampYellow.hex,
@@ -991,25 +998,25 @@ export class PawnshopScene extends Phaser.Scene {
 
       const bg = this.add
         .rectangle(slot.x, slot.y, slot.width, slot.height, PALETTE.paperWhite.num)
-        .setStrokeStyle(1, PALETTE.ink.num)
+        .setStrokeStyle(2, PALETTE.ink.num)
         .setInteractive({ useHandCursor: true });
-      const strip = this.add.rectangle(slot.x, slot.y - 15, slot.width - 2, 3, stripColor);
-      const nameTxt = addPixelText(this, slot.x, slot.y - 4, `${cardName} ${costStr}`, {
+      const strip = this.add.rectangle(slot.x, slot.y - 30, slot.width - 4, 6, stripColor);
+      const nameTxt = addPixelText(this, slot.x, slot.y - 8, `${cardName} ${costStr}`, {
         color: PALETTE.ink.hex,
         origin: 0.5,
       });
-      const effTxt = addPixelText(this, slot.x, slot.y + 9, shortEff, {
+      const effTxt = addPixelText(this, slot.x, slot.y + 16, shortEff, {
         color: PALETTE.deepWood.hex,
         origin: 0.5,
       });
 
       bg.on('pointerover', () => {
         bg.setFillStyle(PALETTE.candle.num);
-        bg.setStrokeStyle(1, PALETTE.vermilion.num);
+        bg.setStrokeStyle(2, PALETTE.vermilion.num);
       });
       bg.on('pointerout', () => {
         bg.setFillStyle(PALETTE.paperWhite.num);
-        bg.setStrokeStyle(1, PALETTE.ink.num);
+        bg.setStrokeStyle(2, PALETTE.ink.num);
       });
       bg.on('pointerdown', () => this.handleTrimCard(deckIdx));
 
@@ -1018,10 +1025,10 @@ export class PawnshopScene extends Phaser.Scene {
 
     if (totalPages > 1) {
       this.addActionButton(
-        52,
-        TRIM_SKIP_BUTTON.y,
-        56,
-        22,
+        PAWNSHOP_TRIM_PREV_BUTTON.x,
+        PAWNSHOP_TRIM_PREV_BUTTON.y,
+        PAWNSHOP_TRIM_PREV_BUTTON.width,
+        PAWNSHOP_TRIM_PREV_BUTTON.height,
         '上一页',
         null,
         () => {
@@ -1034,10 +1041,10 @@ export class PawnshopScene extends Phaser.Scene {
         PALETTE.oldPaper.num,
       );
       this.addActionButton(
-        268,
-        TRIM_SKIP_BUTTON.y,
-        56,
-        22,
+        PAWNSHOP_TRIM_NEXT_BUTTON.x,
+        PAWNSHOP_TRIM_NEXT_BUTTON.y,
+        PAWNSHOP_TRIM_NEXT_BUTTON.width,
+        PAWNSHOP_TRIM_NEXT_BUTTON.height,
         '下一页',
         null,
         () => {
@@ -1127,40 +1134,40 @@ export class PawnshopScene extends Phaser.Scene {
     }
     const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
 
-    this.addTicketPanel(item, NEGOTIATING_PANEL_CENTER_Y, NEGOTIATING_PANEL_HEIGHT, 38, 56);
+    this.addTicketPanel(item, 146, 220, 66, 114);
 
     this.contentLayer.add(
-      addPixelText(this, 66, 28, `${chapterCfg.day6SideQuest.name}（可选支线）`, {
+      addPixelText(this, 124, 48, `${chapterCfg.day6SideQuest.name}（可选支线）`, {
         color: PALETTE.vermilion.hex,
         origin: [0, 0],
       }),
     );
 
-    this.contentLayer.add(this.add.rectangle(185, 42, 238, 1, PALETTE.oldPaper.num));
+    this.contentLayer.add(this.add.rectangle(366, 76, 480, 2, PALETTE.oldPaper.num));
 
     this.contentLayer.add(
-      addPixelText(this, 66, 46, `旧物「${item.name}」牌:${item.cardName}(${item.cardCost}费)`, {
+      addPixelText(this, 124, 86, `旧物「${item.name}」牌:${item.cardName}(${item.cardCost}费)`, {
         color: PALETTE.ink.hex,
         origin: [0, 0],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, 66, 62, '接受：多收1件未拥有旧物(三档报价)', {
+      addPixelText(this, 124, 120, '接受：多收1件未拥有旧物(三档报价)', {
         color: PALETTE.ink.hex,
         origin: [0, 0],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, 66, 78, chapterCfg.day6SideQuest.costText, {
+      addPixelText(this, 124, 154, chapterCfg.day6SideQuest.costText, {
         color: PALETTE.vermilion.hex,
         origin: [0, 0],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, 66, 98, '拒绝：无任何变化，直接结束白天', {
+      addPixelText(this, 124, 194, '拒绝：无任何变化，直接结束白天', {
         color: PALETTE.deepWood.hex,
         origin: [0, 0],
       }),
@@ -1234,48 +1241,48 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
-    this.addTicketPanel(offer.item, NEGOTIATING_PANEL_CENTER_Y, NEGOTIATING_PANEL_HEIGHT, 38, 56);
+    this.addTicketPanel(offer.item, 146, 220, 66, 114);
 
     if (offer.isBrideScripted) {
       this.contentLayer.add(
-        addPixelText(this, 66, 27, '旧客回门 · 新娘来赎婚戒', {
+        addPixelText(this, 124, 46, '旧客回门 · 新娘来赎婚戒', {
           color: PALETTE.vermilion.hex,
           origin: [0, 0],
         }),
       );
 
       this.contentLayer.add(
-        addPixelText(this, BASE_WIDTH - 16, 27, '故事事件', {
+        addPixelText(this, BASE_WIDTH - 24, 46, '故事事件', {
           color: PALETTE.deepWood.hex,
           origin: [1, 0],
         }),
       );
 
-      this.contentLayer.add(this.add.rectangle(185, 41, 238, 1, PALETTE.oldPaper.num));
+      this.contentLayer.add(this.add.rectangle(366, 74, 480, 2, PALETTE.oldPaper.num));
 
       this.contentLayer.add(
-        addPixelText(this, 66, 44, '「掌柜，我凑钱来赎婚戒了，能还我吗？」', {
+        addPixelText(this, 124, 82, '「掌柜，我凑钱来赎婚戒了，能还我吗？」', {
           color: PALETTE.ink.hex,
           origin: [0, 0],
         }),
       );
 
       this.contentLayer.add(
-        addPixelText(this, 66, 60, '提醒：赎走戒指，今晚少张挡伤牌(守诺盾5)', {
+        addPixelText(this, 124, 114, '提醒：赎走戒指，今晚少张挡伤牌(守诺盾5)', {
           color: PALETTE.vermilion.hex,
           origin: [0, 0],
         }),
       );
 
       this.contentLayer.add(
-        addPixelText(this, 66, 78, `接受：守诺离库 钱+${offer.payout} 口碑+1(不耗券)`, {
+        addPixelText(this, 124, 150, `接受：守诺离库 钱+${offer.payout} 口碑+1(不耗券)`, {
           color: PALETTE.ink.hex,
           origin: [0, 0],
         }),
       );
 
       this.contentLayer.add(
-        addPixelText(this, 66, 94, '拒绝：留着守诺 口碑-1(她失望而去)', {
+        addPixelText(this, 124, 186, '拒绝：留着守诺 口碑-1(她失望而去)', {
           color: PALETTE.deepWood.hex,
           origin: [0, 0],
         }),
@@ -1311,44 +1318,44 @@ export class PawnshopScene extends Phaser.Scene {
 
     if (offer.isFatherOverdueScripted) {
       this.contentLayer.add(
-        addPixelText(this, 66, 27, '过赎期回门 · 父亲来问旧手表', {
+        addPixelText(this, 124, 46, '过赎期回门 · 父亲来问旧手表', {
           color: PALETTE.vermilion.hex,
           origin: [0, 0],
         }),
       );
 
       this.contentLayer.add(
-        addPixelText(this, BASE_WIDTH - 16, 27, '故事事件', {
+        addPixelText(this, BASE_WIDTH - 24, 46, '故事事件', {
           color: PALETTE.deepWood.hex,
           origin: [1, 0],
         }),
       );
 
-      this.contentLayer.add(this.add.rectangle(185, 41, 238, 1, PALETTE.oldPaper.num));
+      this.contentLayer.add(this.add.rectangle(366, 74, 480, 2, PALETTE.oldPaper.num));
 
       this.contentLayer.add(
-        addPixelText(this, 66, 44, '「以为表早卖了…若肯破例，我欠你人情。」', {
+        addPixelText(this, 124, 82, '「以为表早卖了…若肯破例，我欠你人情。」', {
           color: PALETTE.ink.hex,
           origin: [0, 0],
         }),
       );
 
       this.contentLayer.add(
-        addPixelText(this, 66, 61, '破例(过赎期本不该赎):少倒转,Boss弱1块', {
+        addPixelText(this, 124, 114, '破例(过赎期本不该赎):少倒转,Boss弱1块', {
           color: PALETTE.vermilion.hex,
           origin: [0, 0],
         }),
       );
 
       this.contentLayer.add(
-        addPixelText(this, 66, 77, `破例收益:钱+${offer.payout} 口碑+1(不耗券)`, {
+        addPixelText(this, 124, 150, `破例收益:钱+${offer.payout} 口碑+1(不耗券)`, {
           color: PALETTE.ink.hex,
           origin: [0, 0],
         }),
       );
 
       this.contentLayer.add(
-        addPixelText(this, 66, 94, '留下:留倒转 口碑-1(Boss仍攥手表执念)', {
+        addPixelText(this, 124, 186, '留下:留倒转 口碑-1(Boss仍攥手表执念)', {
           color: PALETTE.deepWood.hex,
           origin: [0, 0],
         }),
@@ -1384,30 +1391,30 @@ export class PawnshopScene extends Phaser.Scene {
 
     const tickets = this.state.redeemTickets ?? this.save.redeemTickets;
     this.contentLayer.add(
-      addPixelText(this, 66, 28, '有人回来赎当！', {
+      addPixelText(this, 124, 46, '有人回来赎当！', {
         color: PALETTE.vermilion.hex,
         origin: [0, 0],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, BASE_WIDTH - 16, 28, `赎当券:${tickets}`, {
+      addPixelText(this, BASE_WIDTH - 24, 46, `赎当券:${tickets}`, {
         color: PALETTE.deepWood.hex,
         origin: [1, 0],
       }),
     );
 
-    this.contentLayer.add(this.add.rectangle(185, 42, 238, 1, PALETTE.oldPaper.num));
+    this.contentLayer.add(this.add.rectangle(366, 74, 480, 2, PALETTE.oldPaper.num));
 
     this.contentLayer.add(
-      addPixelText(this, 66, 45, `赎回「${offer.item.name}」（牌：${offer.cardName}）`, {
+      addPixelText(this, 124, 82, `赎回「${offer.item.name}」（牌：${offer.cardName}）`, {
         color: PALETTE.ink.hex,
         origin: [0, 0],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, 66, 60, wrapCjkText(offer.item.story, STORY_WRAP_CHARS), {
+      addPixelText(this, 124, 112, wrapCjkText(offer.item.story, STORY_WRAP_CHARS), {
         color: PALETTE.deepWood.hex,
         origin: [0, 0],
         lineSpacing: 2,
@@ -1417,8 +1424,8 @@ export class PawnshopScene extends Phaser.Scene {
     this.contentLayer.add(
       addPixelText(
         this,
-        66,
-        90,
+        124,
+        178,
         `接受:牌离库 钱+${offer.payout} 口碑+1 券-1`,
         {
           color: PALETTE.ink.hex,
@@ -1428,7 +1435,7 @@ export class PawnshopScene extends Phaser.Scene {
     );
 
     this.contentLayer.add(
-      addPixelText(this, 66, 104, '拒绝:牌与赎当券均保留', {
+      addPixelText(this, 124, 210, '拒绝:牌与赎当券均保留', {
         color: PALETTE.deepWood.hex,
         origin: [0, 0],
       }),
@@ -1564,11 +1571,11 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
-    this.addTicketPanel(item, NEGOTIATING_PANEL_CENTER_Y, NEGOTIATING_PANEL_HEIGHT, 38, 52);
+    this.addTicketPanel(item, NEGOTIATING_PANEL_CENTER_Y, NEGOTIATING_PANEL_HEIGHT, 60, 97);
 
-    // 物品名、性格像素徽章（P7）与对应牌信息（置于 y=27..39，保证不被教程气泡遮挡）
+    // 物品名、性格像素徽章（P7）与对应牌信息（y=40..64）
     this.contentLayer.add(
-      addPixelText(this, 66, 27, item.name, {
+      addPixelText(this, 116, 40, item.name, {
         color: PALETTE.ink.hex,
         origin: [0, 0],
       }),
@@ -1576,9 +1583,9 @@ export class PawnshopScene extends Phaser.Scene {
 
     const tempLabel = getTemperamentLabel(item.temperament);
     if (tempLabel && item.temperament) {
-      const badgeW = tempLabel.length * 12 + 6;
-      const badgeX = 66 + item.name.length * 12 + 4 + Math.floor(badgeW / 2);
-      const badgeY = 33;
+      const badgeW = tempLabel.length * 24 + 12;
+      const badgeX = 116 + item.name.length * 24 + 8 + Math.floor(badgeW / 2);
+      const badgeY = 52;
       const badgeFill =
         item.temperament === 'urgent'
           ? PALETTE.vermilion.num
@@ -1590,8 +1597,8 @@ export class PawnshopScene extends Phaser.Scene {
 
       this.contentLayer.add(
         this.add
-          .rectangle(badgeX, badgeY, badgeW, 13, badgeFill)
-          .setStrokeStyle(1, PALETTE.ink.num),
+          .rectangle(badgeX, badgeY, badgeW, 26, badgeFill)
+          .setStrokeStyle(2, PALETTE.ink.num),
       );
       this.contentLayer.add(
         addPixelText(this, badgeX, badgeY, tempLabel, {
@@ -1602,41 +1609,41 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     this.contentLayer.add(
-      addPixelText(this, BASE_WIDTH - 16, 27, `牌:${item.cardName}(${item.cardCost}费)`, {
+      addPixelText(this, BASE_WIDTH - 24, 40, `牌:${item.cardName}(${item.cardCost}费)`, {
         color: PALETTE.ink.hex,
         origin: [1, 0],
       }),
     );
 
-    this.contentLayer.add(this.add.rectangle(185, 40, 238, 1, PALETTE.oldPaper.num));
+    this.contentLayer.add(this.add.rectangle(362, 67, 492, 2, PALETTE.oldPaper.num));
 
-    // 当客故事（C2：谈价期间完整可见，位于 y=41..66，严格高于教程气泡 y=80）
+    // 当客故事（C2：谈价期间完整可见，位于 y=71..121，严守面板 y=36..158 内）
     this.contentLayer.add(
-      addPixelText(this, 66, 41, wrapCjkText(item.story, STORY_WRAP_CHARS), {
+      addPixelText(this, 116, 71, wrapCjkText(item.story, STORY_WRAP_CHARS), {
         color: PALETTE.deepWood.hex,
         origin: [0, 0],
         lineSpacing: 1,
       }),
     );
 
-    // 卡牌效果说明（C1 + P10 子项 2：浅底深木字高对比，位于 y=67..79，高于教程气泡 y=80）
+    // 卡牌效果说明（C1 + P10 子项 2：浅底深木字高对比，位于 y=127..151）
     const cardDef = CARDS_BY_NAME.get(item.cardName);
     if (cardDef) {
       this.contentLayer.add(
-        addPixelText(this, 66, 67, `效果:${formatEffectDescription(cardDef)}`, {
+        addPixelText(this, 116, 127, `效果:${formatEffectDescription(cardDef)}`, {
           color: PALETTE.deepWood.hex,
           origin: [0, 0],
         }),
       );
     }
 
-    // 当客卡片右下角：跳过当客按钮
+    // 右侧独立空档：跳过当客按钮（与 1/6、2/6 气泡水平拉开 12px）
     const noneAffordable = !hasAnyAffordableTier(this.state.money, item.trueValue);
     this.addActionButton(
-      SKIP_BUTTON_X,
-      SKIP_BUTTON_Y,
-      SKIP_BUTTON_WIDTH,
-      SKIP_BUTTON_HEIGHT,
+      PAWNSHOP_SKIP_BUTTON.x,
+      PAWNSHOP_SKIP_BUTTON.y,
+      PAWNSHOP_SKIP_BUTTON.width,
+      PAWNSHOP_SKIP_BUTTON.height,
       '跳过当客',
       null,
       () => this.handleSkip(),
@@ -1645,37 +1652,39 @@ export class PawnshopScene extends Phaser.Scene {
       noneAffordable ? PALETTE.paperWhite.num : PALETTE.lampYellow.num,
     );
 
-    // 报价区顶部：口碑接受率修正提示（C3）
+    // 报价区顶部：口碑接受率修正提示条（y=274..298，彻底移出 1/6 气泡区域）
     const centerX = Math.floor(BASE_WIDTH / 2);
+    const repFill = this.state.reputation < 0 ? PALETTE.vermilion.num : PALETTE.deepWood.num;
     const repColor =
       this.state.reputation > 0
         ? PALETTE.lampYellow.hex
         : this.state.reputation < 0
-          ? PALETTE.vermilion.hex
-          : PALETTE.oldPaper.hex;
+          ? PALETTE.paperWhite.hex
+          : PALETTE.candle.hex;
     this.contentLayer.add(
-      addPixelText(this, centerX, 130, formatReputationHint(this.state.reputation, BALANCE, item.temperament), {
+      this.add
+        .rectangle(centerX, 286, 560, 24, repFill)
+        .setStrokeStyle(2, PALETTE.ink.num),
+    );
+    this.contentLayer.add(
+      addPixelText(this, centerX, 286, formatReputationHint(this.state.reputation, BALANCE, item.temperament), {
         color: repColor,
         origin: 0.5,
       }),
     );
 
     // 三档报价按钮：低价 / 平价 / 高价
-    const buttonXs = [58, centerX, BASE_WIDTH - 58];
-    const buttonWidth = 92;
-    const buttonHeight = 32;
-
-    TIER_ORDER.forEach((tier, index) => {
-      const x = buttonXs[index];
+    TIER_ORDER.forEach((tier) => {
+      const btnRect = PAWNSHOP_TIER_BUTTONS[tier];
       const tierConfig = BALANCE.tiers[tier];
       const price = quotePrice(item.trueValue, tier);
       const affordable = canAffordTier(this.state.money, item.trueValue, tier);
 
       this.addActionButton(
-        x,
-        BUTTON_ROW_Y,
-        buttonWidth,
-        buttonHeight,
+        btnRect.x,
+        btnRect.y,
+        btnRect.width,
+        btnRect.height,
         tierConfig.label,
         `${price}元`,
         () => this.handleOffer(tier),
@@ -1693,13 +1702,13 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
-    // 紧凑结算面板（y=24..88），确保 3/6 教程气泡（y=92..136）与底部按钮完全不遮挡结算内容
-    this.addTicketPanel(outcome.item, FEEDBACK_PANEL_CENTER_Y, FEEDBACK_PANEL_HEIGHT, 36, 56);
+    // 独立成交/没谈成反馈面板（y=40..176），确保 3/6 教程气泡（y=184..272）与底部按钮完全不遮挡结算内容
+    this.addTicketPanel(outcome.item, FEEDBACK_PANEL_CENTER_Y, FEEDBACK_PANEL_HEIGHT, 64, 108);
 
     const headlineColor = outcome.accepted ? PALETTE.ink.hex : PALETTE.vermilion.hex;
     const headline = outcome.accepted ? `成交！收下${outcome.item.name}` : '没谈成';
     this.contentLayer.add(
-      addPixelText(this, 60, 25, headline, {
+      addPixelText(this, 118, 44, headline, {
         color: headlineColor,
         origin: [0, 0],
       }),
@@ -1709,8 +1718,8 @@ export class PawnshopScene extends Phaser.Scene {
       this.contentLayer.add(
         addPixelText(
           this,
-          BASE_WIDTH - 14,
-          25,
+          BASE_WIDTH - 24,
+          44,
           `${outcome.price}元 口碑${formatSignedDelta(outcome.reputationDelta)}`,
           {
             color: PALETTE.ink.hex,
@@ -1720,33 +1729,33 @@ export class PawnshopScene extends Phaser.Scene {
       );
     }
 
-    this.contentLayer.add(this.add.rectangle(183, 38, 244, 1, PALETTE.oldPaper.num));
+    this.contentLayer.add(this.add.rectangle(364, 71, 496, 2, PALETTE.oldPaper.num));
 
-    // P7：当客同源白话还价反馈台词（置于 y=39..50，严格位于结算面板 y=24..88 内）
+    // P7：当客同源白话还价反馈台词（y=75..99）
     this.contentLayer.add(
-      addPixelText(this, 60, 39, `「${outcome.message}」`, {
+      addPixelText(this, 118, 75, `「${outcome.message}」`, {
         color: outcome.accepted ? PALETTE.ink.hex : PALETTE.vermilion.hex,
         origin: [0, 0],
       }),
     );
 
     if (outcome.accepted) {
-      // C1 + P10 子项 2：收当结算显示卡牌效果说明（浅底深木字高对比，y=51..62）
+      // C1 + P10 子项 2：收当结算显示卡牌效果说明（y=100..124）
       const cardDef = CARDS_BY_NAME.get(outcome.item.cardName);
       const effectDesc = cardDef ? formatEffectDescription(cardDef) : '';
       this.contentLayer.add(
-        addPixelText(this, 60, 51, `${outcome.item.cardName}:${effectDesc}`, {
+        addPixelText(this, 118, 100, `${outcome.item.cardName}:${effectDesc}`, {
           color: PALETTE.deepWood.hex,
           origin: [0, 0],
         }),
       );
 
-      // C2 + P8：成交后结算折行展示完整故事（y=63..86，至多两行，严格不超面板右边界 x=310 与底边界 y=88）
+      // C2 + P8：成交后结算折行展示完整故事（y=125..173，至多两行，严格位于面板 y=40..176 内）
       this.contentLayer.add(
         addPixelText(
           this,
-          60,
-          63,
+          118,
+          125,
           wrapCjkText(`你收下了：${outcome.item.story}`, FEEDBACK_STORY_WRAP_CHARS),
           {
             color: PALETTE.deepWood.hex,
@@ -1757,13 +1766,13 @@ export class PawnshopScene extends Phaser.Scene {
       );
     } else {
       this.contentLayer.add(
-        addPixelText(this, 60, 58, '钱、口碑、牌组均无变化', {
+        addPixelText(this, 118, 110, '钱、口碑、牌组均无变化', {
           color: PALETTE.ink.hex,
           origin: [0, 0],
         }),
       );
       this.contentLayer.add(
-        addPixelText(this, 60, 72, `未收下${outcome.item.name}`, {
+        addPixelText(this, 118, 138, `未收下${outcome.item.name}`, {
           color: PALETTE.deepWood.hex,
           origin: [0, 0],
         }),
@@ -1772,34 +1781,41 @@ export class PawnshopScene extends Phaser.Scene {
 
     const isLastCustomer = this.state.customerIndex >= this.state.items.length - 1;
     const nextLabel = isLastCustomer ? '白天结束' : '下一位';
-    const centerX = Math.floor(BASE_WIDTH / 2);
 
-    this.addActionButton(centerX, FEEDBACK_NEXT_BUTTON_Y, 118, 26, nextLabel, null, () => {
-      audio.unlock();
-      audio.playSfx('button_click');
-      this.state = advanceCustomer(this.state);
-      this.maybeTriggerDay6SideQuestOrSummary();
-      this.renderCurrentPhase();
-    });
+    this.addActionButton(
+      PAWNSHOP_FEEDBACK_NEXT_BUTTON.x,
+      PAWNSHOP_FEEDBACK_NEXT_BUTTON.y,
+      PAWNSHOP_FEEDBACK_NEXT_BUTTON.width,
+      PAWNSHOP_FEEDBACK_NEXT_BUTTON.height,
+      nextLabel,
+      null,
+      () => {
+        audio.unlock();
+        audio.playSfx('button_click');
+        this.state = advanceCustomer(this.state);
+        this.maybeTriggerDay6SideQuestOrSummary();
+        this.renderCurrentPhase();
+      },
+    );
   }
 
   private renderSummary(): void {
     const centerX = Math.floor(BASE_WIDTH / 2);
-    const cardWidth = BASE_WIDTH - 32;
+    const cardWidth = BASE_WIDTH - 64;
 
-    // 结算主卡片
+    // 结算主卡片（y=48..344）
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, 99, cardWidth, 142, PALETTE.candle.num)
-        .setStrokeStyle(1, PALETTE.ink.num),
+        .rectangle(centerX, 196, cardWidth, 296, PALETTE.candle.num)
+        .setStrokeStyle(2, PALETTE.ink.num),
     );
 
     const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
     const isDay3Rumor = this.save.chapter.dayInChapter === 3;
 
     // 标题条
-    const titleY = isDay3Rumor ? 38 : 39;
-    const titleH = isDay3Rumor ? 20 : 22;
+    const titleY = isDay3Rumor ? 64 : 76;
+    const titleH = isDay3Rumor ? 32 : 40;
     this.contentLayer.add(this.add.rectangle(centerX, titleY, cardWidth, titleH, PALETTE.deepWood.num));
     this.contentLayer.add(
       addPixelText(this, centerX, titleY, `第${this.state.day}天 · 白天结束`, {
@@ -1809,35 +1825,35 @@ export class PawnshopScene extends Phaser.Scene {
     );
 
     // 钱与口碑摘要条
-    const statsY = isDay3Rumor ? 58 : 64;
-    const statsH = isDay3Rumor ? 16 : 20;
+    const statsY = isDay3Rumor ? 98 : 124;
+    const statsH = isDay3Rumor ? 28 : 36;
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, statsY, cardWidth - 18, statsH, PALETTE.deepWood.num)
-        .setStrokeStyle(1, PALETTE.ink.num),
+        .rectangle(centerX, statsY, cardWidth - 36, statsH, PALETTE.deepWood.num)
+        .setStrokeStyle(2, PALETTE.ink.num),
     );
 
     this.contentLayer.add(
-      addPixelText(this, 34, statsY, '钱:', {
+      addPixelText(this, 68, statsY, '钱:', {
         color: PALETTE.candle.hex,
         origin: [0, 0.5],
       }),
     );
     this.contentLayer.add(
-      addPixelText(this, 54, statsY, `${this.state.money}`, {
+      addPixelText(this, 108, statsY, `${this.state.money}`, {
         color: PALETTE.lampYellow.hex,
         origin: [0, 0.5],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, centerX + 8, statsY, '口碑:', {
+      addPixelText(this, centerX + 16, statsY, '口碑:', {
         color: PALETTE.candle.hex,
         origin: [0, 0.5],
       }),
     );
     this.contentLayer.add(
-      addPixelText(this, centerX + 42, statsY, `${this.state.reputation}`, {
+      addPixelText(this, centerX + 84, statsY, `${this.state.reputation}`, {
         color: PALETTE.brass.hex,
         origin: [0, 0.5],
       }),
@@ -1845,7 +1861,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     // 牌组列表
     this.contentLayer.add(
-      addPixelText(this, 28, isDay3Rumor ? 68 : 80, `当前牌组（${this.state.deck.length}张）：`, {
+      addPixelText(this, 56, isDay3Rumor ? 116 : 156, `当前牌组（${this.state.deck.length}张）：`, {
         color: PALETTE.ink.hex,
         origin: [0, 0],
       }),
@@ -1853,15 +1869,15 @@ export class PawnshopScene extends Phaser.Scene {
 
     if (this.state.deck.length === 0) {
       this.contentLayer.add(
-        addPixelText(this, centerX, isDay3Rumor ? 95 : 112, '今日未收到新牌', {
+        addPixelText(this, centerX, isDay3Rumor ? 174 : 212, '今日未收到新牌', {
           color: PALETTE.deepWood.hex,
           origin: 0.5,
         }),
       );
     } else if (this.state.deck.length <= 3) {
-      const slotXs = [72, centerX, BASE_WIDTH - 72];
-      const slotY = isDay3Rumor ? 95 : 112;
-      const slotH = isDay3Rumor ? 18 : 22;
+      const slotXs = [144, centerX, BASE_WIDTH - 144];
+      const slotY = isDay3Rumor ? 174 : 212;
+      const slotH = isDay3Rumor ? 36 : 42;
       this.state.deck.forEach((cardName, index) => {
         const x = slotXs[index] ?? centerX;
         const matchedItem = ITEMS.find((item) => item.cardName === cardName);
@@ -1869,14 +1885,14 @@ export class PawnshopScene extends Phaser.Scene {
 
         this.contentLayer.add(
           this.add
-            .rectangle(x, slotY, 82, slotH, PALETTE.paperWhite.num)
-            .setStrokeStyle(1, PALETTE.ink.num),
+            .rectangle(x, slotY, 164, slotH, PALETTE.paperWhite.num)
+            .setStrokeStyle(2, PALETTE.ink.num),
         );
         this.contentLayer.add(
-          this.add.rectangle(x, slotY - Math.floor(slotH / 2) + 2, 80, 3, stripColor),
+          this.add.rectangle(x, slotY - Math.floor(slotH / 2) + 4, 160, 4, stripColor),
         );
         this.contentLayer.add(
-          addPixelText(this, x, slotY + 1, cardName, {
+          addPixelText(this, x, slotY + 2, cardName, {
             color: PALETTE.ink.hex,
             origin: 0.5,
           }),
@@ -1884,28 +1900,28 @@ export class PawnshopScene extends Phaser.Scene {
       });
     } else {
       // 多天累计牌组超过 3 张时，分两行紧凑展示，防止重叠
-      const slotXs = [72, centerX, BASE_WIDTH - 72];
+      const slotXs = [144, centerX, BASE_WIDTH - 144];
       const maxSlots = 6;
       const visible = this.state.deck.slice(0, this.state.deck.length > maxSlots ? 5 : maxSlots);
       visible.forEach((cardName, index) => {
         const row = Math.floor(index / 3);
         const col = index % 3;
         const x = slotXs[col];
-        const y = isDay3Rumor ? (row === 0 ? 88 : 102) : row === 0 ? 104 : 124;
-        const boxH = isDay3Rumor ? 13 : 15;
+        const y = isDay3Rumor ? (row === 0 ? 158 : 192) : row === 0 ? 196 : 236;
+        const boxH = isDay3Rumor ? 28 : 30;
         const matchedItem = ITEMS.find((item) => item.cardName === cardName);
         const stripColor = matchedItem ? parseHexColor(matchedItem.color) : PALETTE.brass.num;
 
         this.contentLayer.add(
           this.add
-            .rectangle(x, y, 82, boxH, PALETTE.paperWhite.num)
-            .setStrokeStyle(1, PALETTE.ink.num),
+            .rectangle(x, y, 164, boxH, PALETTE.paperWhite.num)
+            .setStrokeStyle(2, PALETTE.ink.num),
         );
         this.contentLayer.add(
-          this.add.rectangle(x, y - Math.floor(boxH / 2) + 1, 80, 2, stripColor),
+          this.add.rectangle(x, y - Math.floor(boxH / 2) + 2, 160, 2, stripColor),
         );
         this.contentLayer.add(
-          addPixelText(this, x, y + 1, cardName, {
+          addPixelText(this, x, y + 2, cardName, {
             color: PALETTE.ink.hex,
             origin: 0.5,
           }),
@@ -1913,7 +1929,7 @@ export class PawnshopScene extends Phaser.Scene {
       });
       if (this.state.deck.length > maxSlots) {
         this.contentLayer.add(
-          addPixelText(this, slotXs[2], isDay3Rumor ? 102 : 125, `等${this.state.deck.length}张`, {
+          addPixelText(this, slotXs[2], isDay3Rumor ? 192 : 236, `等${this.state.deck.length}张`, {
             color: PALETTE.deepWood.hex,
             origin: 0.5,
           }),
@@ -1922,14 +1938,14 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     if (isDay3Rumor) {
-      // P10 子项 6 修 1：day3Rumor 使用 wrapCjkText 折行，文案一字不改、完整显示在面板内（y=111..137）
+      // P10 子项 6 修 1：day3Rumor 使用 wrapCjkText 折行，文案一字不改、完整显示在面板内（y=214..274）
       this.contentLayer.add(
         this.add
-          .rectangle(centerX, 124, cardWidth - 12, 26, PALETTE.deepWood.num)
-          .setStrokeStyle(1, PALETTE.brass.num),
+          .rectangle(centerX, 244, cardWidth - 24, 58, PALETTE.deepWood.num)
+          .setStrokeStyle(2, PALETTE.brass.num),
       );
       this.contentLayer.add(
-        addPixelText(this, centerX, 124, formatDay3Rumor(chapterCfg.day3Rumor), {
+        addPixelText(this, centerX, 244, formatDay3Rumor(chapterCfg.day3Rumor), {
           color: PALETTE.lampYellow.hex,
           origin: 0.5,
           align: 1,
@@ -1938,7 +1954,7 @@ export class PawnshopScene extends Phaser.Scene {
       );
     }
 
-    // 进入夜里牌局按钮（经 6 帧拉灯转场）+ 返回标题按钮（保留 (160, 151) 在“返回标题”命中区内兼容既有 E2E）
+    // 进入夜里牌局按钮（经 6 帧拉灯转场）+ 返回标题按钮
     const nightDemonId = selectDemonForChapterDay(
       this.save.chapter.currentChapter,
       this.save.chapter.dayInChapter,
@@ -1946,43 +1962,57 @@ export class PawnshopScene extends Phaser.Scene {
     );
     const bossDay = isBossDay(this.save.chapter.currentChapter, this.save.chapter.dayInChapter);
     const enterLabel = bossDay ? '迎战大心魔' : '进入夜里牌局';
-    const summaryBtnY = isDay3Rumor ? 153 : 151;
-    const summaryBtnH = isDay3Rumor ? 24 : 26;
 
-    this.addActionButton(88, summaryBtnY, 122, summaryBtnH, enterLabel, null, () => {
-      audio.unlock();
-      audio.playSfx('button_click');
-      const nextChapter = cloneChapterState(this.save.chapter);
-      nextChapter.bossBattleActive = bossDay;
-      const updatedSave: SaveData = {
-        ...this.save,
-        day: this.state.day,
-        money: this.state.money,
-        reputation: this.state.reputation,
-        deck: [...this.state.deck],
-        redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
-        chapter: nextChapter,
-      };
-      const demonHpBonus = bossDay ? 0 : getNightDemonHpBonus(nextChapter);
-
-      this.scene.start('TransitionScene', {
-        next: 'CardBattleScene',
-        payload: {
+    this.addActionButton(
+      PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON.x,
+      PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON.y,
+      PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON.width,
+      PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON.height,
+      enterLabel,
+      null,
+      () => {
+        audio.unlock();
+        audio.playSfx('button_click');
+        const nextChapter = cloneChapterState(this.save.chapter);
+        nextChapter.bossBattleActive = bossDay;
+        const updatedSave: SaveData = {
+          ...this.save,
+          day: this.state.day,
+          money: this.state.money,
+          reputation: this.state.reputation,
           deck: [...this.state.deck],
-          demonId: nightDemonId,
-          demonHpBonus,
-          maxRenqing: maxRenqingForLevel(updatedSave.shopLevel),
-          save: updatedSave,
-          tutorial: cloneTutorialState(this.tutorial),
-        },
-      });
-    });
+          redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
+          chapter: nextChapter,
+        };
+        const demonHpBonus = bossDay ? 0 : getNightDemonHpBonus(nextChapter);
 
-    this.addActionButton(224, summaryBtnY, 138, summaryBtnH, '返回标题', null, () => {
-      audio.unlock();
-      audio.playSfx('button_click');
-      this.scene.start('TitleScene');
-    });
+        this.scene.start('TransitionScene', {
+          next: 'CardBattleScene',
+          payload: {
+            deck: [...this.state.deck],
+            demonId: nightDemonId,
+            demonHpBonus,
+            maxRenqing: maxRenqingForLevel(updatedSave.shopLevel),
+            save: updatedSave,
+            tutorial: cloneTutorialState(this.tutorial),
+          },
+        });
+      },
+    );
+
+    this.addActionButton(
+      PAWNSHOP_SUMMARY_RETURN_TITLE_BUTTON.x,
+      PAWNSHOP_SUMMARY_RETURN_TITLE_BUTTON.y,
+      PAWNSHOP_SUMMARY_RETURN_TITLE_BUTTON.width,
+      PAWNSHOP_SUMMARY_RETURN_TITLE_BUTTON.height,
+      '返回标题',
+      null,
+      () => {
+        audio.unlock();
+        audio.playSfx('button_click');
+        this.scene.start('TitleScene');
+      },
+    );
   }
 
   private addTicketPanel(
@@ -1996,15 +2026,15 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, panelCenterY, BASE_WIDTH - 20, panelHeight, PALETTE.candle.num)
-        .setStrokeStyle(1, PALETTE.ink.num),
+        .rectangle(centerX, panelCenterY, BASE_WIDTH - 32, panelHeight, PALETTE.candle.num)
+        .setStrokeStyle(2, PALETTE.ink.num),
     );
 
-    // 左侧旧物 32×32 真像素插画框（40×40）
+    // 左侧旧物 32×32 真像素插画（2×2 渲染为 64×64，框 80×80）
     this.contentLayer.add(
       this.add
-        .rectangle(boxX, boxY, 40, 40, PALETTE.paperWhite.num)
-        .setStrokeStyle(1, PALETTE.ink.num),
+        .rectangle(boxX, boxY, 80, 80, PALETTE.paperWhite.num)
+        .setStrokeStyle(2, PALETTE.ink.num),
     );
 
     const rows = ITEM_PIXEL_ART[item.id] ?? ITEM_PIXEL_ART.old_book;
@@ -2026,13 +2056,13 @@ export class PawnshopScene extends Phaser.Scene {
     hoverColor: number = PALETTE.lampYellow.num,
     onDisabledClick?: () => void,
   ): void {
-    // A3：买不起的档位采用深木灰显样式（16 色板内：深木底 + 木棕边 + 铜棕字，避免原银蓝底像“蓝高亮”），
+    // A3 + WCAG 对比度审计：买不起的档位采用深木灰显样式（深木底 + 木棕边 + 旧纸字 CR 6.81:1），
     // 点击时绝不触发成交/扣钱/RNG，仅给出“钱不够”轻提示。
-    const textColor = disabled ? PALETTE.copperBrown.hex : PALETTE.ink.hex;
+    const textColor = disabled ? PALETTE.oldPaper.hex : PALETTE.ink.hex;
     if (disabled) {
       const bg = this.add
         .rectangle(x, y, width, height, PALETTE.deepWood.num)
-        .setStrokeStyle(1, PALETTE.woodBrown.num);
+        .setStrokeStyle(2, PALETTE.woodBrown.num);
       if (onDisabledClick) {
         bg.setInteractive({ useHandCursor: false });
         bg.on('pointerdown', onDisabledClick);
@@ -2041,7 +2071,7 @@ export class PawnshopScene extends Phaser.Scene {
     } else {
       const bg = this.add
         .rectangle(x, y, width, height, fillColor)
-        .setStrokeStyle(1, PALETTE.ink.num)
+        .setStrokeStyle(2, PALETTE.ink.num)
         .setInteractive({ useHandCursor: true });
 
       bg.on('pointerover', () => {
@@ -2066,14 +2096,14 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     this.contentLayer.add(
-      addPixelText(this, x, y - 7, topText, {
+      addPixelText(this, x, y - 13, topText, {
         color: textColor,
         origin: 0.5,
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, x, y + 7, bottomText, {
+      addPixelText(this, x, y + 13, bottomText, {
         color: textColor,
         origin: 0.5,
       }),
@@ -2084,6 +2114,7 @@ export class PawnshopScene extends Phaser.Scene {
     if (this.state.phase !== 'negotiating') {
       return;
     }
+    this.dismissShopkeeperBanner();
     audio.unlock();
     audio.playSfx('insufficient_funds');
     this.showToast('钱不够');

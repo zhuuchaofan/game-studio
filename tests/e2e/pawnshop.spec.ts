@@ -1,4 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+  PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  PAWNSHOP_SUMMARY_RETURN_TITLE_BUTTON,
+  PAWNSHOP_TIER_BUTTONS,
+  TITLE_START_BUTTON,
+} from '../../src/game/layout';
 import { clickLogical } from './helpers';
 
 interface DebugState {
@@ -12,12 +18,12 @@ interface DebugState {
 
 // Logical button centers matching TitleScene & PawnshopScene layout
 const BUTTONS = {
-  titleStart: { x: 160, y: 128 },
-  tierLow: { x: 58, y: 151 },
-  tierFair: { x: 160, y: 151 },
-  tierHigh: { x: 262, y: 151 },
-  nextOrSummary: { x: 160, y: 151 },
-  returnTitle: { x: 160, y: 151 },
+  titleStart: TITLE_START_BUTTON,
+  tierLow: PAWNSHOP_TIER_BUTTONS.low,
+  tierFair: PAWNSHOP_TIER_BUTTONS.fair,
+  tierHigh: PAWNSHOP_TIER_BUTTONS.high,
+  nextOrSummary: PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  returnTitle: PAWNSHOP_SUMMARY_RETURN_TITLE_BUTTON,
 } as const;
 
 async function getDebugState(page: Page): Promise<DebugState> {
@@ -190,10 +196,10 @@ test('rejects offers with fixed seed=10 without changing money, reputation, or d
   expect(pageErrors).toEqual([]);
 });
 
-test('renders title and pawnshop cleanly on mobile portrait 390x844 viewport', async ({ page }) => {
+test('renders title and pawnshop cleanly on mobile landscape 844x390 viewport', async ({ page }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 844, height: 390 });
   await page.goto('/?seed=7');
 
   const canvas = page.locator('#game-container canvas');

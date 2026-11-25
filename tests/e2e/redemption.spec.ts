@@ -1,4 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+  REDEMPTION_ACCEPT_BUTTON,
+  REDEMPTION_REJECT_BUTTON,
+  TITLE_CONTINUE_BUTTON,
+} from '../../src/game/layout';
 import { clickLogical } from './helpers';
 
 interface SaveSnapshot {
@@ -33,9 +38,9 @@ const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 const PAWN_PRICES_STORAGE_KEY = 'pawnshop-cards-pawn-prices-v1';
 
 const BUTTONS = {
-  titleContinue: { x: 160, y: 156 },
-  redeemAccept: { x: 96, y: 151 },
-  redeemReject: { x: 224, y: 151 },
+  titleContinue: TITLE_CONTINUE_BUTTON,
+  redeemAccept: REDEMPTION_ACCEPT_BUTTON,
+  redeemReject: REDEMPTION_REJECT_BUTTON,
 } as const;
 
 async function getPawnshopState(page: Page): Promise<PawnshopDebugState> {

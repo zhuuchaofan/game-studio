@@ -54,11 +54,11 @@ export function createTutorialBubble(
   // Outer bubble box (clickable anywhere except the skip button)
   const bubbleBg = scene.add
     .rectangle(centerX, centerY, box.width, box.height, bgColor)
-    .setStrokeStyle(2, borderColor)
+    .setStrokeStyle(4, borderColor)
     .setInteractive({ useHandCursor: true });
 
-  // Top 2px brass accent trim inside the bubble
-  const topTrim = scene.add.rectangle(centerX, box.y + 2, box.width - 4, 2, accentColor);
+  // Top 4px brass accent trim inside the bubble
+  const topTrim = scene.add.rectangle(centerX, box.y + 4, box.width - 8, 4, accentColor);
 
   container.add([bubbleBg, topTrim]);
 
@@ -67,23 +67,23 @@ export function createTutorialBubble(
     const px = box.pointer.x;
     if (box.pointer.direction === 'down') {
       const baseY = box.y + box.height;
-      container.add(scene.add.rectangle(px, baseY + 1, 8, 2, borderColor));
-      container.add(scene.add.rectangle(px, baseY + 1, 6, 2, bgColor));
-      container.add(scene.add.rectangle(px, baseY + 3, 4, 2, borderColor));
+      container.add(scene.add.rectangle(px, baseY + 2, 16, 4, borderColor));
+      container.add(scene.add.rectangle(px, baseY + 2, 12, 4, bgColor));
+      container.add(scene.add.rectangle(px, baseY + 6, 8, 4, borderColor));
     } else {
       const baseY = box.y;
-      container.add(scene.add.rectangle(px, baseY - 1, 8, 2, borderColor));
-      container.add(scene.add.rectangle(px, baseY - 1, 6, 2, bgColor));
-      container.add(scene.add.rectangle(px, baseY - 3, 4, 2, borderColor));
+      container.add(scene.add.rectangle(px, baseY - 2, 16, 4, borderColor));
+      container.add(scene.add.rectangle(px, baseY - 2, 12, 4, bgColor));
+      container.add(scene.add.rectangle(px, baseY - 6, 8, 4, borderColor));
     }
   }
 
-  // Two or three short lines of 1980s pawnshop keeper copy (12px bitmap pixel font)
-  const textX = box.x + 6;
-  const lineStep = lines.length >= 3 ? 12 : 13;
+  // Two or three short lines of 1980s pawnshop keeper copy (24px bitmap pixel font)
+  const textX = box.x + 12;
+  const lineStep = lines.length >= 3 ? 24 : 26;
   lines.forEach((line, idx) => {
     container.add(
-      addPixelText(scene, textX, box.y + 4 + idx * lineStep, line, {
+      addPixelText(scene, textX, box.y + 8 + idx * lineStep, line, {
         color: textColor,
         origin: [0, 0],
       }),
@@ -101,7 +101,7 @@ export function createTutorialBubble(
   // Bottom-right always-visible skip button
   const skipBg = scene.add
     .rectangle(skipButton.x, skipButton.y, skipButton.width, skipButton.height, skipFill)
-    .setStrokeStyle(1, skipStroke)
+    .setStrokeStyle(2, skipStroke)
     .setInteractive({ useHandCursor: true });
 
   const skipLabel = addPixelText(scene, skipButton.x, skipButton.y, TUTORIAL_SKIP_LABEL, {

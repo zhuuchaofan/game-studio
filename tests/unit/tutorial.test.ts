@@ -12,6 +12,17 @@ import {
   TUTORIAL_STEP_ORDER,
   TUTORIAL_STEPS,
 } from '../../src/game/tutorial';
+import {
+  BATTLE_CARD_HEIGHT,
+  BATTLE_DETAIL_TOGGLE_BUTTON,
+  BATTLE_END_TURN_BUTTON,
+  BATTLE_HAND_Y,
+  PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  PAWNSHOP_SKIP_BUTTON,
+  PAWNSHOP_TIER_BUTTONS,
+  RESULT_NEXT_DAY_BUTTON,
+  RESULT_RETURN_BUTTON,
+} from '../../src/game/layout';
 import { BASE_HEIGHT, BASE_WIDTH } from '../../src/utils/scale';
 
 interface Rect {
@@ -143,28 +154,81 @@ describe('Day 1 tutorial state machine', () => {
   });
 });
 
-describe('Tutorial bubble geometry (320x180 non-overlapping layout)', () => {
-  it('fits every bubble inside 320x180 and never covers next-action buttons', () => {
+describe('Tutorial bubble geometry (640x360 non-overlapping layout)', () => {
+  it('fits every bubble inside 640x360 and never covers next-action buttons, reputation bar, or toast', () => {
     const pawnshopNegotiatingButtons: Rect[] = [
-      fromCenter(58, 154, 92, 32), // low
-      fromCenter(160, 154, 92, 32), // fair
-      fromCenter(262, 154, 92, 32), // high
-      fromCenter(270, 107, 64, 18), // skip customer
-      { left: 66, top: 27, right: 304, bottom: 79 }, // A2/C2: item title, story & effect area
+      fromCenter(
+        PAWNSHOP_TIER_BUTTONS.low.x,
+        PAWNSHOP_TIER_BUTTONS.low.y,
+        PAWNSHOP_TIER_BUTTONS.low.width,
+        PAWNSHOP_TIER_BUTTONS.low.height,
+      ),
+      fromCenter(
+        PAWNSHOP_TIER_BUTTONS.fair.x,
+        PAWNSHOP_TIER_BUTTONS.fair.y,
+        PAWNSHOP_TIER_BUTTONS.fair.width,
+        PAWNSHOP_TIER_BUTTONS.fair.height,
+      ),
+      fromCenter(
+        PAWNSHOP_TIER_BUTTONS.high.x,
+        PAWNSHOP_TIER_BUTTONS.high.y,
+        PAWNSHOP_TIER_BUTTONS.high.width,
+        PAWNSHOP_TIER_BUTTONS.high.height,
+      ),
+      fromCenter(
+        PAWNSHOP_SKIP_BUTTON.x,
+        PAWNSHOP_SKIP_BUTTON.y,
+        PAWNSHOP_SKIP_BUTTON.width,
+        PAWNSHOP_SKIP_BUTTON.height,
+      ),
+      { left: 16, top: 36, right: 624, bottom: 158 }, // Customer ticket panel
+      { left: 40, top: 274, right: 600, bottom: 298 }, // §3.1④: Reputation hint bar
+      { left: 498, top: 182, right: 626, bottom: 214 }, // §3.1⑤: Insufficient-funds toast
     ];
     const pawnshopFeedbackButtons: Rect[] = [
-      fromCenter(160, 154, 118, 26), // next / summary
-      { left: 10, top: 24, right: 310, bottom: 88 }, // A2: entire feedback settlement panel
+      fromCenter(
+        PAWNSHOP_FEEDBACK_NEXT_BUTTON.x,
+        PAWNSHOP_FEEDBACK_NEXT_BUTTON.y,
+        PAWNSHOP_FEEDBACK_NEXT_BUTTON.width,
+        PAWNSHOP_FEEDBACK_NEXT_BUTTON.height,
+      ),
+      { left: 16, top: 40, right: 624, bottom: 176 }, // Entire feedback settlement panel
     ];
     const battleButtons: Rect[] = [
-      fromCenter(283, 95, 62, 21), // end turn
-      { left: 6, top: 112, right: 314, bottom: 176 }, // hand cards band
-      { left: 14, top: 26, right: 306, bottom: 62 }, // C5: demon intro banner & demon area
+      fromCenter(
+        BATTLE_END_TURN_BUTTON.x,
+        BATTLE_END_TURN_BUTTON.y,
+        BATTLE_END_TURN_BUTTON.width,
+        BATTLE_END_TURN_BUTTON.height,
+      ),
+      fromCenter(
+        BATTLE_DETAIL_TOGGLE_BUTTON.x,
+        BATTLE_DETAIL_TOGGLE_BUTTON.y,
+        BATTLE_DETAIL_TOGGLE_BUTTON.width,
+        BATTLE_DETAIL_TOGGLE_BUTTON.height,
+      ),
+      {
+        left: 12,
+        top: BATTLE_HAND_Y - Math.floor(BATTLE_CARD_HEIGHT / 2),
+        right: BASE_WIDTH - 12,
+        bottom: BATTLE_HAND_Y + Math.floor(BATTLE_CARD_HEIGHT / 2),
+      }, // Hand cards band
+      { left: 108, top: 42, right: 540, bottom: 126 }, // Demon area & HP bar
     ];
     const resultButtons: Rect[] = [
-      fromCenter(88, 148, 116, 24), // next day
-      fromCenter(222, 148, 136, 24), // return title
-      { left: 12, top: 8, right: 308, bottom: 88 }, // A2/C5/P10: result settlement, victory narrative & aftermath
+      fromCenter(
+        RESULT_NEXT_DAY_BUTTON.x,
+        RESULT_NEXT_DAY_BUTTON.y,
+        RESULT_NEXT_DAY_BUTTON.width,
+        RESULT_NEXT_DAY_BUTTON.height,
+      ),
+      fromCenter(
+        RESULT_RETURN_BUTTON.x,
+        RESULT_RETURN_BUTTON.y,
+        RESULT_RETURN_BUTTON.width,
+        RESULT_RETURN_BUTTON.height,
+      ),
+      { left: 20, top: 12, right: 620, bottom: 176 }, // Result settlement, victory narrative & aftermath
     ];
 
     const sceneTargets: Record<string, Rect[]> = {

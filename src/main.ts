@@ -44,10 +44,12 @@ const game = new Phaser.Game(config);
 
 function syncPortraitHint(): void {
   const hint = document.getElementById('portrait-hint');
+  const portrait = isPortraitViewport(window.innerWidth, window.innerHeight);
+  document.body.classList.toggle('is-portrait', portrait);
   if (!hint) {
     return;
   }
-  hint.hidden = !isPortraitViewport(window.innerWidth, window.innerHeight);
+  hint.hidden = !portrait;
 }
 
 function applyIntegerCanvasScale(): void {
@@ -61,6 +63,9 @@ function applyIntegerCanvasScale(): void {
   const { width, height } = calculateScaledDimensions(window.innerWidth, window.innerHeight);
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
+  if (!isPortraitViewport(window.innerWidth, window.innerHeight)) {
+    game.scale?.refresh();
+  }
 }
 
 syncPortraitHint();

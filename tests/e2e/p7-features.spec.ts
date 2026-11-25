@@ -1,5 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clickLogical, LOGICAL_WIDTH } from './helpers';
+import {
+  BATTLE_END_TURN_BUTTON,
+  BATTLE_HAND_Y,
+  computeHandCardX,
+  PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  PAWNSHOP_SKIP_BUTTON,
+  PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  PAWNSHOP_TIER_BUTTONS,
+  REDEMPTION_ACCEPT_BUTTON,
+  TITLE_CONTINUE_BUTTON,
+  TITLE_START_BUTTON,
+} from '../../src/game/layout';
+import { clickLogical } from './helpers';
 
 const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 const CORRUPT_SAVE_STORAGE_KEY = 'pawnshop-cards-save-corrupt-v1';
@@ -37,35 +49,19 @@ interface BattleDebugState {
   isAnimating?: boolean;
 }
 
-const CARD_WIDTH = 48;
-const CARD_GAP = 4;
-const HAND_MARGIN_X = 6;
-const HAND_Y = 144;
+const HAND_Y = BATTLE_HAND_Y;
 
 const BUTTONS = {
-  titleStart: { x: 160, y: 122 },
-  titleContinue: { x: 160, y: 156 },
-  redeemAccept: { x: 96, y: 151 },
-  tierLow: { x: 58, y: 151 },
-  tierHigh: { x: 262, y: 151 },
-  skipCustomer: { x: 270, y: 107 },
-  nextOrSummary: { x: 160, y: 151 },
-  enterNightBattle: { x: 88, y: 151 },
-  endTurn: { x: 283, y: 95 },
+  titleStart: TITLE_START_BUTTON,
+  titleContinue: TITLE_CONTINUE_BUTTON,
+  redeemAccept: REDEMPTION_ACCEPT_BUTTON,
+  tierLow: PAWNSHOP_TIER_BUTTONS.low,
+  tierHigh: PAWNSHOP_TIER_BUTTONS.high,
+  skipCustomer: PAWNSHOP_SKIP_BUTTON,
+  nextOrSummary: PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  enterNightBattle: PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  endTurn: BATTLE_END_TURN_BUTTON,
 } as const;
-
-function computeHandCardX(index: number, count: number): number {
-  const availableWidth = LOGICAL_WIDTH - HAND_MARGIN_X * 2;
-  const naturalStep = CARD_WIDTH + CARD_GAP;
-  const maxWidth = CARD_WIDTH + (count - 1) * naturalStep;
-  const step =
-    maxWidth <= availableWidth || count === 1
-      ? naturalStep
-      : Math.floor((availableWidth - CARD_WIDTH) / (count - 1));
-  const totalWidth = CARD_WIDTH + (count - 1) * step;
-  const startCenterX = Math.floor((LOGICAL_WIDTH - totalWidth) / 2) + Math.floor(CARD_WIDTH / 2);
-  return startCenterX + index * step;
-}
 
 async function getPawnshopState(page: Page): Promise<PawnshopDebugState> {
   return page.evaluate(() => {
@@ -192,7 +188,7 @@ test('P7 Sub-item 3: playing 当票 enters PendingChoice and discards the exact 
 
   await clickLogical(page, canvas, {
     x: computeHandCardX(targetIdx, choosing.hand.length),
-    y: HAND_Y - 3,
+    y: HAND_Y - 6,
   });
 
   await expect

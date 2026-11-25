@@ -20,8 +20,11 @@ import type { DemonDef } from '../game/effects';
 import { ITEMS, PALETTE, parseHexColor } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
 import { loadSave, type SaveData } from '../game/save';
+import { CALENDAR_DAY_CELLS, CALENDAR_RETURN_BUTTON } from '../game/layout';
 import { createRngFromUrl } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
+
+export { CALENDAR_DAY_CELLS, CALENDAR_RETURN_BUTTON } from '../game/layout';
 
 export interface CalendarMapSceneData {
   returnTo: 'TitleScene' | 'PawnshopScene';
@@ -69,15 +72,13 @@ declare global {
 
 const DEMONS: readonly DemonDef[] = demonsJson as DemonDef[];
 
-export const CALENDAR_DAY_CELLS = Array.from({ length: 7 }, (_, i) => ({
-  day: i + 1,
-  x: 28 + i * 44,
-  y: 55,
-  width: 40,
-  height: 62,
-})) as readonly { day: number; x: number; y: number; width: number; height: number }[];
-
-export const CALENDAR_RETURN_BUTTON = { x: 160, y: 163, width: 96, height: 22 } as const;
+function isLightPaletteHex(hex: string): boolean {
+  const num = parseHexColor(hex);
+  const r = (num >> 16) & 0xff;
+  const g = (num >> 8) & 0xff;
+  const b = num & 0xff;
+  return r * 0.299 + g * 0.587 + b * 0.114 > 150;
+}
 
 function getDemonById(id: string): DemonDef | undefined {
   return DEMONS.find((d) => d.id === id);
@@ -184,16 +185,16 @@ export class CalendarMapScene extends Phaser.Scene {
     const centerX = Math.floor(BASE_WIDTH / 2);
     const centerY = Math.floor(BASE_HEIGHT / 2);
 
-    // 16 色像素复古台历底板
+    // 16 色像素复古台历底板（640×360）
     this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.ink.num);
-    this.add.rectangle(centerX, 90, BASE_WIDTH - 4, BASE_HEIGHT - 4, PALETTE.woodBrown.num);
+    this.add.rectangle(centerX, centerY, BASE_WIDTH - 8, BASE_HEIGHT - 8, PALETTE.woodBrown.num);
 
-    // 顶栏（y=0..20）
-    this.add.rectangle(centerX, 10, BASE_WIDTH, 20, PALETTE.deepWood.num);
-    this.add.rectangle(centerX, 20, BASE_WIDTH, 1, PALETTE.brass.num);
-    this.add.rectangle(centerX, 21, BASE_WIDTH, 1, PALETTE.ink.num);
+    // 顶栏（y=0..34）
+    this.add.rectangle(centerX, 17, BASE_WIDTH, 34, PALETTE.deepWood.num);
+    this.add.rectangle(centerX, 34, BASE_WIDTH, 2, PALETTE.brass.num);
+    this.add.rectangle(centerX, 36, BASE_WIDTH, 2, PALETTE.ink.num);
 
-    addPixelText(this, 8, 10, `第${chapterCfg.id}章·${chapterCfg.name}`, {
+    addPixelText(this, 16, 17, `第${chapterCfg.id}章·${chapterCfg.name}`, {
       color: PALETTE.lampYellow.hex,
       origin: [0, 0.5],
     });
@@ -204,16 +205,23 @@ export class CalendarMapScene extends Phaser.Scene {
         : this.chapterState.status === 'failed'
           ? '第1章未通关'
           : `老街台历 第${this.chapterState.dayInChapter}/7天`;
-    const rightColor =
-      this.chapterState.status === 'completed'
-        ? PALETTE.jade.hex
-        : this.chapterState.status === 'failed'
-          ? PALETTE.vermilion.hex
-          : PALETTE.candle.hex;
-    addPixelText(this, BASE_WIDTH - 8, 10, rightStatus, {
-      color: rightColor,
-      origin: [1, 0.5],
-    });
+    if (this.chapterState.status === 'completed' || this.chapterState.status === 'failed') {
+      const pillW = rightStatus.length * 24 + 20;
+      const pillFill =
+        this.chapterState.status === 'completed' ? PALETTE.jade.num : PALETTE.vermilion.num;
+      this.add
+        .rectangle(BASE_WIDTH - 16 - Math.floor(pillW / 2), 17, pillW, 26, pillFill)
+        .setStrokeStyle(2, PALETTE.ink.num);
+      addPixelText(this, BASE_WIDTH - 26, 17, rightStatus, {
+        color: PALETTE.paperWhite.hex,
+        origin: [1, 0.5],
+      });
+    } else {
+      addPixelText(this, BASE_WIDTH - 16, 17, rightStatus, {
+        color: PALETTE.candle.hex,
+        origin: [1, 0.5],
+      });
+    }
 
     this.contentLayer = this.add.container(0, 0);
     this.renderCalendarGrid(composed.bossDef.name, bossHp);
@@ -227,7 +235,7 @@ export class CalendarMapScene extends Phaser.Scene {
         CALENDAR_RETURN_BUTTON.height,
         PALETTE.candle.num,
       )
-      .setStrokeStyle(1, PALETTE.ink.num)
+      .setStrokeStyle(2, PALETTE.ink.num)
       .setInteractive({ useHandCursor: true });
 
     addPixelText(this, CALENDAR_RETURN_BUTTON.x, CALENDAR_RETURN_BUTTON.y, '返回', {
@@ -268,7 +276,7 @@ export class CalendarMapScene extends Phaser.Scene {
         : entry.isBossDay
           ? PALETTE.vermilion.num
           : PALETTE.ink.num;
-      const borderWidth = isSelected || entry.isBossDay ? 2 : 1;
+      const borderWidth = isSelected || entry.isBossDay ? 4 : 2;
 
       const card = this.add
         .rectangle(cell.x, cell.y, cell.width, cell.height, bodyFill)
@@ -294,46 +302,49 @@ export class CalendarMapScene extends Phaser.Scene {
           ? PALETTE.ink.hex
           : PALETTE.paperWhite.hex;
 
-      const headerRect = this.add.rectangle(cell.x, cell.y - 23, cell.width - 2, 14, headerFill);
-      const headerText = addPixelText(this, cell.x, cell.y - 23, `第${entry.day}天`, {
+      const headerRect = this.add.rectangle(cell.x, cell.y - 45, cell.width - 4, 26, headerFill);
+      const headerText = addPixelText(this, cell.x, cell.y - 45, `第${entry.day}天`, {
         color: headerTextColor,
         origin: 0.5,
       });
 
-      // Row 1 (y=45): special tag (集市日 / 大心魔 / 暗当) or day label
+      // Row 1 (y=88): special tag (集市日 / 大心魔 / 暗当) or day label
       let row1Text = entry.tag ?? formatDayStatusLabel(entry.status);
       if (entry.day === 4) {
         row1Text = '集市日';
       } else if (entry.isBossDay) {
         row1Text = '大心魔';
       }
+      // 对比度审计：深底“大心魔”用灯黄(9.25:1)替朱红(2.94:1)，旧纸底用深木(6.81:1)替铜棕(2.55:1)
       const row1Color = entry.isBossDay
-        ? PALETTE.vermilion.hex
+        ? PALETTE.lampYellow.hex
         : entry.day === 4
-          ? entry.status === 'current' || entry.status === 'cleared'
+          ? entry.status === 'current'
             ? PALETTE.vermilion.hex
-            : PALETTE.lampYellow.hex
+            : entry.status === 'cleared'
+              ? PALETTE.ink.hex
+              : PALETTE.lampYellow.hex
           : entry.status === 'current' || entry.status === 'cleared'
-            ? PALETTE.copperBrown.hex
+            ? PALETTE.deepWood.hex
             : PALETTE.silverBlue.hex;
 
-      const tagLabel = addPixelText(this, cell.x, 45, row1Text, {
+      const tagLabel = addPixelText(this, cell.x, 88, row1Text, {
         color: row1Color,
         origin: 0.5,
       });
 
-      // Row 2 (y=58): that day's demon name (or Boss name on Day 7)
+      // Row 2 (y=114): that day's demon name (or Boss name on Day 7)
       const demonColor = entry.isBossDay
         ? PALETTE.paperWhite.hex
         : entry.status === 'current' || entry.status === 'cleared'
           ? PALETTE.ink.hex
           : PALETTE.candle.hex;
-      const demonLabel = addPixelText(this, cell.x, 58, entry.shortDemonName, {
+      const demonLabel = addPixelText(this, cell.x, 114, entry.shortDemonName, {
         color: demonColor,
         origin: 0.5,
       });
 
-      // Row 3 (y=74): status stamp box (已收 / 当前 / 已过 / 未到)
+      // Row 3 (y=144): status stamp box (已收 / 当前 / 已过 / 未到)
       const stampText = formatDayStatusLabel(entry.status);
       const stampFill =
         entry.status === 'cleared'
@@ -357,9 +368,9 @@ export class CalendarMapScene extends Phaser.Scene {
             : PALETTE.paperWhite.hex;
 
       const stampBox = this.add
-        .rectangle(cell.x, 74, 32, 14, stampFill)
-        .setStrokeStyle(1, stampStroke);
-      const stampLabel = addPixelText(this, cell.x, 74, stampText, {
+        .rectangle(cell.x, 144, 68, 24, stampFill)
+        .setStrokeStyle(2, stampStroke);
+      const stampLabel = addPixelText(this, cell.x, 144, stampText, {
         color: stampTextColor,
         origin: 0.5,
       });
@@ -371,31 +382,36 @@ export class CalendarMapScene extends Phaser.Scene {
     const composed = this.composedBoss;
     const activeSet = new Set(composed.activeComponents.map((c) => c.itemId));
 
-    // P11 子项 1：第 7 天 Boss 组件徽章 + 血量常驻预览带（y=89..120，从第 1 天起可见，随收当/赎当实时变化）
+    // P11 子项 1：第 7 天 Boss 组件徽章 + 血量常驻预览带（y=176..238，从第 1 天起可见，随收当/赎当实时变化）
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, 104, 304, 31, PALETTE.nightBlack.num)
-        .setStrokeStyle(1, composed.componentCount > 0 ? PALETTE.vermilion.num : PALETTE.mistBlue.num),
+        .rectangle(centerX, 207, 608, 62, PALETTE.nightBlack.num)
+        .setStrokeStyle(2, composed.componentCount > 0 ? PALETTE.vermilion.num : PALETTE.mistBlue.num),
     );
     this.contentLayer.add(
-      addPixelText(this, 14, 96, '执念:', {
+      addPixelText(this, 28, 191, '执念:', {
         color: PALETTE.lampYellow.hex,
         origin: [0, 0.5],
       }),
     );
 
     composed.allComponents.forEach((comp, cIdx) => {
-      const bx = 62 + cIdx * 16;
-      const by = 96;
+      const bx = 122 + cIdx * 34;
+      const by = 191;
       const isActive = activeSet.has(comp.itemId);
       const itemMeta = ITEMS.find((it) => it.id === comp.itemId);
-      const activeFill = itemMeta ? parseHexColor(itemMeta.color) : PALETTE.lampYellow.num;
+      const activeColorHex = itemMeta ? itemMeta.color : PALETTE.lampYellow.hex;
+      const activeFill = parseHexColor(activeColorHex);
       const boxFill = isActive ? activeFill : PALETTE.nightBlack.num;
       const boxStroke = isActive ? PALETTE.lampYellow.num : PALETTE.mistBlue.num;
-      const labelColor = isActive ? PALETTE.paperWhite.hex : PALETTE.mistBlue.hex;
+      const labelColor = isActive
+        ? isLightPaletteHex(activeColorHex)
+          ? PALETTE.ink.hex
+          : PALETTE.paperWhite.hex
+        : PALETTE.silverBlue.hex;
 
       this.contentLayer.add([
-        this.add.rectangle(bx, by, 12, 12, boxFill).setStrokeStyle(1, boxStroke),
+        this.add.rectangle(bx, by, 28, 28, boxFill).setStrokeStyle(2, boxStroke),
         addPixelText(this, bx, by, comp.shortLabel, {
           color: labelColor,
           origin: 0.5,
@@ -408,25 +424,25 @@ export class CalendarMapScene extends Phaser.Scene {
         ? `${composed.componentCount}/6块 盾+${composed.r1Shield} 阈${composed.chargeThreshold}`
         : `${composed.componentCount}/6块 阈${composed.chargeThreshold}`;
     this.contentLayer.add(
-      addPixelText(this, 306, 96, rightTag, {
-        color: composed.componentCount > 0 ? PALETTE.vermilion.hex : PALETTE.silverBlue.hex,
+      addPixelText(this, 612, 191, rightTag, {
+        color: composed.componentCount > 0 ? PALETTE.lampYellow.hex : PALETTE.silverBlue.hex,
         origin: [1, 0.5],
       }),
     );
     this.contentLayer.add(
-      addPixelText(this, centerX, 112, formatCalendarBossPreviewText(composed), {
-        color: composed.hpCapped ? PALETTE.vermilion.hex : PALETTE.candle.hex,
+      addPixelText(this, centerX, 223, formatCalendarBossPreviewText(composed), {
+        color: composed.hpCapped ? PALETTE.lampYellow.hex : PALETTE.candle.hex,
         origin: 0.5,
       }),
     );
 
-    // 中下详情预览条（y=123..149，选中某日展示详情与完整 Boss 名）
+    // 中下详情预览条（y=244..298，选中某日展示详情与完整 Boss 名）
     const selected = this.entries.find((e) => e.day === this.selectedDay) ?? this.entries[0];
 
     this.contentLayer.add(
       this.add
-        .rectangle(centerX, 136, 304, 26, PALETTE.deepWood.num)
-        .setStrokeStyle(1, selected.isBossDay ? PALETTE.vermilion.num : PALETTE.brass.num),
+        .rectangle(centerX, 271, 608, 54, PALETTE.deepWood.num)
+        .setStrokeStyle(2, selected.isBossDay ? PALETTE.vermilion.num : PALETTE.brass.num),
     );
 
     const statusName = formatDayStatusLabel(selected.status);
@@ -458,14 +474,14 @@ export class CalendarMapScene extends Phaser.Scene {
     }
 
     this.contentLayer.add(
-      addPixelText(this, 14, 130, line1, {
-        color: selected.isBossDay ? PALETTE.vermilion.hex : PALETTE.lampYellow.hex,
+      addPixelText(this, 28, 258, line1, {
+        color: PALETTE.lampYellow.hex,
         origin: [0, 0.5],
       }),
     );
 
     this.contentLayer.add(
-      addPixelText(this, 14, 142, line2, {
+      addPixelText(this, 28, 284, line2, {
         color: PALETTE.paperWhite.hex,
         origin: [0, 0.5],
       }),

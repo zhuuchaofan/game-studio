@@ -37,7 +37,7 @@ export interface PixelAtlasLayout {
 }
 
 export interface PixelTextOptions {
-  size?: 12 | 24;
+  size?: 12 | 24 | 48;
   color?: string | number;
   origin?: number | readonly [number, number];
   align?: number;
@@ -244,7 +244,7 @@ export function addPixelText(
 ): Phaser.GameObjects.BitmapText {
   loadPixelFont(scene);
 
-  const size = opts.size ?? 12;
+  const size = opts.size ?? 24;
   const align = opts.align ?? 0;
   const canvasMode = isCanvasRenderer(scene);
   const initialTint =

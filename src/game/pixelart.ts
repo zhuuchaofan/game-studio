@@ -24,6 +24,8 @@ export const PIXEL_PALETTE: readonly string[] = [
 
 export const MAX_COLORS_PER_SPRITE = 12;
 export const SPRITE_SIZE = 32;
+export const SPRITE_PIXEL_SCALE = 2;
+export const RENDERED_SPRITE_SIZE = SPRITE_SIZE * SPRITE_PIXEL_SCALE;
 
 export interface PixelArtValidationResult {
   valid: boolean;
@@ -107,7 +109,8 @@ export function validatePixelRows(
 }
 
 /**
- * Renders 32x32 palette-indexed rows onto an in-memory canvas and registers it as a Phaser texture.
+ * Renders 32x32 palette-indexed rows onto an in-memory canvas (scaled 2x2 nearest-neighbor
+ * to 64x64 logical pixels) and registers it as a Phaser texture.
  * Idempotent: skips generation if `key` already exists in `scene.textures`.
  */
 export function pixelRowsToTexture(
@@ -115,6 +118,7 @@ export function pixelRowsToTexture(
   key: string,
   rows: readonly string[],
   palette: readonly string[] = PIXEL_PALETTE,
+  pixelScale = SPRITE_PIXEL_SCALE,
 ): string {
   if (scene.textures.exists(key)) {
     return key;
@@ -129,14 +133,14 @@ export function pixelRowsToTexture(
   const width = rows[0]?.length ?? 0;
 
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = width * pixelScale;
+  canvas.height = height * pixelScale;
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     throw new Error(`Failed to acquire 2D context for pixel art "${key}"`);
   }
 
-  ctx.clearRect(0, 0, width, height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   for (let y = 0; y < height; y += 1) {
     const row = rows[y];
@@ -144,7 +148,7 @@ export function pixelRowsToTexture(
       const idx = parsePaletteChar(row[x]);
       if (idx !== null && idx >= 0) {
         ctx.fillStyle = palette[idx];
-        ctx.fillRect(x, y, 1, 1);
+        ctx.fillRect(x * pixelScale, y * pixelScale, pixelScale, pixelScale);
       }
     }
   }

@@ -42,9 +42,27 @@ import {
   type TutorialState,
 } from '../game/tutorial';
 import { createTutorialBubble } from '../game/tutorialBubble';
+import {
+  BATTLE_CARD_HEIGHT,
+  BATTLE_CARD_WIDTH,
+  BATTLE_DETAIL_TOGGLE_BUTTON,
+  BATTLE_EMPTY_RETURN_BUTTON,
+  BATTLE_END_TURN_BUTTON,
+  BATTLE_HAND_Y,
+  computeHandCardX,
+  DEMON_HP_BAR_RECT,
+  DEMON_INTRO_BANNER_RECT,
+} from '../game/layout';
 import { createRngFromUrl } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 import type { ResultSceneData } from './ResultScene';
+
+export {
+  BATTLE_DETAIL_TOGGLE_BUTTON,
+  computeHandCardX,
+  DEMON_HP_BAR_RECT,
+  DEMON_INTRO_BANNER_RECT,
+} from '../game/layout';
 
 export interface CardBattleSceneData {
   deck?: string[];
@@ -54,11 +72,6 @@ export interface CardBattleSceneData {
   save?: SaveData;
   tutorial?: TutorialState;
 }
-
-export const BATTLE_DETAIL_TOGGLE_BUTTON = { x: 13, y: 88, width: 16, height: 12 } as const;
-/** P10 子项 6：心魔血条与开场横幅逻辑坐标，全程不遮血条、不压手牌、不挡[故]与结束回合按钮。 */
-export const DEMON_HP_BAR_RECT = { x: 108, y: 38, width: 156, height: 3 } as const;
-export const DEMON_INTRO_BANNER_RECT = { x: 24, y: 67, width: 224, height: 40 } as const;
 
 interface HandSlotView {
   slotIndex: number;
@@ -76,18 +89,16 @@ interface HandSlotView {
   queued: boolean;
 }
 
-const HUD_HEIGHT = 20;
-const DEMON_X = 76;
-const DEMON_Y = 44;
-const CARD_WIDTH = 48;
-const CARD_HEIGHT = 64;
-const HAND_Y = 144;
-const HAND_MARGIN_X = 6;
-const CARD_GAP = 4;
-const END_TURN_X = 283;
-const END_TURN_Y = 95;
-const END_TURN_W = 62;
-const END_TURN_H = 21;
+const HUD_HEIGHT = 36;
+const DEMON_X = 148;
+const DEMON_Y = 84;
+const CARD_WIDTH = BATTLE_CARD_WIDTH;
+const CARD_HEIGHT = BATTLE_CARD_HEIGHT;
+const HAND_Y = BATTLE_HAND_Y;
+const END_TURN_X = BATTLE_END_TURN_BUTTON.x;
+const END_TURN_Y = BATTLE_END_TURN_BUTTON.y;
+const END_TURN_W = BATTLE_END_TURN_BUTTON.width;
+const END_TURN_H = BATTLE_END_TURN_BUTTON.height;
 const FLY_DURATION_MS = 240;
 const AFTERIMAGE_MS = 83;
 const SHATTER_DURATION_MS = 380;
@@ -107,40 +118,24 @@ const BASE_BATTLE_BALANCE: BattleBalanceConfig = {
 
 const NIGHT_BACKDROP_RECTS: readonly [number, number, number, number, number, number?][] = [
   [Math.floor(BASE_WIDTH / 2), Math.floor(BASE_HEIGHT / 2), BASE_WIDTH, BASE_HEIGHT, PALETTE.deepBlue.num],
-  [26, 44, 38, 34, PALETTE.nightBlack.num, PALETTE.nightBlue.num],
-  [18, 36, 5, 5, PALETTE.silverBlue.num],
-  [20, 36, 3, 3, PALETTE.nightBlack.num],
-  [34, 34, 2, 2, PALETTE.silverBlue.num],
-  [31, 42, 2, 2, PALETTE.mistBlue.num],
-  [26, 44, 2, 34, PALETTE.nightBlue.num],
-  [26, 44, 38, 2, PALETTE.nightBlue.num],
-  [292, 56, 26, 14, PALETTE.nightBlue.num],
-  [292, 48, 16, 4, PALETTE.lampYellow.num],
-  [292, 52, 20, 3, PALETTE.brass.num],
-  [292, 39, 20, 10, PALETTE.brass.num, PALETTE.nightBlack.num],
-  [292, 36, 12, 3, PALETTE.lampYellow.num],
-  [292, 54, 4, 14, PALETTE.nightBlack.num],
-  [292, 62, 16, 4, PALETTE.brass.num],
-  [Math.floor(BASE_WIDTH / 2), 66, BASE_WIDTH, 2, PALETTE.nightBlue.num],
-  [Math.floor(BASE_WIDTH / 2), 110, BASE_WIDTH, 1, PALETTE.nightBlue.num],
-  [Math.floor(BASE_WIDTH / 2), 178, BASE_WIDTH, 4, PALETTE.nightBlack.num],
+  [52, 88, 76, 68, PALETTE.nightBlack.num, PALETTE.nightBlue.num],
+  [36, 72, 10, 10, PALETTE.silverBlue.num],
+  [40, 72, 6, 6, PALETTE.nightBlack.num],
+  [68, 68, 4, 4, PALETTE.silverBlue.num],
+  [62, 84, 4, 4, PALETTE.mistBlue.num],
+  [52, 88, 4, 68, PALETTE.nightBlue.num],
+  [52, 88, 76, 4, PALETTE.nightBlue.num],
+  [584, 112, 52, 28, PALETTE.nightBlue.num],
+  [584, 96, 32, 8, PALETTE.lampYellow.num],
+  [584, 104, 40, 6, PALETTE.brass.num],
+  [584, 78, 40, 20, PALETTE.brass.num, PALETTE.nightBlack.num],
+  [584, 72, 24, 6, PALETTE.lampYellow.num],
+  [584, 108, 8, 28, PALETTE.nightBlack.num],
+  [584, 124, 32, 8, PALETTE.brass.num],
+  [Math.floor(BASE_WIDTH / 2), 130, BASE_WIDTH, 4, PALETTE.nightBlue.num],
+  [Math.floor(BASE_WIDTH / 2), 218, BASE_WIDTH, 2, PALETTE.nightBlue.num],
+  [Math.floor(BASE_WIDTH / 2), 356, BASE_WIDTH, 8, PALETTE.nightBlack.num],
 ];
-
-export function computeHandCardX(index: number, count: number): number {
-  if (count <= 0) {
-    return Math.floor(BASE_WIDTH / 2);
-  }
-  const availableWidth = BASE_WIDTH - HAND_MARGIN_X * 2;
-  const naturalStep = CARD_WIDTH + CARD_GAP;
-  const maxWidth = CARD_WIDTH + (count - 1) * naturalStep;
-  const step =
-    maxWidth <= availableWidth || count === 1
-      ? naturalStep
-      : Math.floor((availableWidth - CARD_WIDTH) / (count - 1));
-  const totalWidth = CARD_WIDTH + (count - 1) * step;
-  const startCenterX = Math.floor((BASE_WIDTH - totalWidth) / 2) + Math.floor(CARD_WIDTH / 2);
-  return startCenterX + index * step;
-}
 
 export class CardBattleScene extends Phaser.Scene {
   private state!: BattleState;
@@ -229,7 +224,7 @@ export class CardBattleScene extends Phaser.Scene {
     for (const [x, y, w, h, fill, stroke] of NIGHT_BACKDROP_RECTS) {
       const rect = this.add.rectangle(x, y, w, h, fill);
       if (stroke !== undefined) {
-        rect.setStrokeStyle(1, stroke);
+        rect.setStrokeStyle(2, stroke);
       }
     }
 
@@ -358,64 +353,64 @@ export class CardBattleScene extends Phaser.Scene {
     if (!this.composedBoss && !this.state.demonIntroLine && !this.state.demonCustomerLink) {
       return;
     }
-    // P10 子项 5 + 子项 6 修 2 + P11：横幅置于中部带（常规 y=67..107，Boss 2 行 y=66..108，Boss 3 行 y=57..111，含描边落在 y=56..112），
-    // 全程非阻塞、不遮挡上方心魔血条（y=38..41）、下方手牌（y=112..176）、左侧[故]钮与右侧结束回合按钮
+    // 五区制中部带（常规 y=132..214，Boss 2 行 y=131..215，Boss 3 行 y=126..222），
+    // 全程非阻塞、不遮挡上方心魔血条（y=72..80）、下方手牌（y=224..352）、左侧[故]钮与右侧结束回合按钮
     const isBoss3Line = Boolean(
       this.composedBoss && !this.composedBoss.isBare && this.composedBoss.fragmentNames.length > 2,
     );
     const isBoss2Line = Boolean(
       this.composedBoss && !this.composedBoss.isBare && this.composedBoss.fragmentNames.length <= 2,
     );
-    const bannerH = isBoss3Line ? 54 : isBoss2Line ? 42 : 40;
-    const bannerW = this.composedBoss ? 228 : DEMON_INTRO_BANNER_RECT.width;
+    const bannerH = isBoss3Line ? 104 : isBoss2Line ? 84 : DEMON_INTRO_BANNER_RECT.height;
+    const bannerW = this.composedBoss ? 452 : DEMON_INTRO_BANNER_RECT.width;
     const cx = Math.floor(DEMON_INTRO_BANNER_RECT.x + DEMON_INTRO_BANNER_RECT.width / 2);
     const cy = isBoss3Line
-      ? 84
+      ? 171
       : Math.floor(DEMON_INTRO_BANNER_RECT.y + DEMON_INTRO_BANNER_RECT.height / 2);
     const topY = cy - Math.floor(bannerH / 2);
     const banner = this.add.container(0, 0).setDepth(90);
     const bg = this.add
       .rectangle(cx, cy, bannerW, bannerH, PALETTE.nightBlack.num)
-      .setStrokeStyle(2, PALETTE.vermilion.num);
+      .setStrokeStyle(4, PALETTE.vermilion.num);
 
     if (this.composedBoss) {
       const lines = this.formatBossBannerLines(this.composedBoss);
       const children: Phaser.GameObjects.GameObject[] = [
         bg,
-        addPixelText(this, cx, isBoss2Line ? topY + 8 : topY + 7, `${this.state.demonName} 现身`, {
+        addPixelText(this, cx, isBoss2Line ? topY + 16 : topY + 15, `${this.state.demonName} 现身`, {
           color: PALETTE.lampYellow.hex,
           origin: 0.5,
         }),
       ];
       if (this.composedBoss.isBare) {
         children.push(
-          addPixelText(this, cx, topY + 24, lines[0], {
+          addPixelText(this, cx, topY + 48, lines[0], {
             color: PALETTE.paperWhite.hex,
             origin: 0.5,
           }),
         );
       } else if (lines.length === 2) {
         children.push(
-          addPixelText(this, cx, topY + 21, lines[0], {
-            color: PALETTE.vermilion.hex,
+          addPixelText(this, cx, topY + 42, lines[0], {
+            color: PALETTE.oldPaper.hex,
             origin: 0.5,
           }),
-          addPixelText(this, cx, topY + 34, lines[1], {
+          addPixelText(this, cx, topY + 68, lines[1], {
             color: PALETTE.paperWhite.hex,
             origin: 0.5,
           }),
         );
       } else {
         children.push(
-          addPixelText(this, cx, topY + 20, lines[0], {
-            color: PALETTE.vermilion.hex,
+          addPixelText(this, cx, topY + 37, lines[0], {
+            color: PALETTE.oldPaper.hex,
             origin: 0.5,
           }),
-          addPixelText(this, cx, topY + 33, lines[1], {
-            color: PALETTE.vermilion.hex,
+          addPixelText(this, cx, topY + 59, lines[1], {
+            color: PALETTE.oldPaper.hex,
             origin: 0.5,
           }),
-          addPixelText(this, cx, topY + 46, lines[2], {
+          addPixelText(this, cx, topY + 83, lines[2], {
             color: PALETTE.paperWhite.hex,
             origin: 0.5,
           }),
@@ -429,14 +424,14 @@ export class CardBattleScene extends Phaser.Scene {
 
     const children: Phaser.GameObjects.GameObject[] = [
       bg,
-      addPixelText(this, cx, DEMON_INTRO_BANNER_RECT.y + 7, `心魔「${this.state.demonName}」现身`, {
+      addPixelText(this, cx, DEMON_INTRO_BANNER_RECT.y + 16, `心魔「${this.state.demonName}」现身`, {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
     ];
     if (this.state.demonCustomerLink) {
       children.push(
-        addPixelText(this, cx, DEMON_INTRO_BANNER_RECT.y + 20, this.state.demonCustomerLink, {
+        addPixelText(this, cx, DEMON_INTRO_BANNER_RECT.y + 42, this.state.demonCustomerLink, {
           color: PALETTE.silverBlue.hex,
           origin: 0.5,
         }),
@@ -447,7 +442,7 @@ export class CardBattleScene extends Phaser.Scene {
         addPixelText(
           this,
           cx,
-          this.state.demonCustomerLink ? DEMON_INTRO_BANNER_RECT.y + 32 : DEMON_INTRO_BANNER_RECT.y + 24,
+          this.state.demonCustomerLink ? DEMON_INTRO_BANNER_RECT.y + 66 : DEMON_INTRO_BANNER_RECT.y + 48,
           this.state.demonIntroLine,
           {
             color: PALETTE.paperWhite.hex,
@@ -518,15 +513,24 @@ export class CardBattleScene extends Phaser.Scene {
     };
 
     const cx = Math.floor(BASE_WIDTH / 2);
-    this.add.rectangle(cx, 90, 220, 96, PALETTE.nightBlack.num).setStrokeStyle(1, PALETTE.mistBlue.num);
-    addPixelText(this, cx, 68, '没有牌可打', { color: PALETTE.paperWhite.hex, origin: 0.5 });
-    addPixelText(this, cx, 88, '白天未收到旧物纸牌', { color: PALETTE.silverBlue.hex, origin: 0.5 });
+    this.add.rectangle(cx, 180, 440, 192, PALETTE.nightBlack.num).setStrokeStyle(2, PALETTE.mistBlue.num);
+    addPixelText(this, cx, 136, '没有牌可打', { color: PALETTE.paperWhite.hex, origin: 0.5 });
+    addPixelText(this, cx, 176, '白天未收到旧物纸牌', { color: PALETTE.silverBlue.hex, origin: 0.5 });
 
     const btn = this.add
-      .rectangle(cx, 118, 96, 24, PALETTE.deepBlue.num)
-      .setStrokeStyle(1, PALETTE.brass.num)
+      .rectangle(
+        BATTLE_EMPTY_RETURN_BUTTON.x,
+        BATTLE_EMPTY_RETURN_BUTTON.y,
+        BATTLE_EMPTY_RETURN_BUTTON.width,
+        BATTLE_EMPTY_RETURN_BUTTON.height,
+        PALETTE.deepBlue.num,
+      )
+      .setStrokeStyle(2, PALETTE.brass.num)
       .setInteractive({ useHandCursor: true });
-    addPixelText(this, cx, 118, '返回标题', { color: PALETTE.paperWhite.hex, origin: 0.5 });
+    addPixelText(this, BATTLE_EMPTY_RETURN_BUTTON.x, BATTLE_EMPTY_RETURN_BUTTON.y, '返回标题', {
+      color: PALETTE.paperWhite.hex,
+      origin: 0.5,
+    });
     btn.on('pointerover', () => btn.setFillStyle(PALETTE.nightBlue.num));
     btn.on('pointerout', () => btn.setFillStyle(PALETTE.deepBlue.num));
     btn.on('pointerdown', () => {
@@ -537,13 +541,13 @@ export class CardBattleScene extends Phaser.Scene {
   }
 
   private createActionStrip(): void {
-    this.feedbackText = addPixelText(this, 6, 103, '', {
+    this.feedbackText = addPixelText(this, 12, 204, '', {
       color: PALETTE.silverBlue.hex,
       origin: [0, 0.5],
     });
     this.endTurnBg = this.add
       .rectangle(END_TURN_X, END_TURN_Y, END_TURN_W, END_TURN_H, PALETTE.nightBlack.num)
-      .setStrokeStyle(1, PALETTE.brass.num)
+      .setStrokeStyle(2, PALETTE.brass.num)
       .setInteractive({ useHandCursor: true });
     this.endTurnLabel = addPixelText(this, END_TURN_X, END_TURN_Y, '结束回合', {
       color: PALETTE.paperWhite.hex,
@@ -598,19 +602,19 @@ export class CardBattleScene extends Phaser.Scene {
 
     this.hudLayer.add([
       this.add.rectangle(cx, hudY, BASE_WIDTH, HUD_HEIGHT, PALETTE.nightBlack.num),
-      this.add.rectangle(cx, HUD_HEIGHT, BASE_WIDTH, 1, PALETTE.nightBlue.num),
-      addPixelText(this, 4, hudY, hpText, { color: PALETTE.lampYellow.hex, origin: [0, 0.5] }),
-      addPixelText(this, 88, hudY, `人情${this.state.renqing}/${this.state.maxRenqing}`, {
+      this.add.rectangle(cx, HUD_HEIGHT, BASE_WIDTH, 2, PALETTE.nightBlue.num),
+      addPixelText(this, 12, hudY, hpText, { color: PALETTE.lampYellow.hex, origin: [0, 0.5] }),
+      addPixelText(this, 180, hudY, `人情${this.state.renqing}/${this.state.maxRenqing}`, {
         color: PALETTE.brass.hex,
         origin: [0, 0.5],
       }),
-      addPixelText(this, 168, hudY, `第${this.state.round}/${this.state.maxRounds}回`, {
+      addPixelText(this, 340, hudY, `第${this.state.round}/${this.state.maxRounds}回`, {
         color: PALETTE.paperWhite.hex,
         origin: [0, 0.5],
       }),
       addPixelText(
         this,
-        BASE_WIDTH - 4,
+        BASE_WIDTH - 12,
         hudY,
         `抽${this.state.drawPile.length} 弃${this.state.discardPile.length}`,
         { color: PALETTE.silverBlue.hex, origin: [1, 0.5] },
@@ -623,7 +627,7 @@ export class CardBattleScene extends Phaser.Scene {
     const demonRows = DEMON_PIXEL_ART[this.state.demonId] ?? DEMON_PIXEL_ART.a;
     const demonTexKey = pixelRowsToTexture(this, `demon-art-${this.state.demonId}`, demonRows);
 
-    const barW = 156;
+    const barW = DEMON_HP_BAR_RECT.width;
     const fillW = Math.max(
       0,
       Math.round(barW * (this.state.demonMaxHp > 0 ? this.state.demonHp / this.state.demonMaxHp : 0)),
@@ -637,25 +641,39 @@ export class CardBattleScene extends Phaser.Scene {
 
     this.demonLayer.add([
       this.add
-        .rectangle(DEMON_X, DEMON_Y, 40, 40, PALETTE.nightBlack.num)
-        .setStrokeStyle(1, this.state.isBoss ? PALETTE.vermilion.num : PALETTE.nightBlue.num),
+        .rectangle(DEMON_X, DEMON_Y, 80, 80, PALETTE.nightBlack.num)
+        .setStrokeStyle(2, this.state.isBoss ? PALETTE.vermilion.num : PALETTE.nightBlue.num),
       this.add.image(DEMON_X, DEMON_Y, demonTexKey).setOrigin(0.5),
       this.add
-        .rectangle(186, 44, 166, 42, PALETTE.nightBlack.num)
-        .setStrokeStyle(1, this.state.isBoss ? PALETTE.vermilion.num : PALETTE.nightBlue.num),
-      addPixelText(this, 108, 25, demonTitle, {
-        color: this.state.isBoss ? PALETTE.vermilion.hex : PALETTE.paperWhite.hex,
+        .rectangle(370, 84, 340, 84, PALETTE.nightBlack.num)
+        .setStrokeStyle(2, this.state.isBoss ? PALETTE.vermilion.num : PALETTE.nightBlue.num),
+      addPixelText(this, 212, 46, demonTitle, {
+        color: this.state.isBoss ? PALETTE.lampYellow.hex : PALETTE.paperWhite.hex,
         origin: [0, 0],
       }),
-      addPixelText(this, 264, 25, hpLabel, {
+      addPixelText(this, 528, 46, hpLabel, {
         color: this.state.demonShield > 0 ? PALETTE.silverBlue.hex : PALETTE.lampYellow.hex,
         origin: [1, 0],
       }),
-      this.add.rectangle(186, 39, barW, 3, PALETTE.deepBlue.num),
+      this.add.rectangle(
+        DEMON_HP_BAR_RECT.x + Math.floor(barW / 2),
+        DEMON_HP_BAR_RECT.y,
+        barW,
+        DEMON_HP_BAR_RECT.height,
+        PALETTE.deepBlue.num,
+      ),
     ]);
 
     if (fillW > 0) {
-      this.demonLayer.add(this.add.rectangle(108 + Math.floor(fillW / 2), 39, fillW, 3, PALETTE.vermilion.num));
+      this.demonLayer.add(
+        this.add.rectangle(
+          DEMON_HP_BAR_RECT.x + Math.floor(fillW / 2),
+          DEMON_HP_BAR_RECT.y,
+          fillW,
+          DEMON_HP_BAR_RECT.height,
+          PALETTE.vermilion.num,
+        ),
+      );
     }
 
     const intent = getIntent(this.state);
@@ -664,22 +682,23 @@ export class CardBattleScene extends Phaser.Scene {
       let labelColor: string;
       if (this.state.bossCharging) {
         label = `蓄力:${this.state.bossChargeSkill ?? '封门'}+${this.state.demonShield}盾`;
-        labelColor = PALETTE.vermilion.hex;
+        labelColor = PALETTE.lampYellow.hex;
       } else if (
         this.state.bossChargeInterrupted &&
         this.state.round === this.state.bossChargeRound
       ) {
         label = '封门已打断!';
-        labelColor = PALETTE.jade.hex;
+        labelColor = PALETTE.candle.hex;
       } else if (intent.current.skill) {
         label = `意图:${intent.current.skill}${intent.current.damage}伤`;
-        labelColor = this.state.bossChargeInterrupted ? PALETTE.jade.hex : PALETTE.vermilion.hex;
+        labelColor = this.state.bossChargeInterrupted ? PALETTE.candle.hex : PALETTE.oldPaper.hex;
       } else {
+        // 对比度审计：夜黑底意图字用银蓝(7.24:1)替雾蓝(3.60:1)
         label = `意图:攻${intent.current.damage}伤`;
-        labelColor = PALETTE.mistBlue.hex;
+        labelColor = PALETTE.silverBlue.hex;
       }
       this.demonLayer.add(
-        addPixelText(this, 108, 45, label, {
+        addPixelText(this, 212, 92, label, {
           color: labelColor,
           origin: [0, 0],
         }),
@@ -690,13 +709,13 @@ export class CardBattleScene extends Phaser.Scene {
     if (nextIntent) {
       const nextLabel = nextIntent.skill ? `下回:${nextIntent.skill}${nextIntent.damage}` : `下回:攻${nextIntent.damage}`;
       this.demonLayer.add(
-        addPixelText(this, 264, 45, nextLabel, {
+        addPixelText(this, 528, 92, nextLabel, {
           color:
             this.state.bossChargeInterrupted && nextIntent.round === 3
-              ? PALETTE.jade.hex
+              ? PALETTE.candle.hex
               : nextIntent.skill
-                ? PALETTE.vermilion.hex
-                : PALETTE.mistBlue.hex,
+                ? PALETTE.oldPaper.hex
+                : PALETTE.silverBlue.hex,
           origin: [1, 0],
         }),
       );
@@ -706,7 +725,7 @@ export class CardBattleScene extends Phaser.Scene {
       if (this.state.illuminateNextDraw) badges.push('照亮');
       if (this.state.nextRoundRenqingBonus > 0) badges.push(`下回+${this.state.nextRoundRenqingBonus}情`);
       if (badges.length > 0) {
-        this.demonLayer.add(addPixelText(this, 264, 45, badges.join(' '), { color: PALETTE.jade.hex, origin: [1, 0] }));
+        this.demonLayer.add(addPixelText(this, 528, 92, badges.join(' '), { color: PALETTE.candle.hex, origin: [1, 0] }));
       }
     }
   }
@@ -736,17 +755,17 @@ export class CardBattleScene extends Phaser.Scene {
     const card = cardName ? this.state.cardsByName.get(cardName) : undefined;
     const cx = Math.floor(BASE_WIDTH / 2);
 
-    // y=66..79 徽章与心魔关联带：Boss R2 蓄力/打断优先展示进度，其余时机显性展示心魔-客人关联（P10 子项 5）
+    // y=131..157 徽章与心魔关联带
     if (this.detailMode === 'effect') {
       if (this.state.bossCharging) {
         this.detailLayer.add([
           this.add
-            .rectangle(cx, 73, BASE_WIDTH - 8, 13, PALETTE.nightBlack.num)
-            .setStrokeStyle(1, PALETTE.vermilion.num),
+            .rectangle(cx, 144, BASE_WIDTH - 16, 26, PALETTE.nightBlack.num)
+            .setStrokeStyle(2, PALETTE.vermilion.num),
           addPixelText(
             this,
             cx,
-            73,
+            144,
             `蓄力「${this.state.bossChargeSkill ?? '封门'}」打断:${this.state.bossChargeDamage}/${this.state.bossChargeThreshold} (返+${this.state.bossChargeRefundRenqing}情)`,
             {
               color: PALETTE.lampYellow.hex,
@@ -760,15 +779,15 @@ export class CardBattleScene extends Phaser.Scene {
       ) {
         this.detailLayer.add([
           this.add
-            .rectangle(cx, 73, BASE_WIDTH - 8, 13, PALETTE.nightBlack.num)
-            .setStrokeStyle(1, PALETTE.jade.num),
+            .rectangle(cx, 144, BASE_WIDTH - 16, 26, PALETTE.jade.num)
+            .setStrokeStyle(2, PALETTE.paperWhite.num),
           addPixelText(
             this,
             cx,
-            73,
+            144,
             `已打断「${this.state.bossChargeSkill ?? '封门'}」！返还+${this.state.bossChargeRefundRenqing}人情，下回仅${this.state.bossInterruptedNextDamage ?? 3}伤`,
             {
-              color: PALETTE.jade.hex,
+              color: PALETTE.paperWhite.hex,
               origin: 0.5,
             },
           ),
@@ -781,9 +800,9 @@ export class CardBattleScene extends Phaser.Scene {
             : `执念(${this.composedBoss.componentCount}块):${this.composedBoss.activeComponents.map((c) => c.shortLabel).join('·')} 阈${this.composedBoss.chargeThreshold}`;
         this.detailLayer.add([
           this.add
-            .rectangle(cx, 73, BASE_WIDTH - 8, 13, PALETTE.nightBlack.num)
-            .setStrokeStyle(1, PALETTE.vermilion.num),
-          addPixelText(this, cx, 73, badgeText, {
+            .rectangle(cx, 144, BASE_WIDTH - 16, 26, PALETTE.nightBlack.num)
+            .setStrokeStyle(2, PALETTE.vermilion.num),
+          addPixelText(this, cx, 144, badgeText, {
             color: PALETTE.silverBlue.hex,
             origin: 0.5,
           }),
@@ -794,9 +813,9 @@ export class CardBattleScene extends Phaser.Scene {
           : this.state.demonCustomerLink;
         this.detailLayer.add([
           this.add
-            .rectangle(cx, 73, BASE_WIDTH - 8, 13, PALETTE.nightBlack.num)
-            .setStrokeStyle(1, PALETTE.nightBlue.num),
-          addPixelText(this, cx, 73, linkText, {
+            .rectangle(cx, 144, BASE_WIDTH - 16, 26, PALETTE.nightBlack.num)
+            .setStrokeStyle(2, PALETTE.nightBlue.num),
+          addPixelText(this, cx, 144, linkText, {
             color: PALETTE.silverBlue.hex,
             origin: 0.5,
           }),
@@ -811,15 +830,15 @@ export class CardBattleScene extends Phaser.Scene {
     const isStory = this.detailMode === 'story';
 
     if (isStory) {
-      // 故事模式：点击 [故] 展开完整折行故事（y=67..95，严格不侵占 y=97..109 反馈行与手牌区）
+      // 故事模式：点击 [故] 展开完整折行故事（x=44..496, y=135..191，完全避开 [故] 钮 x=8..40）
       this.detailLayer.add([
         this.add
-          .rectangle(126, 81, 244, 28, PALETTE.nightBlack.num)
-          .setStrokeStyle(1, PALETTE.brass.num),
+          .rectangle(270, 163, 452, 56, PALETTE.nightBlack.num)
+          .setStrokeStyle(2, PALETTE.brass.num),
         addPixelText(
           this,
-          24,
-          69,
+          54,
+          139,
           wrapCjkText(`${card.name}(${card.cost}费)：${card.story}`, 18),
           {
             color: PALETTE.candle.hex,
@@ -829,12 +848,12 @@ export class CardBattleScene extends Phaser.Scene {
         ),
       ]);
     } else {
-      // 默认单行详情条（y=81..95）：腾空 y=66..79，展示名称/费用/完整效果
+      // 默认单行详情条（x=44..496, y=163..191）
       this.detailLayer.add([
         this.add
-          .rectangle(126, 88, 244, 14, PALETTE.nightBlack.num)
-          .setStrokeStyle(1, PALETTE.brass.num),
-        addPixelText(this, 24, 88, this.formatSingleLineCardEffect(card), {
+          .rectangle(270, 177, 452, 28, PALETTE.nightBlack.num)
+          .setStrokeStyle(2, PALETTE.brass.num),
+        addPixelText(this, 54, 177, this.formatSingleLineCardEffect(card), {
           color: PALETTE.lampYellow.hex,
           origin: [0, 0.5],
         }),
@@ -850,7 +869,7 @@ export class CardBattleScene extends Phaser.Scene {
         BATTLE_DETAIL_TOGGLE_BUTTON.height,
         isStory ? PALETTE.brass.num : PALETTE.deepBlue.num,
       )
-      .setStrokeStyle(1, PALETTE.brass.num)
+      .setStrokeStyle(2, PALETTE.brass.num)
       .setInteractive({ useHandCursor: true });
 
     const toggleLabel = addPixelText(
@@ -889,7 +908,7 @@ export class CardBattleScene extends Phaser.Scene {
       }
 
       const x = computeHandCardX(index, count);
-      const y = isChoiceMode ? HAND_Y - 3 : HAND_Y;
+      const y = isChoiceMode ? HAND_Y - 6 : HAND_Y;
       const selectable = isChoiceMode || canPlayCard(this.state, index);
       const stripColor = card.color ? parseHexColor(card.color) : PALETTE.brass.num;
 
@@ -906,22 +925,22 @@ export class CardBattleScene extends Phaser.Scene {
           ? PALETTE.ink.num
           : PALETTE.nightBlack.num;
 
-      const frame = this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, bgColor).setStrokeStyle(1, borderColor);
-      const strip = this.add.rectangle(0, -30, CARD_WIDTH - 2, 2, stripColor);
+      const frame = this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, bgColor).setStrokeStyle(2, borderColor);
+      const strip = this.add.rectangle(0, -60, CARD_WIDTH - 4, 4, stripColor);
       const artKey = pixelRowsToTexture(this, `card-art-${card.id}`, CARD_PIXEL_ART[card.id] ?? CARD_PIXEL_ART.old_book);
-      const artImage = this.add.image(0, -11, artKey).setOrigin(0.5);
+      const artImage = this.add.image(0, -22, artKey).setOrigin(0.5);
       if (!selectable) {
         artImage.setTint(PALETTE.silverBlue.num);
       }
 
       const costBg = this.add
-        .rectangle(-17, -24, 12, 12, card.cost === 0 ? PALETTE.jade.num : PALETTE.lampYellow.num)
-        .setStrokeStyle(1, PALETTE.ink.num);
+        .rectangle(-34, -48, 24, 24, card.cost === 0 ? PALETTE.jade.num : PALETTE.lampYellow.num)
+        .setStrokeStyle(2, PALETTE.ink.num);
       const textHex = selectable ? PALETTE.ink.hex : PALETTE.nightBlack.hex;
       const costTextHex = card.cost === 0 ? PALETTE.paperWhite.hex : textHex;
-      const costText = addPixelText(this, -17, -24, `${card.cost}`, { color: costTextHex, origin: 0.5 });
-      const nameText = addPixelText(this, 0, 12, card.name, { color: textHex, origin: 0.5 });
-      const effectText = addPixelText(this, 0, 24, formatEffectShort(card), {
+      const costText = addPixelText(this, -34, -48, `${card.cost}`, { color: costTextHex, origin: 0.5 });
+      const nameText = addPixelText(this, 0, 24, card.name, { color: textHex, origin: 0.5 });
+      const effectText = addPixelText(this, 0, 48, formatEffectShort(card), {
         color: textHex,
         origin: 0.5,
       });
@@ -951,22 +970,22 @@ export class CardBattleScene extends Phaser.Scene {
         this.inspectedCardName = card.name;
         this.renderCardDetailPanel();
         if (this.state.pendingChoice) {
-          cardContainer.y = HAND_Y - 6;
-          frame.setStrokeStyle(1, PALETTE.vermilion.num);
+          cardContainer.y = HAND_Y - 12;
+          frame.setStrokeStyle(2, PALETTE.vermilion.num);
         } else if (!slotView.queued && this.canQueueOrPlaySlot(slotView)) {
-          cardContainer.y = HAND_Y - 4;
-          frame.setStrokeStyle(1, PALETTE.lampYellow.num);
+          cardContainer.y = HAND_Y - 8;
+          frame.setStrokeStyle(2, PALETTE.lampYellow.num);
         }
       });
       frame.on('pointerout', () => {
         if (slotView.consumed || slotView.queued) return;
         if (this.state.pendingChoice) {
-          cardContainer.y = HAND_Y - 3;
-          frame.setStrokeStyle(1, PALETTE.lampYellow.num);
+          cardContainer.y = HAND_Y - 6;
+          frame.setStrokeStyle(2, PALETTE.lampYellow.num);
           return;
         }
         cardContainer.y = HAND_Y;
-        frame.setStrokeStyle(1, this.canQueueOrPlaySlot(slotView) ? PALETTE.ink.num : PALETTE.nightBlack.num);
+        frame.setStrokeStyle(2, this.canQueueOrPlaySlot(slotView) ? PALETTE.ink.num : PALETTE.nightBlack.num);
       });
       frame.on('pointerdown', () => this.handleSlotClick(slotView.slotIndex));
 
@@ -1020,15 +1039,15 @@ export class CardBattleScene extends Phaser.Scene {
         continue;
       }
       if (slot.queued) {
-        slot.container.y = HAND_Y - 5;
+        slot.container.y = HAND_Y - 10;
         slot.frame.setFillStyle(PALETTE.candle.num);
-        slot.frame.setStrokeStyle(1, PALETTE.lampYellow.num);
+        slot.frame.setStrokeStyle(2, PALETTE.lampYellow.num);
         continue;
       }
       const playable = this.canQueueOrPlaySlot(slot);
       slot.container.y = HAND_Y;
       slot.frame.setFillStyle(playable ? PALETTE.paperWhite.num : PALETTE.silverBlue.num);
-      slot.frame.setStrokeStyle(1, playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
+      slot.frame.setStrokeStyle(2, playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
       if (playable) slot.artImage.clearTint();
       else slot.artImage.setTint(PALETTE.silverBlue.num);
       slot.costText.setTint(
@@ -1115,16 +1134,16 @@ export class CardBattleScene extends Phaser.Scene {
 
     const afterimage = this.add
       .rectangle(fromX, fromY, CARD_WIDTH, CARD_HEIGHT, PALETTE.oldPaper.num)
-      .setStrokeStyle(1, PALETTE.ink.num);
+      .setStrokeStyle(2, PALETTE.ink.num);
     this.fxLayer.add(afterimage);
     this.time.delayedCall(AFTERIMAGE_MS, () => afterimage.destroy());
 
     const flyingCard = this.add.container(fromX, fromY);
     const artKey = pixelRowsToTexture(this, `card-art-${card.id}`, CARD_PIXEL_ART[card.id] ?? CARD_PIXEL_ART.old_book);
     flyingCard.add([
-      this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, PALETTE.paperWhite.num).setStrokeStyle(1, PALETTE.lampYellow.num),
-      this.add.image(0, -10, artKey).setOrigin(0.5),
-      addPixelText(this, 0, 18, card.name, { color: PALETTE.ink.hex, origin: 0.5 }),
+      this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, PALETTE.paperWhite.num).setStrokeStyle(2, PALETTE.lampYellow.num),
+      this.add.image(0, -20, artKey).setOrigin(0.5),
+      addPixelText(this, 0, 36, card.name, { color: PALETTE.ink.hex, origin: 0.5 }),
     ]);
     this.fxLayer.add(flyingCard);
 
@@ -1186,48 +1205,48 @@ export class CardBattleScene extends Phaser.Scene {
         case 'DAMAGE_DEALT':
           if (ev.target === 'demon' && ev.amount > 0) {
             audio.playSfx('hit_demon');
-            this.flashRect(DEMON_X, DEMON_Y, 40, 40, PALETTE.vermilion.num, 110);
-            this.spawnFloatText(DEMON_X, DEMON_Y - 12, `-${ev.amount}`, PALETTE.vermilion.hex);
+            this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.vermilion.num, 110);
+            this.spawnFloatText(DEMON_X, DEMON_Y - 24, `-${ev.amount}`, PALETTE.vermilion.hex);
             this.cameras.main.shake(90, 0.008);
           }
           break;
         case 'SHIELD_GAINED':
           if (ev.amount > 0) {
             audio.playSfx('shield_block');
-            this.spawnFloatText(56, 26, `+${ev.amount}盾`, PALETTE.silverBlue.hex);
+            this.spawnFloatText(112, 52, `+${ev.amount}盾`, PALETTE.silverBlue.hex);
           }
           break;
         case 'REFLECT_TRIGGERED':
           audio.playSfx('hit_demon');
-          this.flashRect(DEMON_X, DEMON_Y, 40, 40, PALETTE.jade.num, 150);
-          this.spawnFloatText(DEMON_X, DEMON_Y - 12, `反伤-${ev.damage}`, PALETTE.jade.hex);
+          this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.jade.num, 150);
+          this.spawnFloatText(DEMON_X, DEMON_Y - 24, `反伤-${ev.damage}`, PALETTE.jade.hex);
           this.feedbackMessage = `铜镜反弹 ${ev.damage} 点伤害！`;
           break;
         case 'REWIND_APPLIED':
-          this.flashRect(Math.floor(BASE_WIDTH / 2), 44, 240, 44, PALETTE.silverBlue.num, 130);
-          this.spawnFloatText(DEMON_X, DEMON_Y - 14, '倒转', PALETTE.lampYellow.hex);
+          this.flashRect(Math.floor(BASE_WIDTH / 2), 88, 480, 88, PALETTE.silverBlue.num, 130);
+          this.spawnFloatText(DEMON_X, DEMON_Y - 28, '倒转', PALETTE.lampYellow.hex);
           break;
         case 'CARD_DISCARDED':
-          this.spawnFloatText(anchorX, anchorY - 14, `弃:${ev.cardName}`, PALETTE.oldPaper.hex);
+          this.spawnFloatText(anchorX, anchorY - 28, `弃:${ev.cardName}`, PALETTE.oldPaper.hex);
           this.feedbackMessage = `弃置 ${ev.cardName}`;
           break;
         case 'RENQING_GAINED':
           if (ev.amount > 0) {
-            this.spawnFloatText(120, 26, `人情+${ev.amount}`, PALETTE.lampYellow.hex);
+            this.spawnFloatText(240, 52, `人情+${ev.amount}`, PALETTE.lampYellow.hex);
           }
           break;
         case 'BOSS_CHARGE_STARTED':
           audio.playSfx('shield_block');
-          this.flashRect(DEMON_X, DEMON_Y, 40, 40, PALETTE.brass.num, 150);
-          this.spawnFloatText(DEMON_X, DEMON_Y - 12, `蓄力+${ev.shieldGained}盾`, PALETTE.lampYellow.hex);
+          this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.brass.num, 150);
+          this.spawnFloatText(DEMON_X, DEMON_Y - 24, `蓄力+${ev.shieldGained}盾`, PALETTE.lampYellow.hex);
           this.feedbackMessage = `蓄力「${ev.skill}」获${ev.shieldGained}盾！累伤${ev.threshold}打断`;
           break;
         case 'BOSS_CHARGE_INTERRUPTED':
           audio.playSfx('demon_defeated');
-          this.flashRect(DEMON_X, DEMON_Y, 40, 40, PALETTE.lampYellow.num, 180);
+          this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.lampYellow.num, 180);
           this.cameras.main.shake(120, 0.012);
-          this.spawnFloatText(DEMON_X, DEMON_Y - 4, `打断${ev.skill}!`, PALETTE.lampYellow.hex);
-          this.spawnFloatText(142, 36, `人情+${ev.refundRenqing}`, PALETTE.jade.hex);
+          this.spawnFloatText(DEMON_X, DEMON_Y - 8, `打断${ev.skill}!`, PALETTE.lampYellow.hex);
+          this.spawnFloatText(284, 72, `人情+${ev.refundRenqing}`, PALETTE.jade.hex);
           this.feedbackMessage = `打断「${ev.skill}」！返还+${ev.refundRenqing}人情，下回仅${ev.reducedNextDamage}伤`;
           break;
         case 'DEMON_ACT':
@@ -1236,14 +1255,14 @@ export class CardBattleScene extends Phaser.Scene {
           }
           if (ev.hpDamage > 0) {
             audio.playSfx('player_hurt');
-            this.flashRect(DEMON_X, DEMON_Y, 40, 40, PALETTE.vermilion.num, DEMON_ACT_MS);
-            this.spawnFloatText(48, 28, `-${ev.hpDamage}`, PALETTE.vermilion.hex);
+            this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.vermilion.num, DEMON_ACT_MS);
+            this.spawnFloatText(96, 56, `-${ev.hpDamage}`, PALETTE.vermilion.hex);
             this.cameras.main.shake(110, 0.01);
             this.feedbackMessage = `心魔攻击，受到 ${ev.hpDamage} 点伤害`;
           } else if (ev.absorbed > 0) {
             audio.playSfx('shield_block');
-            this.flashRect(DEMON_X, DEMON_Y, 40, 40, PALETTE.silverBlue.num, DEMON_ACT_MS);
-            this.spawnFloatText(48, 28, '格挡', PALETTE.silverBlue.hex);
+            this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.silverBlue.num, DEMON_ACT_MS);
+            this.spawnFloatText(96, 56, '格挡', PALETTE.silverBlue.hex);
             this.feedbackMessage = '护盾挡住了心魔攻击';
           }
           break;
@@ -1264,7 +1283,7 @@ export class CardBattleScene extends Phaser.Scene {
     this.fxLayer.add(txt);
     this.tweens.add({
       targets: txt,
-      y: y - 14,
+      y: y - 28,
       duration: 360,
       ease: 'Linear',
       onComplete: () => txt.destroy(),
@@ -1350,15 +1369,15 @@ export class CardBattleScene extends Phaser.Scene {
     const shards: Phaser.GameObjects.Rectangle[] = [];
     for (let row = 0; row < 4; row += 1) {
       for (let col = 0; col < 4; col += 1) {
-        const sx = DEMON_X - 12 + col * 8;
-        const sy = DEMON_Y - 12 + row * 8;
-        const shard = this.add.rectangle(sx, sy, 8, 8, shardColors[(row + col) % shardColors.length]);
+        const sx = DEMON_X - 24 + col * 16;
+        const sy = DEMON_Y - 24 + row * 16;
+        const shard = this.add.rectangle(sx, sy, 16, 16, shardColors[(row + col) % shardColors.length]);
         this.fxLayer.add(shard);
         shards.push(shard);
         this.tweens.add({
           targets: shard,
-          x: sx + (col - 1.5) * 18,
-          y: sy + (row - 1.5) * 14,
+          x: sx + (col - 1.5) * 36,
+          y: sy + (row - 1.5) * 28,
           scaleX: 0,
           scaleY: 0,
           duration: SHATTER_DURATION_MS,

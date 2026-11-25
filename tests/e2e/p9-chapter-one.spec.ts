@@ -1,5 +1,33 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clickLogical, LOGICAL_WIDTH } from './helpers';
+import {
+  BATTLE_DETAIL_TOGGLE_BUTTON,
+  BATTLE_END_TURN_BUTTON,
+  BATTLE_HAND_Y,
+  BOSS_PREVIEW_CONFIRM_BUTTON,
+  CALENDAR_DAY_CELLS,
+  CALENDAR_RETURN_BUTTON,
+  CHAPTER_FAIL_TITLE_BUTTON,
+  computeHandCardX,
+  DIARY_CONTINUE_BUTTON,
+  ENDING_RESTART_BUTTON,
+  ENDING_TITLE_BUTTON,
+  PACT_OPTION_BUTTONS,
+  PAWNSHOP_CALENDAR_BUTTON,
+  PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  PAWNSHOP_SKIP_BUTTON,
+  PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  PAWNSHOP_TIER_BUTTONS,
+  REDEMPTION_REJECT_BUTTON,
+  RESULT_NEXT_DAY_BUTTON,
+  SIDE_QUEST_ACCEPT_BUTTON,
+  SIDE_QUEST_REJECT_BUTTON,
+  TITLE_CALENDAR_BUTTON,
+  TITLE_CONTINUE_BUTTON,
+  TITLE_START_BUTTON,
+  TRIM_CARD_SLOTS,
+  TRIM_SKIP_BUTTON,
+} from '../../src/game/layout';
+import { clickLogical } from './helpers';
 
 const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
@@ -97,40 +125,37 @@ interface BattleDebugState {
   } | null;
 }
 
-const CARD_WIDTH = 48;
-const CARD_GAP = 4;
-const HAND_MARGIN_X = 6;
-const HAND_Y = 144;
+const HAND_Y = BATTLE_HAND_Y;
 
 const BUTTONS = {
-  titleStart: { x: 160, y: 122 },
-  titleContinue: { x: 160, y: 156 },
-  titleCalendar: { x: 266, y: 122 },
-  pawnshopCalendar: { x: 298, y: 11 },
-  calendarReturn: { x: 160, y: 163 },
-  calendarDay7: { x: 292, y: 62 },
-  pactHighMargin: { x: 58, y: 106 },
-  pactCreditStock: { x: 160, y: 106 },
-  pactSteady: { x: 262, y: 106 },
-  trimFirstCard: { x: 64, y: 74 },
-  trimSkip: { x: 160, y: 158 },
-  redeemReject: { x: 224, y: 151 },
-  tierLow: { x: 58, y: 154 },
-  tierFair: { x: 160, y: 154 },
-  tierHigh: { x: 262, y: 154 },
-  skipCustomer: { x: 270, y: 107 },
-  nextOrSummary: { x: 160, y: 154 },
-  sideQuestAccept: { x: 96, y: 151 },
-  sideQuestReject: { x: 224, y: 151 },
-  bossPreviewConfirm: { x: 160, y: 158 },
-  enterNightBattle: { x: 88, y: 151 },
-  detailToggle: { x: 13, y: 88 },
-  endTurn: { x: 283, y: 95 },
-  resultNextDay: { x: 88, y: 148 },
-  diaryContinue: { x: 160, y: 158 },
-  endingRestart: { x: 96, y: 152 },
-  endingTitle: { x: 224, y: 152 },
-  chapterFailTitle: { x: 160, y: 148 },
+  titleStart: TITLE_START_BUTTON,
+  titleContinue: TITLE_CONTINUE_BUTTON,
+  titleCalendar: TITLE_CALENDAR_BUTTON,
+  pawnshopCalendar: PAWNSHOP_CALENDAR_BUTTON,
+  calendarReturn: CALENDAR_RETURN_BUTTON,
+  calendarDay7: CALENDAR_DAY_CELLS[6],
+  pactHighMargin: PACT_OPTION_BUTTONS[0],
+  pactCreditStock: PACT_OPTION_BUTTONS[1],
+  pactSteady: PACT_OPTION_BUTTONS[2],
+  trimFirstCard: TRIM_CARD_SLOTS[0],
+  trimSkip: TRIM_SKIP_BUTTON,
+  redeemReject: REDEMPTION_REJECT_BUTTON,
+  tierLow: PAWNSHOP_TIER_BUTTONS.low,
+  tierFair: PAWNSHOP_TIER_BUTTONS.fair,
+  tierHigh: PAWNSHOP_TIER_BUTTONS.high,
+  skipCustomer: PAWNSHOP_SKIP_BUTTON,
+  nextOrSummary: PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  sideQuestAccept: SIDE_QUEST_ACCEPT_BUTTON,
+  sideQuestReject: SIDE_QUEST_REJECT_BUTTON,
+  bossPreviewConfirm: BOSS_PREVIEW_CONFIRM_BUTTON,
+  enterNightBattle: PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  detailToggle: BATTLE_DETAIL_TOGGLE_BUTTON,
+  endTurn: BATTLE_END_TURN_BUTTON,
+  resultNextDay: RESULT_NEXT_DAY_BUTTON,
+  diaryContinue: DIARY_CONTINUE_BUTTON,
+  endingRestart: ENDING_RESTART_BUTTON,
+  endingTitle: ENDING_TITLE_BUTTON,
+  chapterFailTitle: CHAPTER_FAIL_TITLE_BUTTON,
 } as const;
 
 const CARD_PRIORITY = ['算盘', '余音', '集邮', '飞驰', '秤砣', '钢笔', '相机', '铁皮青蛙', '弹珠', '旧书', '蒲扇'] as const;
@@ -152,19 +177,6 @@ const CARD_COSTS: Record<string, number> = {
   拨浪鼓: 0,
   手电: 1,
 };
-
-function computeHandCardX(index: number, count: number): number {
-  const availableWidth = LOGICAL_WIDTH - HAND_MARGIN_X * 2;
-  const naturalStep = CARD_WIDTH + CARD_GAP;
-  const maxWidth = CARD_WIDTH + (count - 1) * naturalStep;
-  const step =
-    maxWidth <= availableWidth || count === 1
-      ? naturalStep
-      : Math.floor((availableWidth - CARD_WIDTH) / (count - 1));
-  const totalWidth = CARD_WIDTH + (count - 1) * step;
-  const startCenterX = Math.floor((LOGICAL_WIDTH - totalWidth) / 2) + Math.floor(CARD_WIDTH / 2);
-  return startCenterX + index * step;
-}
 
 async function getPawnshopState(page: Page): Promise<PawnshopDebugState> {
   return page.evaluate(() => {

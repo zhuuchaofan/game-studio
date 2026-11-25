@@ -1,5 +1,25 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clickLogical, LOGICAL_WIDTH } from './helpers';
+import {
+  BATTLE_END_TURN_BUTTON,
+  BATTLE_HAND_Y,
+  BOSS_PREVIEW_CONFIRM_BUTTON,
+  CALENDAR_RETURN_BUTTON,
+  computeHandCardX,
+  DIARY_CONTINUE_BUTTON,
+  ENDING_EPILOGUE_BUTTON,
+  ENDING_TITLE_BUTTON,
+  PAWNSHOP_CALENDAR_BUTTON,
+  PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  PAWNSHOP_SKIP_BUTTON,
+  PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  PAWNSHOP_TIER_BUTTONS,
+  REDEMPTION_ACCEPT_BUTTON,
+  REDEMPTION_REJECT_BUTTON,
+  RESULT_NEXT_DAY_BUTTON,
+  TITLE_CONTINUE_BUTTON,
+  TITLE_START_BUTTON,
+} from '../../src/game/layout';
+import { clickLogical } from './helpers';
 
 const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
@@ -104,10 +124,7 @@ interface BattleDebugState {
   isAnimating?: boolean;
 }
 
-const CARD_WIDTH = 48;
-const CARD_GAP = 4;
-const HAND_MARGIN_X = 6;
-const HAND_Y = 144;
+const HAND_Y = BATTLE_HAND_Y;
 const DAMAGE_PRIORITY = ['算盘', '余音', '集邮', '飞驰', '秤砣', '钢笔', '相机', '弹珠', '旧书', '蒲扇'] as const;
 const CARD_COSTS: Record<string, number> = {
   倒转: 2,
@@ -126,36 +143,23 @@ const CARD_COSTS: Record<string, number> = {
 };
 
 const BUTTONS = {
-  titleStart: { x: 160, y: 122 },
-  titleContinue: { x: 160, y: 156 },
-  pawnshopCalendar: { x: 298, y: 11 },
-  calendarReturn: { x: 160, y: 163 },
-  bossPreviewConfirm: { x: 160, y: 158 },
-  redeemAccept: { x: 96, y: 151 },
-  redeemReject: { x: 224, y: 151 },
-  tierHigh: { x: 262, y: 154 },
-  skipCustomer: { x: 270, y: 107 },
-  nextOrSummary: { x: 160, y: 154 },
-  enterNightBattle: { x: 88, y: 151 },
-  endTurn: { x: 283, y: 95 },
-  resultNextDay: { x: 88, y: 148 },
-  diaryContinue: { x: 160, y: 158 },
-  endingEpilogue: { x: 160, y: 152 },
-  endingTitle: { x: 224, y: 152 },
+  titleStart: TITLE_START_BUTTON,
+  titleContinue: TITLE_CONTINUE_BUTTON,
+  pawnshopCalendar: PAWNSHOP_CALENDAR_BUTTON,
+  calendarReturn: CALENDAR_RETURN_BUTTON,
+  bossPreviewConfirm: BOSS_PREVIEW_CONFIRM_BUTTON,
+  redeemAccept: REDEMPTION_ACCEPT_BUTTON,
+  redeemReject: REDEMPTION_REJECT_BUTTON,
+  tierHigh: PAWNSHOP_TIER_BUTTONS.high,
+  skipCustomer: PAWNSHOP_SKIP_BUTTON,
+  nextOrSummary: PAWNSHOP_FEEDBACK_NEXT_BUTTON,
+  enterNightBattle: PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  endTurn: BATTLE_END_TURN_BUTTON,
+  resultNextDay: RESULT_NEXT_DAY_BUTTON,
+  diaryContinue: DIARY_CONTINUE_BUTTON,
+  endingEpilogue: ENDING_EPILOGUE_BUTTON,
+  endingTitle: ENDING_TITLE_BUTTON,
 } as const;
-
-function computeHandCardX(index: number, count: number): number {
-  const availableWidth = LOGICAL_WIDTH - HAND_MARGIN_X * 2;
-  const naturalStep = CARD_WIDTH + CARD_GAP;
-  const maxWidth = CARD_WIDTH + (count - 1) * naturalStep;
-  const step =
-    maxWidth <= availableWidth || count === 1
-      ? naturalStep
-      : Math.floor((availableWidth - CARD_WIDTH) / (count - 1));
-  const totalWidth = CARD_WIDTH + (count - 1) * step;
-  const startCenterX = Math.floor((LOGICAL_WIDTH - totalWidth) / 2) + Math.floor(CARD_WIDTH / 2);
-  return startCenterX + index * step;
-}
 
 function trackErrors(page: Page): { pageErrors: string[]; failedRequests: string[] } {
   const pageErrors: string[] = [];

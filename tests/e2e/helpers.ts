@@ -1,7 +1,8 @@
 import { expect, type Locator, type Page } from '@playwright/test';
+import { BASE_HEIGHT, BASE_WIDTH } from '../../src/utils/scale';
 
-export const LOGICAL_WIDTH = 320;
-export const LOGICAL_HEIGHT = 180;
+export const LOGICAL_WIDTH = BASE_WIDTH;
+export const LOGICAL_HEIGHT = BASE_HEIGHT;
 
 /**
  * Wait two requestAnimationFrame ticks before dispatching a mouse click on the
