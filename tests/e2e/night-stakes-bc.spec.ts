@@ -236,6 +236,8 @@ test('Task 19 §2/§3/§6: persistent HP carries across nights (+5 sleep heal), 
 
   const night2 = await waitForBattleReady(page, 'play');
   // 第 1 天三次高价成交累计口碑 +4，触发口碑里程碑 [2, 4]；?seed=7 下抽中棉被（每夜开始回血 +3），故第 2 夜开局为 24 + 3 = 27
+  expect(night2.heirlooms).toContain('quilt');
+  expect(night2.playerHp).toBe(27);
   const quiltHeal = night2.heirlooms?.includes('quilt') ? 3 : 0;
   expect(night2.playerHp).toBe(24 + quiltHeal);
   expect(night2.maxPlayerHp).toBe(30);
