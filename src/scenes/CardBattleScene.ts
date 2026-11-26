@@ -30,7 +30,7 @@ import { TEST_DECK } from '../game/montecarlo';
 import { ITEMS, PALETTE, parseHexColor, wrapCjkText } from '../game/pawnshop';
 import { pixelRowsToTexture } from '../game/pixelart';
 import { addPixelText } from '../game/pixelFont';
-import { loadTutorialDone, maxRenqingForLevel, saveTutorialDone, type SaveData } from '../game/save';
+import { loadTutorialDone, maxRenqingForLevel, MAX_PLAYER_HP, DEBT_NOTE_CARD_NAME, saveTutorialDone, type SaveData } from '../game/save';
 import { cloneChapterState } from '../game/chapters';
 import { consumeFirstGlossaryTip, type GlossaryTermId } from '../game/glossary';
 import {
@@ -233,12 +233,13 @@ export class CardBattleScene extends Phaser.Scene {
     const resolvedMaxRenqing =
       data?.maxRenqing ??
       (this.save ? maxRenqingForLevel(this.save.shopLevel) : BASE_BATTLE_BALANCE.maxRenqing);
+    const initialPlayerHp =
+      Number.isInteger(playerHpParam) && playerHpParam > 0
+        ? Math.min(BASE_BATTLE_BALANCE.startingHp, playerHpParam)
+        : (this.save?.currentHp ?? MAX_PLAYER_HP);
     const battleBalance: BattleBalanceConfig = {
       ...BASE_BATTLE_BALANCE,
-      startingHp:
-        Number.isInteger(playerHpParam) && playerHpParam > 0
-          ? playerHpParam
-          : BASE_BATTLE_BALANCE.startingHp,
+      startingHp: BASE_BATTLE_BALANCE.startingHp,
       startingRenqing: resolvedMaxRenqing,
       maxRenqing: resolvedMaxRenqing,
     };
@@ -257,15 +258,16 @@ export class CardBattleScene extends Phaser.Scene {
     if (resolvedDeck.length === 0) {
       this.isEmptyDeck = true;
       this.tutorial = syncTutorialForBattle(this.tutorial, 'empty_deck');
-      this.renderEmptyDeckView(resolvedDemonId, battleBalance);
+      this.renderEmptyDeckView(resolvedDemonId, battleBalance, initialPlayerHp);
       this.syncInputBounds();
       return;
     }
 
     const { rng } = createRngFromUrl();
     const baseDemon = DEMONS.find((d) => d.id === resolvedDemonId) ?? DEMONS[0];
-    let createOpts: { demonHpBonus?: number; demonOverride?: DemonDef } = {
+    let createOpts: { demonHpBonus?: number; demonOverride?: DemonDef; initialPlayerHp?: number } = {
       demonHpBonus: data?.demonHpBonus ?? 0,
+      initialPlayerHp,
     };
 
     if (baseDemon?.isBoss && baseDemon.composition) {
@@ -274,7 +276,7 @@ export class CardBattleScene extends Phaser.Scene {
       if (this.save) {
         this.save.chapter.bossComponentItemIds = composed.activeComponents.map((c) => c.itemId);
       }
-      createOpts = { demonOverride: composed.bossDef };
+      createOpts = { demonOverride: composed.bossDef, initialPlayerHp };
     } else if (baseDemon) {
       const narrative = resolveDemonNarrative(
         baseDemon,
@@ -285,6 +287,7 @@ export class CardBattleScene extends Phaser.Scene {
       this.isDemonLinked = narrative.isLinked;
       createOpts = {
         demonHpBonus: data?.demonHpBonus ?? 0,
+        initialPlayerHp,
         demonOverride: {
           ...baseDemon,
           customerLink: narrative.customerLink,
@@ -416,7 +419,7 @@ export class CardBattleScene extends Phaser.Scene {
   private showDemonIntroBanner(): void {
     this.dismissIntroBanner();
     if (!this.composedBoss && !this.state.demonIntroLine && !this.state.demonCustomerLink) {
-      this.maybeShowGlossaryTip('renqing');
+      this.maybeShowStartingGlossaryTips();
       return;
     }
     // 五区制中部带（常规 y=130..204，Boss 2 行 y=128..204，Boss 3 行 y=112..208），
@@ -555,14 +558,21 @@ export class CardBattleScene extends Phaser.Scene {
       this.state.result === 'ongoing' &&
       (!this.tutorial.active || this.tutorial.currentStep === null)
     ) {
-      this.maybeShowGlossaryTip('renqing');
+      this.maybeShowStartingGlossaryTips();
     }
   }
 
-  private maybeShowGlossaryTip(termId: GlossaryTermId): void {
+  private maybeShowStartingGlossaryTips(): void {
+    const shownRenqing = this.maybeShowGlossaryTip('renqing');
+    if (!shownRenqing && this.state.hand.includes(DEBT_NOTE_CARD_NAME)) {
+      this.maybeShowGlossaryTip('debt_note');
+    }
+  }
+
+  private maybeShowGlossaryTip(termId: GlossaryTermId): boolean {
     const tip = consumeFirstGlossaryTip(termId);
     if (!tip) {
-      return;
+      return false;
     }
     this.dismissGlossaryTip();
     this.lastGlossaryTip = tip;
@@ -587,6 +597,7 @@ export class CardBattleScene extends Phaser.Scene {
     banner.add([bg, txt]);
     this.glossaryBanner = banner;
     this.glossaryTimer = this.time.delayedCall(3400, () => this.dismissGlossaryTip());
+    return true;
   }
 
   private dismissGlossaryTip(): void {
@@ -619,13 +630,18 @@ export class CardBattleScene extends Phaser.Scene {
     });
   }
 
-  private renderEmptyDeckView(demonId: string, battleBalance: BattleBalanceConfig): void {
+  private renderEmptyDeckView(
+    demonId: string,
+    battleBalance: BattleBalanceConfig,
+    initialPlayerHp: number,
+  ): void {
     const demon = DEMONS.find((d) => d.id === demonId) ?? DEMONS[0];
     window.__BATTLE_DEBUG__ = {
       getState: () => ({
         phase: 'empty_deck',
         round: 0,
-        playerHp: battleBalance.startingHp,
+        playerHp: initialPlayerHp,
+        maxPlayerHp: battleBalance.startingHp,
         shield: 0,
         renqing: battleBalance.startingRenqing,
         maxRenqing: battleBalance.maxRenqing,
@@ -1301,7 +1317,7 @@ export class CardBattleScene extends Phaser.Scene {
   }
 
   private canQueueOrPlaySlot(slot: HandSlotView): boolean {
-    if (slot.consumed || slot.queued || slot.currentHandIndex < 0) return false;
+    if (slot.consumed || slot.queued || slot.currentHandIndex < 0 || slot.card.unplayable) return false;
     if (this.state.phase !== 'play' || this.state.result !== 'ongoing' || this.state.pendingChoice) {
       return false;
     }
@@ -1372,6 +1388,10 @@ export class CardBattleScene extends Phaser.Scene {
       return;
     }
 
+    if (slot.card.unplayable) {
+      this.maybeShowGlossaryTip('debt_note');
+      return;
+    }
     if (!this.canQueueOrPlaySlot(slot)) return;
 
     if (this.isAnimating) {
@@ -1485,6 +1505,11 @@ export class CardBattleScene extends Phaser.Scene {
   private presentBattleEvents(events: readonly BattleEvent[], anchorX: number, anchorY: number): void {
     for (const ev of events) {
       switch (ev.type) {
+        case 'CARDS_DRAWN':
+          if (ev.cards.includes(DEBT_NOTE_CARD_NAME)) {
+            this.maybeShowGlossaryTip('debt_note');
+          }
+          break;
         case 'DAMAGE_DEALT':
           if (ev.target === 'demon' && ev.amount > 0) {
             audio.playSfx('hit_demon');

@@ -12,6 +12,7 @@ import { cloneChapterState, deriveSideQuestSeed, getChapterConfig, getNightDemon
 import { consumeFirstGlossaryTip, hasSeenGlossaryTerm, type GlossaryTermId } from '../game/glossary';
 import {
   advanceCustomer,
+  applyMorningChoice,
   BALANCE,
   BRIDE_RING_CARD_NAME,
   BRIDE_RING_ITEM_ID,
@@ -29,10 +30,14 @@ import {
   formatReputationHint,
   formatSignedDelta,
   getEffectiveAcceptRate,
+  getMorningActionAvailability,
   getTemperamentLabel,
   getTierAffordability,
   hasAnyAffordableTier,
   ITEMS,
+  MORNING_MEDICINE_HEAL,
+  MORNING_MEDICINE_PRICE,
+  MORNING_REST_HEAL,
   PALETTE,
   parseHexColor,
   pickDailyItems,
@@ -47,6 +52,7 @@ import {
   toDebugSnapshot,
   wrapCjkText,
   type CustomerTemperament,
+  type MorningAction,
   type OfferTier,
   type PawnItem,
   type PawnshopState,
@@ -58,6 +64,7 @@ import {
   createNewGame,
   loadPawnPrices,
   loadTutorialDone,
+  MAX_PLAYER_HP,
   maxRenqingForLevel,
   saveGame,
   savePawnPrices,
@@ -76,6 +83,7 @@ import {
 import { createTutorialBubble } from '../game/tutorialBubble';
 import {
   BOSS_PREVIEW_CONFIRM_BUTTON,
+  MORNING_OPTION_BUTTONS,
   PACT_OPTION_BUTTONS,
   PAWNSHOP_CALENDAR_BUTTON,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
@@ -98,6 +106,7 @@ import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
 export {
   BOSS_PREVIEW_CONFIRM_BUTTON,
+  MORNING_OPTION_BUTTONS,
   PACT_OPTION_BUTTONS,
   PAWNSHOP_CALENDAR_BUTTON,
   REDEMPTION_ACCEPT_BUTTON,
@@ -131,6 +140,7 @@ export class PawnshopScene extends Phaser.Scene {
   private seed = 1;
   private rng!: RngFn;
   private trimPage = 0;
+  private dailyCustomerCount = DAILY_CUSTOMER_COUNT;
   private pendingSideQuestItem: PawnItem | null = null;
   private contentLayer!: Phaser.GameObjects.Container;
   private tutorialBubble?: Phaser.GameObjects.Container;
@@ -145,6 +155,7 @@ export class PawnshopScene extends Phaser.Scene {
   private glossaryDelayTimer?: Phaser.Time.TimerEvent;
   private lastGlossaryTip: string | null = null;
   private hudMoneyText!: Phaser.GameObjects.BitmapText;
+  private hudHpText!: Phaser.GameObjects.BitmapText;
   private hudRepText!: Phaser.GameObjects.BitmapText;
   private hudDeckText!: Phaser.GameObjects.BitmapText;
   private hudProgressText!: Phaser.GameObjects.BitmapText;
@@ -168,103 +179,32 @@ export class PawnshopScene extends Phaser.Scene {
     this.seed = seed;
     this.rng = rng;
     this.trimPage = 0;
+    this.dailyCustomerCount = DAILY_CUSTOMER_COUNT;
     this.pendingSideQuestItem = null;
     this.shopkeeperBanner = undefined;
     this.shopkeeperBannerTimer = undefined;
     this.shopkeeperBannerDismissed = false;
 
-    // 每天开始时按 ?seed= + 天数洗牌当客池并取前 3 位
-    // （第 1 天保底含 1 件伤害牌旧物，P6 B2；输首夜后第 2 天保底 1 件可负担伤害牌旧物，P10 子项 3；
-    //  P11 子项 4：D1 赎回后 N=2 天冷却排除 + D2 优先未拥有软版）
-    const shuffleRng = mulberry32(deriveDaySeed(seed, this.save.day));
-    const lostNight1 =
-      this.save.day === 2 &&
-      this.save.chapter.daysVisited.includes(1) &&
-      !this.save.chapter.daysCleared.includes(1);
-    const dailyItems = pickDailyItems(
-      ITEMS,
-      this.save.day,
-      shuffleRng,
-      DAILY_CUSTOMER_COUNT,
-      {
-        deck: this.save.deck,
-        redeemedDayByItem: this.save.chapter.redeemedDayByItem,
-        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
-        ...(lostNight1
-          ? {
-              recoverDamageAfterDay1Loss: {
-                money: this.save.money,
-                deck: this.save.deck,
-              },
-            }
-          : {}),
-      },
-    );
-
-    // 每天当客上门前检查事件：
-    // 第 7 天白天开张前先展示「封门预告」（boss_preview），确认后再检查父亲过赎期事件 / 随机赎当；
-    // 第 2 天新娘剧本化赎当（独立分支）优先于随机赎当（P6 C4 + P9 契约倍率）。
-    const pawnPrices = loadPawnPrices();
-    const needsDay4Pact =
-      this.save.chapter.dayInChapter === 4 && this.save.chapter.pactChoice === null;
-    const needsDay4Trim =
-      this.save.chapter.dayInChapter === 4 &&
-      !needsDay4Pact &&
-      !this.save.chapter.day4TrimDone &&
-      this.save.deck.length > 0;
-    const needsDay7BossPreview = this.save.chapter.dayInChapter === 7;
-
-    const brideOffer =
-      needsDay4Pact || needsDay4Trim || needsDay7BossPreview
-        ? null
-        : createBrideRedemptionOffer(
-            this.save.day,
-            this.save.deck,
-            pawnPrices,
-            Boolean(this.save.chapter.day1RingPawned),
-            Boolean(this.save.chapter.day2BrideRedemptionDone),
-            ITEMS,
-          );
-
-    const redeemMultiplier = getRedemptionMultiplier(
-      this.save.chapter.pactChoice,
-      this.save.chapter.currentChapter,
-    );
-    const redeemRng = mulberry32(deriveRedemptionSeed(seed, this.save.day));
-    const redemptionOffer =
-      brideOffer ??
-      (needsDay4Pact || needsDay4Trim || needsDay7BossPreview
-        ? null
-        : createRedemptionOffer(
-            this.save.deck,
-            this.save.redeemTickets,
-            pawnPrices,
-            redeemRng,
-            ITEMS,
-            redeemMultiplier,
-            {
-              rejectedDayByItem: this.save.chapter.rejectedRedemptionDayByItem,
-              day: this.save.day,
-            },
-          ));
-
-    this.state = createInitialState({
-      day: this.save.day,
-      money: this.save.money,
-      reputation: this.save.reputation,
-      deck: this.save.deck,
-      items: dailyItems,
-      redeemTickets: this.save.redeemTickets,
-      pawnPrices,
-      redemptionOffer,
-    });
-
-    if (needsDay7BossPreview) {
-      this.state = { ...this.state, phase: 'boss_preview' };
-    } else if (needsDay4Pact) {
-      this.state = { ...this.state, phase: 'pact' };
-    } else if (needsDay4Trim) {
-      this.state = { ...this.state, phase: 'trim_deck' };
+    const startingHp = this.save.currentHp ?? MAX_PLAYER_HP;
+    if (this.save.day === 1) {
+      this.enterPostMorningPhase(startingHp, this.save.money, DAILY_CUSTOMER_COUNT, false);
+    } else if (this.save.morningChoice?.day === this.save.day) {
+      this.dailyCustomerCount = this.save.morningChoice.customerCount;
+      this.enterPostMorningPhase(startingHp, this.save.money, this.dailyCustomerCount, false);
+    } else {
+      this.state = {
+        ...createInitialState({
+          day: this.save.day,
+          money: this.save.money,
+          reputation: this.save.reputation,
+          deck: this.save.deck,
+          items: [],
+          currentHp: startingHp,
+          redeemTickets: this.save.redeemTickets,
+          pawnPrices: loadPawnPrices(),
+        }),
+        phase: 'morning',
+      };
     }
 
     this.tutorialBubble = undefined;
@@ -300,6 +240,110 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.renderCurrentPhase();
     this.syncInputBounds();
+  }
+
+  private buildDailyItems(customerCount: number, money: number): PawnItem[] {
+    // 每天开始时按 ?seed= + 天数洗牌当客池并取前 customerCount 位（默认 3，休息日 2）
+    // （第 1 天保底含 1 件伤害牌旧物，P6 B2；输首夜后第 2 天保底 1 件可负担伤害牌旧物，P10 子项 3；
+    //  P11 子项 4：D1 赎回后 N=2 天冷却排除 + D2 优先未拥有软版）
+    const shuffleRng = mulberry32(deriveDaySeed(this.seed, this.save.day));
+    const lostNight1 =
+      this.save.day === 2 &&
+      this.save.chapter.daysVisited.includes(1) &&
+      !this.save.chapter.daysCleared.includes(1);
+    return pickDailyItems(ITEMS, this.save.day, shuffleRng, customerCount, {
+      deck: this.save.deck,
+      redeemedDayByItem: this.save.chapter.redeemedDayByItem,
+      cooldownDays: REDEMPTION_COOLDOWN_DAYS,
+      ...(lostNight1
+        ? {
+            recoverDamageAfterDay1Loss: {
+              money,
+              deck: this.save.deck,
+            },
+          }
+        : {}),
+    });
+  }
+
+  private enterPostMorningPhase(
+    currentHp: number,
+    money: number,
+    customerCount: number,
+    renderAfter = true,
+  ): void {
+    const dailyItems = this.buildDailyItems(customerCount, money);
+
+    // 每天当客上门前检查事件：
+    // 第 7 天白天开张前先展示「封门预告」（boss_preview），确认后再检查父亲过赎期事件 / 随机赎当；
+    // 第 2 天新娘剧本化赎当（独立分支）优先于随机赎当（P6 C4 + P9 契约倍率）。
+    const pawnPrices = this.state?.pawnPrices ?? loadPawnPrices();
+    const needsDay4Pact =
+      this.save.chapter.dayInChapter === 4 && this.save.chapter.pactChoice === null;
+    const needsDay4Trim =
+      this.save.chapter.dayInChapter === 4 &&
+      !needsDay4Pact &&
+      !this.save.chapter.day4TrimDone &&
+      this.save.deck.length > 0;
+    const needsDay7BossPreview = this.save.chapter.dayInChapter === 7;
+
+    const brideOffer =
+      needsDay4Pact || needsDay4Trim || needsDay7BossPreview
+        ? null
+        : createBrideRedemptionOffer(
+            this.save.day,
+            this.save.deck,
+            pawnPrices,
+            Boolean(this.save.chapter.day1RingPawned),
+            Boolean(this.save.chapter.day2BrideRedemptionDone),
+            ITEMS,
+          );
+
+    const redeemMultiplier = getRedemptionMultiplier(
+      this.save.chapter.pactChoice,
+      this.save.chapter.currentChapter,
+    );
+    const redeemRng = mulberry32(deriveRedemptionSeed(this.seed, this.save.day));
+    const redemptionOffer =
+      brideOffer ??
+      (needsDay4Pact || needsDay4Trim || needsDay7BossPreview
+        ? null
+        : createRedemptionOffer(
+            this.save.deck,
+            this.save.redeemTickets,
+            pawnPrices,
+            redeemRng,
+            ITEMS,
+            redeemMultiplier,
+            {
+              rejectedDayByItem: this.save.chapter.rejectedRedemptionDayByItem,
+              day: this.save.day,
+            },
+          ));
+
+    this.state = createInitialState({
+      day: this.save.day,
+      money,
+      reputation: this.save.reputation,
+      deck: this.save.deck,
+      items: dailyItems,
+      currentHp,
+      redeemTickets: this.save.redeemTickets,
+      pawnPrices,
+      redemptionOffer,
+    });
+
+    if (needsDay7BossPreview) {
+      this.state = { ...this.state, phase: 'boss_preview' };
+    } else if (needsDay4Pact) {
+      this.state = { ...this.state, phase: 'pact' };
+    } else if (needsDay4Trim) {
+      this.state = { ...this.state, phase: 'trim_deck' };
+    }
+
+    if (renderAfter) {
+      this.renderCurrentPhase();
+    }
   }
 
   private installDebugHook(): void {
@@ -360,9 +404,17 @@ export class PawnshopScene extends Phaser.Scene {
           this.state.phase === 'summary' && this.save.chapter.dayInChapter === 3
             ? chapterCfg.day3Rumor
             : null;
+        const currentHp = this.state.currentHp ?? this.save.currentHp ?? MAX_PLAYER_HP;
+        const morningAvailability =
+          this.state.phase === 'morning'
+            ? getMorningActionAvailability(currentHp, this.state.money)
+            : null;
         return {
           ...toDebugSnapshot(this.state),
           day: this.state.day,
+          currentHp,
+          dailyCustomerCount: this.dailyCustomerCount,
+          morningAvailability,
           shopLevel: this.save.shopLevel,
           redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
           maxRenqing: maxRenqingForLevel(this.save.shopLevel),
@@ -432,30 +484,36 @@ export class PawnshopScene extends Phaser.Scene {
     this.add.rectangle(centerX, HUD_HEIGHT - 2, BASE_WIDTH, 2, PALETTE.brass.num);
     this.add.rectangle(centerX, HUD_HEIGHT, BASE_WIDTH, 2, PALETTE.ink.num);
 
-    addPixelText(this, 10, hudY, '钱:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudMoneyText = addPixelText(this, 46, hudY, '', {
+    addPixelText(this, 6, hudY, '钱:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudMoneyText = addPixelText(this, 42, hudY, '', {
       color: PALETTE.lampYellow.hex,
       origin: [0, 0.5],
     });
 
-    addPixelText(this, 104, hudY, '口碑:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudRepText = addPixelText(this, 166, hudY, '', {
+    addPixelText(this, 90, hudY, '命：', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudHpText = addPixelText(this, 138, hudY, '', {
+      color: PALETTE.paperWhite.hex,
+      origin: [0, 0.5],
+    });
+
+    addPixelText(this, 204, hudY, '口碑:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudRepText = addPixelText(this, 264, hudY, '', {
       color: PALETTE.brass.hex,
       origin: [0, 0.5],
     });
 
-    addPixelText(this, 218, hudY, '牌:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudDeckText = addPixelText(this, 254, hudY, '', {
+    addPixelText(this, 304, hudY, '牌:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudDeckText = addPixelText(this, 340, hudY, '', {
       color: PALETTE.lampYellow.hex,
       origin: [0, 0.5],
     });
 
-    this.hudProgressText = addPixelText(this, 310, hudY, '', {
+    this.hudProgressText = addPixelText(this, 372, hudY, '', {
       color: PALETTE.oldPaper.hex,
       origin: [0, 0.5],
     });
 
-    this.hudDayText = addPixelText(this, 548, hudY, '', {
+    this.hudDayText = addPixelText(this, 550, hudY, '', {
       color: PALETTE.paperWhite.hex,
       origin: [1, 0.5],
     });
@@ -489,6 +547,7 @@ export class PawnshopScene extends Phaser.Scene {
         money: this.state.money,
         reputation: this.state.reputation,
         deck: [...this.state.deck],
+        currentHp: this.state.currentHp ?? this.save.currentHp ?? MAX_PLAYER_HP,
         redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
         chapter: cloneChapterState(this.save.chapter),
       };
@@ -503,12 +562,16 @@ export class PawnshopScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
+    const currentHp = this.state.currentHp ?? this.save.currentHp ?? MAX_PLAYER_HP;
     this.hudMoneyText.setText(`${this.state.money}`);
+    this.hudHpText.setText(`${currentHp}/${MAX_PLAYER_HP}`);
     this.hudRepText.setText(`${this.state.reputation}`);
     this.hudDeckText.setText(`${this.state.deck.length}`);
     this.hudDayText.setText(`第${this.state.day}天`);
 
-    if (this.state.phase === 'boss_preview') {
+    if (this.state.phase === 'morning') {
+      this.hudProgressText.setText('新的一天');
+    } else if (this.state.phase === 'boss_preview') {
       this.hudProgressText.setText('封门预告');
     } else if (this.state.phase === 'pact') {
       this.hudProgressText.setText('掌柜契约');
@@ -531,7 +594,9 @@ export class PawnshopScene extends Phaser.Scene {
     this.contentLayer.removeAll(true);
     this.clearToast(false);
 
-    if (this.state.phase === 'boss_preview') {
+    if (this.state.phase === 'morning') {
+      this.renderMorning();
+    } else if (this.state.phase === 'boss_preview') {
       this.renderBossPreview();
     } else if (this.state.phase === 'pact') {
       this.renderPact();
@@ -670,6 +735,174 @@ export class PawnshopScene extends Phaser.Scene {
       redemptionOffer: randomOffer,
     };
     this.renderCurrentPhase();
+  }
+
+  private renderMorning(): void {
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const currentHp = this.state.currentHp ?? this.save.currentHp ?? MAX_PLAYER_HP;
+    const avail = getMorningActionAvailability(currentHp, this.state.money);
+
+    this.contentLayer.add(
+      this.add
+        .rectangle(centerX, 64, BASE_WIDTH - 32, 34, PALETTE.deepWood.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
+    );
+    this.contentLayer.add(
+      addPixelText(this, centerX, 64, '新的一天', {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      }),
+    );
+
+    const cards: {
+      action: MorningAction;
+      title: string;
+      topLines: string[];
+      bottomLine: string;
+      ctaLabel: string;
+      enabled: boolean;
+      disabledReason: 'full_hp' | 'insufficient_funds' | null;
+    }[] = [
+      {
+        action: 'rest',
+        title: '休息',
+        topLines: [`回 ${MORNING_REST_HEAL} 血`],
+        bottomLine: '少收一位当客',
+        ctaLabel: avail.rest.enabled ? '休息' : '已满血',
+        enabled: avail.rest.enabled,
+        disabledReason: avail.rest.reason,
+      },
+      {
+        action: 'medicine',
+        title: '买补药',
+        topLines: [`${MORNING_MEDICINE_PRICE} 元`, `回 ${MORNING_MEDICINE_HEAL} 血`],
+        bottomLine: `${DAILY_CUSTOMER_COUNT} 位当客`,
+        ctaLabel: avail.medicine.enabled
+          ? '买补药'
+          : avail.medicine.reason === 'full_hp'
+            ? '已满血'
+            : '钱不够',
+        enabled: avail.medicine.enabled,
+        disabledReason: avail.medicine.reason,
+      },
+      {
+        action: 'work',
+        title: '打理当铺',
+        topLines: ['照常开张'],
+        bottomLine: `${DAILY_CUSTOMER_COUNT} 位当客`,
+        ctaLabel: '打理当铺',
+        enabled: avail.work.enabled,
+        disabledReason: null,
+      },
+    ];
+
+    cards.forEach((card) => {
+      const slot = MORNING_OPTION_BUTTONS[card.action];
+      const bgFill = card.enabled ? PALETTE.candle.num : PALETTE.deepWood.num;
+      const bgStroke = card.enabled ? PALETTE.ink.num : PALETTE.woodBrown.num;
+      const bodyHex = card.enabled ? PALETTE.ink.hex : PALETTE.oldPaper.hex;
+      const costHex = card.enabled ? PALETTE.vermilion.hex : PALETTE.oldPaper.hex;
+
+      const bg = this.add
+        .rectangle(slot.x, slot.y, slot.width, slot.height, bgFill)
+        .setStrokeStyle(2, bgStroke)
+        .setInteractive({ useHandCursor: card.enabled });
+
+      const header = this.add.rectangle(slot.x, slot.y - 101, slot.width - 4, 34, PALETTE.deepWood.num);
+      const title = addPixelText(this, slot.x, slot.y - 101, card.title, {
+        color: card.enabled ? PALETTE.lampYellow.hex : PALETTE.oldPaper.hex,
+        origin: 0.5,
+      });
+
+      const bodyNodes: Phaser.GameObjects.GameObject[] = [];
+      if (card.topLines.length === 1) {
+        bodyNodes.push(
+          addPixelText(this, slot.x, slot.y - 44, card.topLines[0], {
+            color: bodyHex,
+            origin: 0.5,
+          }),
+        );
+      } else {
+        bodyNodes.push(
+          addPixelText(this, slot.x, slot.y - 54, card.topLines[0], {
+            color: bodyHex,
+            origin: 0.5,
+          }),
+          addPixelText(this, slot.x, slot.y - 24, card.topLines[1], {
+            color: bodyHex,
+            origin: 0.5,
+          }),
+        );
+      }
+
+      const divider = this.add.rectangle(slot.x, slot.y + 4, slot.width - 24, 2, PALETTE.oldPaper.num);
+      const bottomTxt = addPixelText(this, slot.x, slot.y + 34, card.bottomLine, {
+        color: card.action === 'rest' ? costHex : bodyHex,
+        origin: 0.5,
+      });
+
+      const ctaBg = this.add
+        .rectangle(
+          slot.x,
+          slot.y + 98,
+          slot.width - 20,
+          28,
+          card.enabled ? PALETTE.oldPaper.num : PALETTE.deepWood.num,
+        )
+        .setStrokeStyle(2, bgStroke);
+      const ctaText = addPixelText(this, slot.x, slot.y + 98, card.ctaLabel, {
+        color: bodyHex,
+        origin: 0.5,
+      });
+
+      if (card.enabled) {
+        bg.on('pointerover', () => {
+          bg.setFillStyle(PALETTE.paperWhite.num);
+          ctaBg.setFillStyle(PALETTE.lampYellow.num);
+        });
+        bg.on('pointerout', () => {
+          bg.setFillStyle(PALETTE.candle.num);
+          ctaBg.setFillStyle(PALETTE.oldPaper.num);
+        });
+        bg.on('pointerdown', () => this.handleMorningChoice(card.action));
+      } else {
+        bg.on('pointerdown', () => {
+          audio.unlock();
+          audio.playSfx('insufficient_funds');
+          this.showToast(card.disabledReason === 'full_hp' ? '已满血' : '钱不够');
+        });
+      }
+
+      this.contentLayer.add([bg, header, title, ...bodyNodes, divider, bottomTxt, ctaBg, ctaText]);
+    });
+  }
+
+  private handleMorningChoice(action: MorningAction): void {
+    if (this.state.phase !== 'morning') {
+      return;
+    }
+    const currentHp = this.state.currentHp ?? this.save.currentHp ?? MAX_PLAYER_HP;
+    const res = applyMorningChoice({
+      action,
+      currentHp,
+      money: this.state.money,
+      maxHp: MAX_PLAYER_HP,
+    });
+    if (!res.applied) {
+      return;
+    }
+
+    audio.unlock();
+    audio.playSfx(action === 'medicine' ? 'deal_closed' : 'button_click');
+    this.dailyCustomerCount = res.customerCount;
+    this.save = {
+      ...this.save,
+      money: res.money,
+      currentHp: res.currentHp,
+      morningChoice: { day: this.save.day, customerCount: res.customerCount },
+    };
+    saveGame(this.save);
+    this.enterPostMorningPhase(res.currentHp, res.money, res.customerCount, true);
   }
 
   private renderBossPreview(): void {
@@ -859,16 +1092,17 @@ export class PawnshopScene extends Phaser.Scene {
     this.clearGlossaryTip();
     this.lastToast = message;
 
-    // 轻提示置于空档（正常 negotiating/feedback y=198，赎当页置于面板与按钮间 y=262）
-    const toastY = this.state.phase === 'redemption' ? 262 : 198;
+    // 轻提示置于空档（正常 negotiating/feedback y=198，赎当页置于面板与按钮间 y=262，早上板置于底边留白 y=340）
+    const toastY =
+      this.state.phase === 'redemption' ? 262 : this.state.phase === 'morning' ? 340 : 198;
     let textPx = 0;
     for (const ch of message) {
       textPx += ch.charCodeAt(0) < 0x80 ? 12 : 24;
     }
     const width = Math.min(BASE_WIDTH - 28, Math.max(128, textPx + 28));
-    const height = this.state.phase === 'redemption' ? 28 : 32;
+    const height = this.state.phase === 'redemption' || this.state.phase === 'morning' ? 28 : 32;
     const toastX =
-      this.state.phase === 'redemption'
+      this.state.phase === 'redemption' || this.state.phase === 'morning'
         ? Math.floor(BASE_WIDTH / 2)
         : Math.max(14 + Math.floor(width / 2), BASE_WIDTH - 14 - Math.floor(width / 2));
 
@@ -1039,6 +1273,7 @@ export class PawnshopScene extends Phaser.Scene {
         money: this.state.money,
         reputation: this.state.reputation,
         deck: [...this.state.deck],
+        currentHp: this.state.currentHp ?? this.save.currentHp ?? MAX_PLAYER_HP,
       },
       pactId,
     );
@@ -1613,7 +1848,7 @@ export class PawnshopScene extends Phaser.Scene {
         this.state.day === 2 &&
         nextChapter.daysVisited.includes(1) &&
         !nextChapter.daysCleared.includes(1);
-      const refreshedItems = pickDailyItems(ITEMS, this.state.day, shuffleRng, DAILY_CUSTOMER_COUNT, {
+      const refreshedItems = pickDailyItems(ITEMS, this.state.day, shuffleRng, this.dailyCustomerCount, {
         deck: this.state.deck,
         redeemedDayByItem: nextChapter.redeemedDayByItem,
         cooldownDays: REDEMPTION_COOLDOWN_DAYS,
@@ -1637,6 +1872,7 @@ export class PawnshopScene extends Phaser.Scene {
       money: this.state.money,
       reputation: this.state.reputation,
       deck: [...this.state.deck],
+      currentHp: this.state.currentHp ?? this.save.currentHp ?? MAX_PLAYER_HP,
       redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
       chapter: nextChapter,
     };
@@ -1999,7 +2235,12 @@ export class PawnshopScene extends Phaser.Scene {
       this.state.deck.forEach((cardName, index) => {
         const x = slotXs[index] ?? centerX;
         const matchedItem = ITEMS.find((item) => item.cardName === cardName);
-        const stripColor = matchedItem ? parseHexColor(matchedItem.color) : PALETTE.brass.num;
+        const cardDef = CARDS_BY_NAME.get(cardName);
+        const stripColor = matchedItem
+          ? parseHexColor(matchedItem.color)
+          : cardDef?.color
+            ? parseHexColor(cardDef.color)
+            : PALETTE.brass.num;
 
         this.contentLayer.add(
           this.add
@@ -2028,7 +2269,12 @@ export class PawnshopScene extends Phaser.Scene {
         const y = isDay3Rumor ? (row === 0 ? 159 : 194) : row === 0 ? 198 : 238;
         const boxH = 32;
         const matchedItem = ITEMS.find((item) => item.cardName === cardName);
-        const stripColor = matchedItem ? parseHexColor(matchedItem.color) : PALETTE.brass.num;
+        const cardDef = CARDS_BY_NAME.get(cardName);
+        const stripColor = matchedItem
+          ? parseHexColor(matchedItem.color)
+          : cardDef?.color
+            ? parseHexColor(cardDef.color)
+            : PALETTE.brass.num;
 
         this.contentLayer.add(
           this.add
@@ -2099,6 +2345,7 @@ export class PawnshopScene extends Phaser.Scene {
           money: this.state.money,
           reputation: this.state.reputation,
           deck: [...this.state.deck],
+          currentHp: this.state.currentHp ?? this.save.currentHp ?? MAX_PLAYER_HP,
           redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
           chapter: nextChapter,
         };

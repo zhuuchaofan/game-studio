@@ -172,6 +172,7 @@ export class ResultScene extends Phaser.Scene {
       outcome: result === 'win' ? 'win' : 'lose',
       reward,
       isBossBattle,
+      endHp: playerHp,
     });
     saveGame(nextSave);
 
@@ -647,7 +648,7 @@ export class ResultScene extends Phaser.Scene {
         result === 'lose_hp'
           ? '提醒：先攒护盾牌，顶住前两回合'
           : '提醒：伤害牌太少，试试多收带伤的旧物';
-      const continueLine = '输了这一夜没事，钱与牌都在，明天继续';
+      const continueLine = '输了这一夜，留下一张欠条，口碑-1，明天继续';
       this.normalFailHint = hintText;
       this.normalFailContinueLine = continueLine;
 

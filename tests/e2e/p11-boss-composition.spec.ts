@@ -8,6 +8,7 @@ import {
   DIARY_CONTINUE_BUTTON,
   ENDING_EPILOGUE_BUTTON,
   ENDING_TITLE_BUTTON,
+  MORNING_OPTION_BUTTONS,
   PAWNSHOP_CALENDAR_BUTTON,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_SKIP_BUTTON,
@@ -28,6 +29,7 @@ const PAWN_PRICES_STORAGE_KEY = 'pawnshop-cards-pawn-prices-v1';
 interface PawnshopDebugState {
   phase:
     | 'title'
+    | 'morning'
     | 'boss_preview'
     | 'pact'
     | 'trim_deck'
@@ -308,7 +310,7 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
 
   // Title screen shows shopkeeper opening note & version
   const titleState = await waitForPawnshopPhase(page, 'title');
-  expect(titleState.version).toBe('v0.4.4-OpeningLayout');
+  expect(titleState.version).toBe('v0.4.5-NightStakes');
   expect(titleState.shopkeeperNote).toContain('有人回来赎东西，先找当票，别让人白跑。');
   await clickLogical(page, canvas, BUTTONS.titleStart);
 
@@ -363,6 +365,8 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
   }
   await waitForBattleReady(page, 'result_scene');
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
   // Day 2 Bride scripted redemption -> accept -> immediately drops to 1 component (watch), 31 HP!
   const bride = await waitForPawnshopPhase(page, 'redemption');
@@ -395,6 +399,8 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
   }
   await waitForBattleReady(page, 'result_scene');
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
   const day3Neg = await waitForPawnshopPhase(page, 'negotiating');
   expect(day3Neg.day).toBe(3);
@@ -452,6 +458,8 @@ test('P11 E2E 2: Day 7 Boss pre-opening preview (including 48 HP cap) matches ac
   await expect(canvas).toBeVisible();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
   // Day 7 Boss preview must explicitly state 40 HP capped ("已到顶") and threshold 12
   const preview = await waitForPawnshopPhase(page, 'boss_preview');
@@ -549,6 +557,8 @@ test('P11 E2E 3: Bride redemption removes 婚戒组件 from Night 7 Boss (shield
   const canvas = page.locator('#game-container canvas');
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemAccept);
   const afterBride = await waitForPawnshopPhase(page, 'negotiating');
@@ -571,6 +581,8 @@ test('P11 E2E 3: Bride redemption removes 婚戒组件 from Night 7 Boss (shield
   await page.goto('/?seed=4&demon=boss_ch1');
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const preview = await waitForPawnshopPhase(page, 'boss_preview');
   expect(preview.bossPreview?.r1Shield).toBe(0);
   expect(preview.bossPreview?.fragmentNames).toEqual(['自行车的执念']);
@@ -640,6 +652,8 @@ test('P11 E2E 4: Day 7 Father overdue watch redemption (Accept vs Reject) & Endi
   const canvas = page.locator('#game-container canvas');
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'boss_preview');
   await clickLogical(page, canvas, BUTTONS.bossPreviewConfirm);
 
@@ -697,6 +711,8 @@ test('P11 E2E 4: Day 7 Father overdue watch redemption (Accept vs Reject) & Endi
 
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'boss_preview');
   await clickLogical(page, canvas, BUTTONS.bossPreviewConfirm);
 
@@ -818,6 +834,8 @@ test('P11 E2E 5: Conditional demon banner & victory aftermath show generic copy 
   await page.goto('/?seed=1&demon=boss_ch1');
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'boss_preview');
   await clickLogical(page, canvas, BUTTONS.bossPreviewConfirm);
   for (let i = 0; i < 3; i += 1) {
@@ -882,6 +900,8 @@ test('Playtest fix round: Day 7 daytime deal shows Boss已涨血 toast and chapt
   const canvas = page.locator('#game-container canvas');
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'boss_preview');
   await clickLogical(page, canvas, BUTTONS.bossPreviewConfirm);
 

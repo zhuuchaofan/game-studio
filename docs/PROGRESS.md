@@ -405,3 +405,14 @@
 - **验证证据**：
   - `npx tsc --noEmit` 0 错误；`npm run build` 退出码 0；`npx vitest run` 17/17 文件、145/145 单测全过（含 `fontCoverage.test.ts`、方案 B 104 间距与无紧凑模式不变量、余数文案）；`npm run sim:check` PASSED（冻结零漂移，通关率 73.9%，常赢现金流 58.0，首夜限钱 200→25.3% / 240→26.2%）；`npm run test:e2e` 60/60 全过；本地交付截图（`~/workspace/game-studio/opening-layout-fix-screenshots/`，32 张）逐屏目视核查通过。
 
+## 2026-11-26 — 夜战压力 B+C 轮（feature/night-stakes-bc-round）
+- **范围**：按 `proto-tasks/19-night-stakes-bc-round.md` 与 §14.0 拍板（Q1–Q5 全已锁定）实现夜战压力 B+C 轮与早上三选一板，严格遵守红线（未碰 `demons.json`、`items.json`、`balance.json`、D1/D2、契约/支线/赎当规则、存档 v3、`pixel-font.json`、音频与 `.github/workflows/`）：
+  - **B 生命跨夜保留（§2）**：`SaveData` 加可选 `currentHp?: number`（老存档缺省 `30`、越界判损坏隔离），`createBattle` 区分 `initialPlayerHp` 与恒定上限 `maxPlayerHp = 30`；`applyDayResult` 四分支写回 `currentHp`（普通胜/败局末 `>0` 睡回 `+5` 封顶 `30`、KO 局末 `0` 次日以 `5` 血醒来继续章节，Boss 战写回局末值）；白天 HUD 新增 `命：当前/30`。
+  - **C 输夜代价——纯占位欠条（§3）**：`cards.json` 新增第 24 张卡「欠条」（0 费、`unplayable: true`、`effects: []`），`canPlayCard` 与点击禁出，`resolveWinReward` 排除 `unplayable`；普通夜输 `+1` 欠条（上限 `3`）且口碑 `-1`，普通夜赢 `-1` 欠条；失败页 `y=171` 改写为 `输了这一夜，留下一张欠条，口碑-1，明天继续`（避开第 1 天 `6/6` 气泡）；`glossary.ts` 新增 `debt_note`；原创 32×32（8 色）像素画 `DEBT_NOTE_ART` 登记于 `docs/ASSET_LEDGER.md`。
+  - **早上三选一板（§4）**：第 2–7 天开张前（先于 `pickDailyItems`、第 4 天契约与第 7 天封门预告）进入 `morning` 阶段「新的一天」：休息（回 `10` 血、少收 1 当客；满血置灰「已满血」）、买补药（`20` 元回 `10` 血、3 当客；满血「已满血」/ 钱 `<20`「钱不够」）、打理当铺（3 当客）；未休息时当日当客序列不变。
+  - **sim 实测与 fallback 决策（§9）**：`montecarlo.ts` 新增 `persistentHp` 章节模拟（策略：`HP>=15` 打理、`<15 && 钱>=60` 买补药、否则休息；KO 按 wake-at-5）；定值档（`restHeal = 10`）240 档通关率 **69.8%**（`698/1000`），`<= 75%` 故**保留 `+10` 不触发 fallback**；通关率纳入 `checkSimGuardrails` `[35%, 75%]` 通过，全冻结护栏 0 漂移；Boss 入局血量均值 `27.73`/中位 `30.0`/`<10` `0.0%`，螺旋指标：Boss 前死亡 `0.0%`、首次局末 `<10` `33.9%`、连输 `>=3` 夜 `14.5%`、买补药触发率 `1.17%`。
+  - **版本、文档与测试**：`GAME_VERSION` 与 `package.json` 升至 `v0.4.5-NightStakes` / `0.4.5`；更新 `docs/GAME_DESIGN.md`（§24）、`docs/ASSET_LEDGER.md`、本文件及 `p0-research/13-development-roadmap.md`；新增 `tests/e2e/night-stakes-bc.spec.ts` 及 `save`/`battle`/`pawnshop`/`effects`/`pixelart`/`montecarlo` 单测，适配既有受 `morning` 阶段与版本号/失败文案影响的 E2E 用例。
+- **验证证据**：
+  - `npx tsc --noEmit` 0 错误；`npm run build` 退出码 0；`npx vitest run` 17/17 文件、150/150 单测全过（含 `fontCoverage.test.ts` 零缺字）；`npm run sim:check` PASSED（B+C 定值档 69.8%、全冻结零漂移）；`npm run test:e2e` 67/67 全过；本地交付截图（`~/workspace/game-studio/night-stakes-bc-screenshots/`，33 张，涵盖桌面及 `390×844` / `844×390` / `800×500` 多视口）逐张目视核查通过（临时截图脚本已删）。
+
+

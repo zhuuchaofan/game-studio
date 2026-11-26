@@ -2,17 +2,18 @@ import type { StorageLike } from './save';
 
 export const GLOSSARY_SEEN_STORAGE_KEY = 'pawnshop-cards-glossary-v1';
 
-export type GlossaryTermId = 'reputation' | 'renqing' | 'obsession' | 'charge_threshold';
+export type GlossaryTermId = 'reputation' | 'renqing' | 'obsession' | 'charge_threshold' | 'debt_note';
 
 /**
- * 试玩修整轮 §6.2：四个核心机制词首次出现时的白话解释。
- * 全部字符均经 pixel-font.json 774 字形校验（零缺字）。
+ * 试玩修整轮 §6.2 + 任务书 19 §6：核心机制词首次出现时的白话解释。
+ * 全部字符均经 pixel-font.json 字形校验（零缺字）。
  */
 export const GLOSSARY_TIPS: Readonly<Record<GlossaryTermId, string>> = {
   reputation: '口碑：越高越易低价平价收当',
   renqing: '人情：出牌本钱，每回自动回满',
   obsession: '执念：留柜未赎旧物，第7夜化作大心魔力量',
   charge_threshold: '封门阈值：R2累伤打满可打断封门，返+1情',
+  debt_note: '欠条：输夜留下的债，占一张手牌，打不出去',
 };
 
 function getDefaultStorage(): StorageLike | null {
@@ -46,7 +47,8 @@ export function loadSeenGlossaryTerms(storage?: StorageLike | null): Set<Glossar
         entry === 'reputation' ||
         entry === 'renqing' ||
         entry === 'obsession' ||
-        entry === 'charge_threshold'
+        entry === 'charge_threshold' ||
+        entry === 'debt_note'
       ) {
         valid.add(entry);
       }

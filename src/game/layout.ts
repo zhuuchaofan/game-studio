@@ -50,6 +50,11 @@ export const TRIM_SKIP_BUTTON = { x: 320, y: 316, width: 184, height: 44 } as co
 export const PAWNSHOP_TRIM_PREV_BUTTON = { x: 104, y: 316, width: 120, height: 44 } as const;
 export const PAWNSHOP_TRIM_NEXT_BUTTON = { x: 536, y: 316, width: 120, height: 44 } as const;
 export const BOSS_PREVIEW_CONFIRM_BUTTON = { x: 320, y: 316, width: 240, height: 44 } as const;
+export const MORNING_OPTION_BUTTONS = {
+  rest: { x: 116, y: 216, width: 184, height: 240 },
+  medicine: { x: 320, y: 216, width: 184, height: 240 },
+  work: { x: 524, y: 216, width: 184, height: 240 },
+} as const;
 
 // CalendarMapScene
 export const CALENDAR_DAY_CELLS = Array.from({ length: 7 }, (_, i) => ({

@@ -17,7 +17,7 @@
 
 ## 像素插画
 
-- `src/data/pixelart.ts`（23 张牌面 32×32 + 6 件旧物 32×32 + 5 个心魔 32×32）：项目原创逐像素手绘点阵，仅使用 `docs/ART_STYLE.md` 定稿 16 色调色板，未使用任何外部图片素材或 AI 生图；在 640×360 画布下，源数据仍为 32×32，由 `src/game/pixelart.ts` 的 `pixelRowsToTexture` 统一按 2×2 最近邻块绘制渲染为 64×64 纹理。
+- `src/data/pixelart.ts`（24 张牌面 32×32，含「欠条」+ 6 件旧物 32×32 + 5 个心魔 32×32）：项目原创逐像素手绘点阵，仅使用 `docs/ART_STYLE.md` 定稿 16 色调色板，未使用任何外部图片素材或 AI 生图；在 640×360 画布下，源数据仍为 32×32，由 `src/game/pixelart.ts` 的 `pixelRowsToTexture` 统一按 2×2 最近邻块绘制渲染为 64×64 纹理。
 
 ## 音频合成算法
 

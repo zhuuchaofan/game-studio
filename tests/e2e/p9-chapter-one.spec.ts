@@ -11,6 +11,7 @@ import {
   DIARY_CONTINUE_BUTTON,
   ENDING_RESTART_BUTTON,
   ENDING_TITLE_BUTTON,
+  MORNING_OPTION_BUTTONS,
   PACT_OPTION_BUTTONS,
   PAWNSHOP_CALENDAR_BUTTON,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
@@ -35,6 +36,7 @@ const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
 interface PawnshopDebugState {
   phase:
     | 'title'
+    | 'morning'
     | 'boss_preview'
     | 'pact'
     | 'trim_deck'
@@ -323,6 +325,11 @@ test('P9 E2E 1: Full Chapter 1 playthrough (?seed=2&deck=test) Day 1 -> Day 3 ru
   await clickLogical(page, canvas, BUTTONS.titleStart);
 
   for (let day = 1; day <= 7; day += 1) {
+    if (day >= 2) {
+      await waitForPawnshopPhase(page, 'morning');
+      await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+    }
+
     if (day === 7) {
       await waitForPawnshopPhase(page, 'boss_preview');
       await clickLogical(page, canvas, BUTTONS.bossPreviewConfirm);
@@ -505,6 +512,8 @@ test('P9 E2E 2: CalendarMapScene opens from Title and mid-day Pawnshop HUD, show
 
   // 2. Continue into Day 3 PawnshopScene, deal with Customer 1 so we are mid-day at Customer 2
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'negotiating');
   await clickLogical(page, canvas, BUTTONS.tierHigh);
   await waitForPawnshopPhase(page, 'feedback');
@@ -581,6 +590,8 @@ test('P9 E2E 3: Boss R2 Interrupt path (>=10 dmg -> +1 renqing, R3 deals 3 dmg) 
   await expect(canvas).toBeVisible();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
   // Day 7 starts with Boss pre-opening preview -> confirm to proceed
   await waitForPawnshopPhase(page, 'boss_preview');
@@ -710,6 +721,8 @@ test('P9 E2E 4: Boss R2 Non-Interrupt path (R3 deals full 11 dmg) & Chapter Fail
   await expect(canvas).toBeVisible();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
   // Day 7 starts with Boss pre-opening preview -> confirm to proceed
   await waitForPawnshopPhase(page, 'boss_preview');

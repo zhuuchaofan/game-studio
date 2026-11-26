@@ -19,6 +19,11 @@ export const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
 export const AUDIO_STORAGE_KEY = 'pawnshop-cards-audio-v1';
 export const PAWN_PRICES_STORAGE_KEY = 'pawnshop-cards-pawn-prices-v1';
 export const SAVE_VERSION = 3 as const;
+export const MAX_PLAYER_HP = balanceJson.startingHp;
+export const SLEEP_HEAL_AMOUNT = 5;
+export const DEBT_NOTE_CARD_NAME = '欠条';
+export const DEBT_NOTE_CAP = 3;
+export const NIGHT_LOSS_REP_DELTA = -1;
 
 export type PawnPriceLedger = Record<string, number[]>;
 
@@ -30,6 +35,10 @@ export interface SaveData {
   deck: string[];
   shopLevel: number;
   redeemTickets: number;
+  /** 任务书 19：当前生命值（可选向后兼容字段，老存档缺省按 MAX_PLAYER_HP = 30 处理）。 */
+  currentHp?: number;
+  /** 修整 1：当天早上已选（按天持久化，刷新不可重选）；老存档缺省为未选。 */
+  morningChoice?: { day: number; customerCount: number };
   /** Optional backward-compatible tutorial completion flag (defaults to incomplete when omitted). */
   tutorialCompleted?: boolean;
   /** P9 Chapter progression block (v3). */
@@ -119,6 +128,8 @@ export interface DayResultInput {
   outcome: 'win' | 'lose';
   reward?: WinReward | null;
   isBossBattle?: boolean;
+  /** 任务书 19：战斗结束时玩家剩余生命（0..30）。 */
+  endHp?: number;
 }
 
 export const SAVE_BALANCE: SaveBalanceConfig = {
@@ -285,6 +296,15 @@ function isValidSaveData(raw: unknown): raw is SaveData {
   if (obj.tutorialCompleted !== undefined && typeof obj.tutorialCompleted !== 'boolean') {
     return false;
   }
+  if (
+    obj.currentHp !== undefined &&
+    (typeof obj.currentHp !== 'number' ||
+      !Number.isFinite(obj.currentHp) ||
+      obj.currentHp < 0 ||
+      obj.currentHp > MAX_PLAYER_HP)
+  ) {
+    return false;
+  }
   if (!isValidChapterSaveState(obj.chapter)) {
     return false;
   }
@@ -366,6 +386,7 @@ export function createNewGame(
     deck: [],
     shopLevel: 1,
     redeemTickets: 0,
+    currentHp: MAX_PLAYER_HP,
     chapter: createInitialChapterState({
       chapter1Completed: preserveChapterMeta?.chapter1Completed ?? false,
       chapter1FailedCount: preserveChapterMeta?.chapter1FailedCount ?? 0,
@@ -432,6 +453,12 @@ export function loadSaveDetailed(storage?: StorageLike | null): SaveLoadResult {
     if (typeof valid.tutorialCompleted === 'boolean') {
       loaded.tutorialCompleted = valid.tutorialCompleted;
     }
+    if (typeof valid.currentHp === 'number') {
+      loaded.currentHp = valid.currentHp;
+    }
+    if (valid.morningChoice) {
+      loaded.morningChoice = { ...valid.morningChoice };
+    }
     return {
       save: loaded,
       migratedFrom: migrated.migratedFrom,
@@ -472,6 +499,12 @@ export function saveGame(data: SaveData, storage?: StorageLike | null): void {
     };
     if (typeof data.tutorialCompleted === 'boolean') {
       normalized.tutorialCompleted = data.tutorialCompleted;
+    }
+    if (typeof data.currentHp === 'number') {
+      normalized.currentHp = data.currentHp;
+    }
+    if (data.morningChoice) {
+      normalized.morningChoice = { ...data.morningChoice };
     }
     store.setItem(SAVE_STORAGE_KEY, JSON.stringify(normalized));
   } catch {
@@ -695,6 +728,9 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
   const prevChapter = cloneChapterState(save.chapter);
   const currentDayInChapter = prevChapter.dayInChapter;
   const isBoss = result.isBossBattle ?? (prevChapter.bossBattleActive || currentDayInChapter >= CHAPTER_DAYS);
+  const rawEndHp = result.endHp ?? save.currentHp ?? MAX_PLAYER_HP;
+  const clampedEndHp = Math.max(0, Math.min(MAX_PLAYER_HP, Math.round(rawEndHp)));
+  const sleptHp = Math.max(0, Math.min(MAX_PLAYER_HP, clampedEndHp + SLEEP_HEAL_AMOUNT));
 
   if (isBoss) {
     if (result.outcome === 'win') {
@@ -718,6 +754,7 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
         deck: nextDeck,
         shopLevel: save.shopLevel + 1,
         redeemTickets: save.redeemTickets + (reward?.redeemTicket ?? 0),
+        currentHp: clampedEndHp,
         chapter: nextChapter,
         ...baseTutorial,
       };
@@ -740,6 +777,7 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
       deck: [...save.deck],
       shopLevel: save.shopLevel,
       redeemTickets: save.redeemTickets,
+      currentHp: clampedEndHp,
       chapter: failedChapter,
       ...baseTutorial,
     };
@@ -749,7 +787,14 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
 
   if (result.outcome === 'win') {
     const reward = result.reward ?? null;
-    const nextDeck = reward?.cardName ? [...save.deck, reward.cardName] : [...save.deck];
+    const nextDeck = [...save.deck];
+    const debtIdx = nextDeck.indexOf(DEBT_NOTE_CARD_NAME);
+    if (debtIdx >= 0) {
+      nextDeck.splice(debtIdx, 1);
+    }
+    if (reward?.cardName) {
+      nextDeck.push(reward.cardName);
+    }
     const nextChapter: ChapterSaveState = {
       ...prevChapter,
       dayInChapter: nextDayInChapter,
@@ -766,6 +811,7 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
       deck: nextDeck,
       shopLevel: save.shopLevel + 1,
       redeemTickets: save.redeemTickets + (reward?.redeemTicket ?? 0),
+      currentHp: sleptHp,
       chapter: nextChapter,
       ...baseTutorial,
     };
@@ -778,14 +824,21 @@ export function applyDayResult(save: SaveData, result: DayResultInput): SaveData
     daysVisited: appendUniqueDay(prevChapter.daysVisited, currentDayInChapter),
   };
 
+  const currentDebtCount = save.deck.filter((name) => name === DEBT_NOTE_CARD_NAME).length;
+  const nextDeck =
+    currentDebtCount < DEBT_NOTE_CAP
+      ? [...save.deck, DEBT_NOTE_CARD_NAME]
+      : [...save.deck];
+
   return {
     version: SAVE_VERSION,
     day: save.day + 1,
     money: save.money,
-    reputation: save.reputation,
-    deck: [...save.deck],
+    reputation: save.reputation + NIGHT_LOSS_REP_DELTA,
+    deck: nextDeck,
     shopLevel: save.shopLevel,
     redeemTickets: save.redeemTickets,
+    currentHp: sleptHp,
     chapter: nextChapter,
     ...baseTutorial,
   };

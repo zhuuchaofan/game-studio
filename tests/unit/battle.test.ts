@@ -3,6 +3,7 @@ import balanceJson from '../../src/data/balance.json';
 import cardsJson from '../../src/data/cards.json';
 import demonsJson from '../../src/data/demons.json';
 import {
+  canPlayCard,
   createBattle,
   endTurn,
   formatEffectDescription,
@@ -343,5 +344,78 @@ describe('Battle state machine & BattleEvent stream', () => {
     expect(DEMONS.find((d) => d.id === 'b')?.introLine).toBe('远行的车票攥在手里，舍不得放。');
     expect(DEMONS.find((d) => d.id === 'c')?.introLine).toBe('房东在门口敲了三下。');
     expect(DEMONS.find((d) => d.id === 'd')?.introLine).toBe('开学的日子，越来越近了。');
+  });
+
+  it('Task 19 §2/§3: supports carried-over initialPlayerHp with maxPlayerHp=30, unplayable 欠条, and excludes unplayable cards from resolveWinReward', () => {
+    // 1. Carried-over HP: entry 18, maxPlayerHp stays 30, 缝纫机 heals toward 30, 倒转 rewinds to 18
+    let state = createBattle(
+      ['缝纫机', '倒转', '钢笔', '守诺', '旧书'],
+      'a',
+      mulberry32(7),
+      CARDS,
+      DEMONS,
+      { ...BALANCE, startingRenqing: 5, maxRenqing: 5 },
+      undefined,
+      { initialPlayerHp: 18 },
+    );
+    expect(state.playerHp).toBe(18);
+    expect(state.maxPlayerHp).toBe(30);
+
+    const sewIdx = state.hand.indexOf('缝纫机');
+    expect(sewIdx).toBeGreaterThanOrEqual(0);
+    state = playCard(state, sewIdx).state;
+    expect(state.playerHp).toBe(24);
+
+    // Rewind restores to round 1 snapshot (initialPlayerHp = 18, not 30)
+    const rewindIdx = state.hand.indexOf('倒转');
+    expect(rewindIdx).toBeGreaterThanOrEqual(0);
+    state = playCard(state, rewindIdx).state;
+    expect(state.playerHp).toBe(18);
+
+    // Heal near full caps at 30, not at initialPlayerHp
+    const nearFull = createBattle(
+      ['缝纫机', '钢笔', '守诺', '旧书', '算盘'],
+      'a',
+      mulberry32(9),
+      CARDS,
+      DEMONS,
+      BALANCE,
+      undefined,
+      { initialPlayerHp: 27 },
+    );
+    const sew2 = nearFull.hand.indexOf('缝纫机');
+    expect(playCard(nearFull, sew2).state.playerHp).toBe(30);
+
+    // 2. 欠条 is unplayable even with enough renqing, and formats cleanly
+    const debtDef = CARDS.find((c) => c.name === '欠条')!;
+    expect(debtDef.unplayable).toBe(true);
+    expect(formatEffectShort(debtDef)).toBe('不可出');
+    expect(formatEffectDescription(debtDef)).toBe('占手牌，打不出去');
+
+    const debtState = createBattle(
+      ['欠条', '欠条', '欠条', '钢笔', '守诺'],
+      'a',
+      mulberry32(11),
+      CARDS,
+      DEMONS,
+      BALANCE,
+    );
+    const debtIdx = debtState.hand.indexOf('欠条');
+    expect(debtIdx).toBeGreaterThanOrEqual(0);
+    expect(canPlayCard(debtState, debtIdx)).toBe(false);
+    const afterAttempt = playCard(debtState, debtIdx);
+    expect(afterAttempt.events).toEqual([]);
+    expect(afterAttempt.state.hand).toEqual(debtState.hand);
+
+    // 3. resolveWinReward NEVER returns 欠条 even when all 23 playable cards are owned
+    const allPlayableNames = CARDS.filter((c) => !c.unplayable).map((c) => c.name);
+    expect(allPlayableNames).toHaveLength(23);
+    const bonusReward = resolveWinReward(allPlayableNames, CARDS, BALANCE, mulberry32(1));
+    expect(bonusReward).toEqual({
+      money: BALANCE.winRewardMoney * 2,
+      cardName: null,
+      redeemTicket: 1,
+      allOwnedBonus: true,
+    });
   });
 });

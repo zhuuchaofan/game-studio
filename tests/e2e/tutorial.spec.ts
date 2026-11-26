@@ -3,6 +3,7 @@ import {
   BATTLE_END_TURN_BUTTON,
   BATTLE_HAND_Y,
   computeHandCardX,
+  MORNING_OPTION_BUTTONS,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
   PAWNSHOP_TIER_BUTTONS,
@@ -19,7 +20,7 @@ const SAVE_STORAGE_KEY = 'pawnshop-cards-save-v1';
 const TUTORIAL_STORAGE_KEY = 'pawnshop-cards-tutorial-v1';
 
 interface PawnshopDebugState {
-  phase: 'title' | 'redemption' | 'negotiating' | 'feedback' | 'summary';
+  phase: 'title' | 'morning' | 'redemption' | 'negotiating' | 'feedback' | 'summary';
   customerIndex: number;
   money: number;
   reputation: number;
@@ -353,8 +354,10 @@ test('first play walks all 6 Day 1 guide bubbles in order, persists completion, 
     })
     .toEqual({ active: false, step: null, done: true });
 
-  // Enter Day 2 -> C4 redemption triggers first, reject to enter negotiating -> no tutorial bubbles
+  // Enter Day 2 -> morning choice ("打理当铺") -> C4 redemption triggers -> reject to enter negotiating -> no tutorial bubbles
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const day2 = await waitForPawnshopPhase(page, 'negotiating');

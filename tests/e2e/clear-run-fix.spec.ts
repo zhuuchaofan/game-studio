@@ -4,6 +4,7 @@ import {
   DEMON_INTRO_BANNER_RECT,
   HAND_SCROLL_ARROW_WIDTH,
   HAND_SCROLL_ARROW_Y,
+  MORNING_OPTION_BUTTONS,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_SKIP_BUTTON,
   PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
@@ -149,6 +150,8 @@ async function clickSlot(page: Page, canvas: Locator, idx: number): Promise<void
 async function enterBattleFromSeededDay(page: Page, canvas: Locator): Promise<BattleDebugState> {
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   for (let i = 0; i < 3; i += 1) {
     const pState = await expect
       .poll(async () => (await getPawnshopState(page)).phase)
@@ -545,14 +548,16 @@ test('Task 17 §4: normal failure page shows 3 lines for lose_timeout and lose_h
   expect(timeoutRes.result).toBe('lose_timeout');
   expect(timeoutRes.loseReason).toBe('3 回合未分胜负');
   expect(timeoutRes.normalFailHint).toBe('提醒：伤害牌太少，试试多收带伤的旧物');
-  expect(timeoutRes.normalFailContinueLine).toBe('输了这一夜没事，钱与牌都在，明天继续');
+  expect(timeoutRes.normalFailContinueLine).toBe('输了这一夜，留下一张欠条，口碑-1，明天继续');
 
   await clickLogical(page, canvas, RESULT_NEXT_DAY_BUTTON);
-  // Day 3 -> Day 4 enters 'pact' (掌柜契约) before negotiating
+  // Day 3 -> Day 4 enters 'morning' then 'pact' (掌柜契约) before negotiating
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const nextDayState = await waitForPawnshopPhase(page, 'pact');
   expect(nextDayState.day).toBe(4);
   expect(nextDayState.money).toBe(123);
-  expect(nextDayState.deck).toEqual(['余音', '倒转', '旧书']);
+  expect(nextDayState.deck).toEqual(['余音', '倒转', '旧书', '欠条']);
 
   // 2) Normal lose_hp via ?deck=test&playerHp=2
   await page.goto('/?seed=7&demon=c&deck=test&playerHp=2');
@@ -598,7 +603,7 @@ test('Task 17 §4: normal failure page shows 3 lines for lose_timeout and lose_h
   expect(hpRes.result).toBe('lose_hp');
   expect(hpRes.loseReason).toBe('被打倒');
   expect(hpRes.normalFailHint).toBe('提醒：先攒护盾牌，顶住前两回合');
-  expect(hpRes.normalFailContinueLine).toBe('输了这一夜没事，钱与牌都在，明天继续');
+  expect(hpRes.normalFailContinueLine).toBe('输了这一夜，留下一张欠条，口碑-1，明天继续');
 
   // 3) Day 1 failure with 6/6 tutorial bubble active (buy 1 card on customer 0 so Night 1 runs)
   await page.goto('/?seed=7');
@@ -649,7 +654,7 @@ test('Task 17 §4: normal failure page shows 3 lines for lose_timeout and lose_h
   const day1Fail = await waitForBattleReady(page, 'result_scene');
   expect(day1Fail.currentStep).toBe('settlement');
   expect(day1Fail.normalFailHint).toBe('提醒：伤害牌太少，试试多收带伤的旧物');
-  expect(day1Fail.normalFailContinueLine).toBe('输了这一夜没事，钱与牌都在，明天继续');
+  expect(day1Fail.normalFailContinueLine).toBe('输了这一夜，留下一张欠条，口碑-1，明天继续');
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -705,7 +710,7 @@ test('Task 17 §7 & §10: completed TitleScene shows two-line Ch2 teaser badge, 
   await expect(canvas).toBeVisible();
   const titleState = await waitForPawnshopPhase(page, 'title');
 
-  expect(titleState.version).toBe('v0.4.4-OpeningLayout');
+  expect(titleState.version).toBe('v0.4.5-NightStakes');
   expect(titleState.titleCompletedTeaser).toBe('第2章「站稳招牌」· 未完待续');
   expect(titleState.titleSettlementLine).toBe('胜6 · 收8 · 钱182');
   expect(titleState.titleEndingLedger?.lines).toEqual([
@@ -798,6 +803,8 @@ test('Task 17 §8 & multi-viewport: Day 3 summary 7-card truncation stays intact
   const canvas = page.locator('#game-container canvas');
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   for (let i = 0; i < 3; i += 1) {
     await waitForPawnshopPhase(page, 'negotiating');
     await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);

@@ -63,6 +63,7 @@ export interface BattleDebugSnapshot {
   round: number;
   maxRounds?: number;
   playerHp: number;
+  maxPlayerHp?: number;
   shield: number;
   renqing: number;
   maxRenqing?: number;
@@ -167,6 +168,8 @@ export interface CreateBattleOptions {
   demonHpBonus?: number;
   /** P11：直接传入算好的心魔/Boss 定义（战斗引擎只接算好的 Boss，不做旧物特判）。 */
   demonOverride?: DemonDef;
+  /** 任务书 19：跨夜生命结转值（maxPlayerHp 仍恒为 balance.startingHp = 30）。 */
+  initialPlayerHp?: number;
 }
 
 function activateRoundChargeIfAny(state: BattleState, events: BattleEvent[]): void {
@@ -223,12 +226,16 @@ export function createBattle(
   const effectiveDemonHp = Math.max(1, demon.hp + (options?.demonHpBonus ?? 0));
   const round1Action = demon.actions.find((a) => a.round === 1);
   const initialDemonShield = round1Action && !round1Action.charge ? (round1Action.shield ?? 0) : 0;
+  const initialPlayerHp =
+    options?.initialPlayerHp !== undefined
+      ? Math.max(1, Math.min(balance.startingHp, Math.round(options.initialPlayerHp)))
+      : balance.startingHp;
 
   const initialDrawPhase: BattleState = {
     phase: 'draw',
     round: 1,
     maxRounds,
-    playerHp: balance.startingHp,
+    playerHp: initialPlayerHp,
     maxPlayerHp: balance.startingHp,
     shield: 0,
     renqing: balance.startingRenqing,
@@ -264,7 +271,7 @@ export function createBattle(
     illuminateNextDraw: false,
     reflectNextDamage: false,
     revealedNextIntent: false,
-    roundSnapshots: [{ playerHp: balance.startingHp, demonHp: effectiveDemonHp }],
+    roundSnapshots: [{ playerHp: initialPlayerHp, demonHp: effectiveDemonHp }],
     pendingChoice: null,
     result: 'ongoing',
     log: [],
@@ -306,7 +313,7 @@ export function canPlayCard(state: BattleState, handIndex: number): boolean {
 
   const cardName = state.hand[handIndex];
   const card = state.cardsByName.get(cardName);
-  if (!card) {
+  if (!card || card.unplayable) {
     return false;
   }
 
@@ -676,7 +683,7 @@ export function resolveWinReward(
   rng: RngFn,
 ): WinReward {
   const owned = new Set(deckCardNames);
-  const available = cards.filter((c) => !owned.has(c.name));
+  const available = cards.filter((c) => !c.unplayable && !owned.has(c.name));
 
   if (available.length === 0) {
     return {
@@ -709,6 +716,7 @@ export function toBattleDebugSnapshot(
     round: state.round,
     maxRounds: state.maxRounds,
     playerHp: state.playerHp,
+    maxPlayerHp: state.maxPlayerHp,
     shield: state.shield,
     renqing: state.renqing,
     maxRenqing: state.maxRenqing,
@@ -739,6 +747,9 @@ export function toBattleDebugSnapshot(
  * Generates a compact Chinese summary of a card's effects for 48x64 card rendering.
  */
 export function formatEffectShort(card: CardDef): string {
+  if (card.unplayable) {
+    return '不可出';
+  }
   const parts = card.effects.map((e) => {
     switch (e.type) {
       case 'damage':
@@ -774,6 +785,9 @@ export function formatEffectShort(card: CardDef): string {
  * Generates a clear single-line Chinese effect description from card effects (P6 C1).
  */
 export function formatEffectDescription(card: CardDef): string {
+  if (card.unplayable) {
+    return '占手牌，打不出去';
+  }
   const parts = card.effects.map((e) => {
     switch (e.type) {
       case 'damage':

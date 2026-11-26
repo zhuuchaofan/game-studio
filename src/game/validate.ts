@@ -102,7 +102,7 @@ export function validateCards(cards: readonly CardDef[]): DataValidationResult {
       errors.push(`${label}: cost must be a non-negative integer, got ${String(card.cost)}`);
     }
 
-    if (!Array.isArray(card.effects) || card.effects.length === 0) {
+    if (!Array.isArray(card.effects) || (!card.unplayable && card.effects.length === 0)) {
       errors.push(`${label}: effects must be a non-empty array`);
     } else {
       card.effects.forEach((effect: CardDef['effects'][number], effIdx: number) => {

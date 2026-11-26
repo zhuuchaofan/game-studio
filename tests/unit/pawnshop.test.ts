@@ -4,14 +4,17 @@ import {
   consumeFirstGlossaryTip,
   GLOSSARY_TIPS,
   hasSeenGlossaryTerm,
+  loadSeenGlossaryTerms,
 } from '../../src/game/glossary';
 import {
   advanceCustomer,
+  applyMorningChoice,
   BALANCE,
   canAffordTier,
   createBrideRedemptionOffer,
   createInitialState,
   createRedemptionOffer,
+  DAILY_CUSTOMER_COUNT,
   DAY1_GUARANTEED_DAMAGE_ITEM_IDS,
   deriveDaySeed,
   formatDay3Rumor,
@@ -19,12 +22,16 @@ import {
   formatOfferDialogue,
   formatReputationHint,
   getEffectiveAcceptRate,
+  getMorningActionAvailability,
   getReputationDelta,
   getTemperamentLabel,
   getTierAffordability,
   hasAnyAffordableTier,
   isTierAffordable,
   ITEMS,
+  MORNING_MEDICINE_HEAL,
+  MORNING_MEDICINE_PRICE,
+  MORNING_REST_HEAL,
   pickDailyItems,
   quotePrice,
   resolveOffer,
@@ -811,5 +818,67 @@ describe('Deck list remainder label (Task 18 §5)', () => {
     expect(formatDeckRemainder(7)).toBe('等2张');
     expect(formatDeckRemainder(8)).toBe('等3张');
     expect(formatDeckRemainder(12)).toBe('等7张');
+  });
+});
+
+describe('Task 19 §4/§6: morning 3-way choice & debt_note glossary', () => {
+  it('disables rest/medicine at full HP, disables medicine when money < 20, and applies heal/cost/customer counts accurately', () => {
+    const fullHpAvail = getMorningActionAvailability(30, 100);
+    expect(fullHpAvail.rest).toEqual({ enabled: false, reason: 'full_hp' });
+    expect(fullHpAvail.medicine).toEqual({ enabled: false, reason: 'full_hp' });
+    expect(fullHpAvail.work).toEqual({ enabled: true, reason: null });
+
+    const poorAvail = getMorningActionAvailability(18, MORNING_MEDICINE_PRICE - 1);
+    expect(poorAvail.rest).toEqual({ enabled: true, reason: null });
+    expect(poorAvail.medicine).toEqual({ enabled: false, reason: 'insufficient_funds' });
+    expect(poorAvail.work).toEqual({ enabled: true, reason: null });
+
+    const richAvail = getMorningActionAvailability(18, MORNING_MEDICINE_PRICE);
+    expect(richAvail.rest.enabled).toBe(true);
+    expect(richAvail.medicine.enabled).toBe(true);
+
+    const restRes = applyMorningChoice({ action: 'rest', currentHp: 18, money: 50 });
+    expect(restRes).toEqual({
+      applied: true,
+      currentHp: Math.min(30, 18 + MORNING_REST_HEAL),
+      money: 50,
+      customerCount: DAILY_CUSTOMER_COUNT - 1,
+    });
+
+    const medRes = applyMorningChoice({ action: 'medicine', currentHp: 24, money: 20 });
+    expect(medRes).toEqual({
+      applied: true,
+      currentHp: Math.min(30, 24 + MORNING_MEDICINE_HEAL),
+      money: 0,
+      customerCount: DAILY_CUSTOMER_COUNT,
+    });
+
+    const workRes = applyMorningChoice({ action: 'work', currentHp: 18, money: 50 });
+    expect(workRes).toEqual({
+      applied: true,
+      currentHp: 18,
+      money: 50,
+      customerCount: DAILY_CUSTOMER_COUNT,
+    });
+
+    const rejectedRest = applyMorningChoice({ action: 'rest', currentHp: 30, money: 50 });
+    expect(rejectedRest.applied).toBe(false);
+    expect(rejectedRest.currentHp).toBe(30);
+  });
+
+  it('persists debt_note glossary tip on first encounter only', () => {
+    const map = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        map.set(k, v);
+      },
+      removeItem: (k: string) => {
+        map.delete(k);
+      },
+    };
+    expect(consumeFirstGlossaryTip('debt_note', storage)).toBe(GLOSSARY_TIPS.debt_note);
+    expect(consumeFirstGlossaryTip('debt_note', storage)).toBeNull();
+    expect(loadSeenGlossaryTerms(storage).has('debt_note')).toBe(true);
   });
 });

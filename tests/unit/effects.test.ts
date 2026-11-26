@@ -41,19 +41,21 @@ function makeState(overrides: Partial<BattleState> = {}): BattleState {
 }
 
 describe('cards.json integrity', () => {
-  it('contains all 23 unique cards including P1 & P4 item cards', () => {
-    expect(CARDS).toHaveLength(23);
+  it('contains all 24 unique cards including P1, P4 item cards, and Task 19 欠条', () => {
+    expect(CARDS).toHaveLength(24);
     const ids = new Set(CARDS.map((c) => c.id));
     const names = new Set(CARDS.map((c) => c.name));
-    expect(ids.size).toBe(23);
-    expect(names.size).toBe(23);
+    expect(ids.size).toBe(24);
+    expect(names.size).toBe(24);
     expect(names.has('倒转')).toBe(true);
     expect(names.has('守诺')).toBe(true);
     expect(names.has('旧书')).toBe(true);
     expect(names.has('飞驰')).toBe(true);
     expect(names.has('余音')).toBe(true);
     expect(names.has('集邮')).toBe(true);
-    expect(CARDS.filter((c) => c.cost === 0).map((c) => c.name)).toEqual(['拨浪鼓', '当票']);
+    expect(names.has('欠条')).toBe(true);
+    expect(CARDS.find((c) => c.name === '欠条')?.unplayable).toBe(true);
+    expect(CARDS.filter((c) => c.cost === 0).map((c) => c.name)).toEqual(['拨浪鼓', '当票', '欠条']);
   });
 });
 
