@@ -293,8 +293,8 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  // seed=4 Day 1 lineup: ['watch', 'bicycle', 'ring']
-  await page.goto('/?seed=4');
+  // seed=168 Day 1 lineup: ['ring', 'bicycle', 'watch']
+  await page.goto('/?seed=168');
   await page.evaluate(
     ([saveKey, tutKey, priceKey]) => {
       localStorage.removeItem(saveKey);
@@ -329,7 +329,7 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
   await clickLogical(page, canvas, BUTTONS.calendarReturn);
   await expect.poll(async () => (await getCalendarState(page))?.active).toBe(false);
 
-  // Pawn watch (1st), skip bicycle (2nd), pawn ring (3rd)
+  // Pawn ring (1st), skip bicycle (2nd), pawn watch (3rd)
   await clickLogical(page, canvas, BUTTONS.tierHigh);
   await waitForPawnshopPhase(page, 'feedback');
   await clickLogical(page, canvas, BUTTONS.nextOrSummary);

@@ -312,7 +312,7 @@ test('plays Demon B (车票) with fixed seed=2, verifies Round 3 "远行" warnin
   const canvas = page.locator('#game-container canvas');
   await expect(canvas).toBeVisible();
 
-  const r1 = await navigateThroughDayToBattle(page, canvas);
+  const r1 = await navigateThroughDayToBattleLow(page, canvas);
   expect(r1.demonId).toBe('b');
   expect(r1.demonName).toBe('车票');
   expect(r1.demonHp).toBe(22);
@@ -484,10 +484,10 @@ test('completes full flow from P1 Pawnshop summary -> CardBattleScene (real P1 d
   await expect(canvas).toBeVisible();
 
   const battleStart = await navigateThroughDayToBattle(page, canvas);
-  // Real deck collected from 3 high-tier offers on seed=7 Day 1: 余音, 倒转, 旧书
+  // Real deck collected from 3 high-tier offers on seed=7 Day 1: 集邮, 顶住, 余音
   expect(battleStart.demonId).toBe('a');
   expect(battleStart.hand).toHaveLength(3);
-  expect([...battleStart.hand].sort()).toEqual(['余音', '倒转', '旧书'].sort());
+  expect([...battleStart.hand].sort()).toEqual(['集邮', '顶住', '余音'].sort());
   expect(battleStart.deckCount).toBe(0);
 
   // Play through 3 rounds to ResultScene

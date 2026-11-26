@@ -5,7 +5,7 @@
       "name": "立脚老街",
       "days": 7,
       "bossId": "boss_ch1",
-      "itemPool": ["watch", "ring", "old_book", "bicycle", "erhu", "stamp_album"],
+      "itemPool": ["watch", "ring", "old_book", "bicycle", "erhu", "stamp_album", "cloth_ticket", "harmonica", "medicine_box", "ledger", "tin_trunk", "gold_watch"],
       "day3Rumor": "老街风声：明日集市开张，几位老主顾要来谈份掌柜契约。",
       "dailyDemonPools": [
         { "day": 1, "demonPool": ["a"], "label": "首夜" },

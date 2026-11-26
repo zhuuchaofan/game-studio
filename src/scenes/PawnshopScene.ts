@@ -962,7 +962,7 @@ export class PawnshopScene extends Phaser.Scene {
           origin: 0.5,
         }),
       );
-    } else {
+    } else if (composed.activeComponents.length <= 6) {
       const colXs = [28, 322];
       const rowYs = [154, 188, 222];
       composed.activeComponents.forEach((comp, idx) => {
@@ -972,6 +972,21 @@ export class PawnshopScene extends Phaser.Scene {
         const y = rowYs[row] ?? 222;
         this.contentLayer.add(
           addPixelText(this, x, y, `${comp.fragmentName}:${comp.effectText}`, {
+            color: PALETTE.candle.hex,
+            origin: [0, 0],
+          }),
+        );
+      });
+    } else {
+      const colXs = [28, 322];
+      composed.activeComponents.forEach((comp, idx) => {
+        const col = idx % 2;
+        const row = Math.floor(idx / 2);
+        const x = colXs[col];
+        const y = 150 + row * 18;
+        this.contentLayer.add(
+          addPixelText(this, x, y, `${comp.fragmentName}:${comp.effectText}`, {
+            size: 12,
             color: PALETTE.candle.hex,
             origin: [0, 0],
           }),

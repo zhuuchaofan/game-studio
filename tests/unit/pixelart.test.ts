@@ -47,9 +47,9 @@ describe('Pixel art validation (23 cards + 6 items + 4 demons)', () => {
     expect(RENDERED_SPRITE_SIZE).toBe(64);
   });
 
-  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 24 cards in cards.json', () => {
-    expect(cardsJson).toHaveLength(24);
-    expect(Object.keys(CARD_PIXEL_ART)).toHaveLength(24);
+  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 30 cards in cards.json', () => {
+    expect(cardsJson).toHaveLength(30);
+    expect(Object.keys(CARD_PIXEL_ART)).toHaveLength(30);
 
     for (const card of cardsJson) {
       const sprite = CARD_PIXEL_ART[card.id];
@@ -63,9 +63,9 @@ describe('Pixel art validation (23 cards + 6 items + 4 demons)', () => {
     }
   });
 
-  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 6 pawnshop items in items.json', () => {
-    expect(itemsJson).toHaveLength(6);
-    expect(Object.keys(ITEM_PIXEL_ART)).toHaveLength(6);
+  it('defines valid 32x32 16-color (<=12 colors) pixel art for all 12 pawnshop items in items.json', () => {
+    expect(itemsJson).toHaveLength(12);
+    expect(Object.keys(ITEM_PIXEL_ART)).toHaveLength(12);
 
     for (const item of itemsJson) {
       const sprite = ITEM_PIXEL_ART[item.id];

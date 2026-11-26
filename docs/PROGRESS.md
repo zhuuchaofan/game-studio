@@ -416,3 +416,16 @@
   - `npx tsc --noEmit` 0 错误；`npm run build` 退出码 0；`npx vitest run` 17/17 文件、150/150 单测全过（含 `fontCoverage.test.ts` 零缺字）；`npm run sim:check` PASSED（B+C 定值档 69.8%、全冻结零漂移）；`npm run test:e2e` 67/67 全过；本地交付截图（`~/workspace/game-studio/night-stakes-bc-screenshots/`，33 张，涵盖桌面及 `390×844` / `844×390` / `800×500` 多视口）逐张目视核查通过（临时截图脚本已删）。
 
 
+## 2026-11-26 — P12 内容扩容轮阶段 A：数据地基（feature/p12-content-expansion）
+- **范围**：按 `proto-tasks/20-p12-content-expansion.md` §2 完成 P12 阶段 A 数据地基与场景/测试适配（未触碰 `.github/workflows/`，未修改 `pixel-font.json` 774 字形，Boss 上限 `maxCompositionHp: 36` / `absoluteMaxHp: 40` 本阶段保持不动，版本号维持 `v0.4.5-NightStakes` / `0.4.5` 不变）：
+  - **旧物与卡牌扩容（6→12 旧物、24→30 牌）**：`src/data/items.json` 与 `src/data/chapters.json`（`itemPool`）同步新增 6 件旧物（`cloth_ticket` 布票 20/`urgent`、`harmonica` 口琴 30/`sentimental`、`medicine_box` 药箱 40/`sentimental`、`ledger` 账本 50/`proud`、`tin_trunk` 铁皮箱 60/`urgent`、`gold_watch` 金表 100/`proud`）；`src/data/cards.json` 新增第 25–30 张卡（布票/口琴/药箱/账本/顶住/金表，自动进入胜利奖励池）。
+  - **条件效果扩展与校验同步**：`src/game/effects.ts`、`src/game/validate.ts`、`src/game/battle.ts` 三处同步扩展 `shield_conditional`（`has_shield`）、`draw_conditional`（`has_item_card_in_hand`）与 `damage_conditional` 可选 `condition`/`threshold`（`demon_acted` / `has_item_card_in_hand` / `enemy_hp_le`），新增 `hasItemCardInHand` 辅助函数（`CardEffect` 可选字段不改存档 v3）。
+  - **Boss 组合表扩至 12 件与扫描扩展**：`src/data/demons.json` `boss_ch1.composition.components` 增补 6 件新执念条目（R4+2/R3+2/阈值+1/R1+1/开局盾+2/R4+3，每件 `hpBonus: 1`，上限仍为 36/40）；`src/game/bossComposition.ts` 同步头注释至 `30/+1/36/40`；`src/game/montecarlo.ts` 合成 Boss 扫描扩至 `n = 0..12` 并补齐 `n = 6..9`（`[35%, 85%]`）与满配+赊账（`n=12`，`>=25%`）护栏。
+  - **原创像素画与三处 >6 场景适配**：`src/data/pixelart.ts` 补齐 6 张原创 32×32（16 色板、≤12 色）像素图（旧物与同名牌共图）并登记 `docs/ASSET_LEDGER.md`；`CalendarMapScene.ts` 改为动态总数、标签「执念」与 12 枚徽章坐标防重叠微调（`bx = 88 + cIdx * 28`、`rightTag` `x = 618`）；`CardBattleScene.ts` 新增 `>6` 碎片两行+`·等N件` 横幅分支及 4 张条件牌 aria 描述；`PawnshopScene.ts` 新增 `>6` 碎片 2 列紧凑分支（18px 行距、12px 字）。
+  - **文档、测试与同分支跟进修补**：更新 `docs/GAME_DESIGN.md` §25、`proto-tasks/20-p12-content-expansion.md` 与本文件；新增 `tests/unit/p12-phase-a.test.ts`（5 条）与 `tests/e2e/p12-content-phase-a.spec.ts`（4 条），同步更新受 12 件池影响的单测及 11 个既有 E2E spec（按新确定性 seed 顺序更新期望或换等价 seed，零删/零放宽断言）。另同分支独立提交两件小跟进：**F1** `src/game/save.ts` 新增 `isValidMorningChoice` 校验与 `saveGame` normalize 守卫（`tests/unit/save.test.ts` +1 用例）；**F2** `tests/unit/montecarlo.test.ts:193` P7 护栏单测超时 30s→60s（`:206` 仍 30s）。
+- **验证证据**：
+  - `npx tsc --noEmit` 0 错误；`npm run build` 退出码 0（`index-mozDhAXK.js` 397.04 kB、`phaser-BdPmfaKR.js` 1,194.42 kB）；
+  - `npx vitest run` 18/18 文件、157/157 单测全部通过（含 `fontCoverage.test.ts` 774 字形 0 缺字、`p12-phase-a.test.ts` 5 条、`save.test.ts` 14 条）；
+  - `npm run sim:check` PASSED（冻结项零漂移：A–D 91.3%/82.1%/55.9%/91.3%、单场 Boss 61.1%；7 天通关率 50.5% 满血 / 44.3% 生命结转；新玩家首夜 38.9%、单攻击牌 5.8%（距 [5%,25%] 下限剩 0.8pp）、240 限钱 30.9%；7 天现金流中位 46.0 / 常赢 49.0；合成 Boss n=6..9 56.9%/55.4%/54.9%/53.2%、n=12 45.3%（36 血）、满配+赊账 n=12 40 血[已到顶] 34.4%）；
+  - `npm run test:e2e` 73/73 全部通过（含新增 `p12-content-phase-a.spec.ts` 4 条），无失败请求、无 `pageerror`；
+  - 本地交付截图（`~/workspace/game-studio/p12-phase-a-screenshots/`，17 张，覆盖标题版本号、6 件新旧物当客屏、6 张新牌、8/12 件台历与 Boss 预告/横幅 `·等12件`/结局翻账本及 `390×844` / `844×390` / `800×500` 三视口）逐张目视核查通过（临时截图脚本已删）。

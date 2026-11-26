@@ -249,7 +249,7 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.goto('/?seed=7');
+  await page.goto('/?seed=3');
   await page.evaluate(
     ([saveKey, tutKey, priceKey]) => {
       localStorage.removeItem(saveKey);
@@ -280,7 +280,7 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
   await clickLogical(page, canvas, getTutorialBubbleLayout('offer_tiers').continueClickPoint);
   await expect.poll(async () => (await getPawnshopState(page)).currentStep).toBeNull();
 
-  // Buy all 3 items at High on seed=7 (erhu 75 + watch 60 + old_book 30 = 165 -> 75 yuan left from 240!)
+  // Buy all 3 items at High on seed=3 (erhu 75 + cloth_ticket 30 + stamp_album 45 = 150 -> 90 yuan left from 240!)
   await clickLogical(page, canvas, BUTTONS.tierHigh);
   await waitForPawnshopPhase(page, 'feedback');
   await clickLogical(page, canvas, getTutorialBubbleLayout('deal_card').continueClickPoint);
@@ -295,7 +295,7 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
   }
 
   const summary = await waitForPawnshopPhase(page, 'summary');
-  expect(summary.money).toBe(75);
+  expect(summary.money).toBe(90);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
 
   // Dismiss Night 1 tutorial bubbles (4/6 & 5/6) — Q4: intro banner waits until bubbles finish
@@ -318,7 +318,7 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
   expect(loseResult.tutorialCopy).toContain('头一天没打下来');
   expect(loseResult.tutorialCopy).not.toContain('过关');
 
-  // Dismiss final bubble and advance to Day 2 -> morning -> work -> recovery guarantees affordable damage item (bicycle low=40 <= 75!)
+  // Dismiss final bubble and advance to Day 2 -> morning -> work -> recovery guarantees affordable damage item (bicycle low=40 <= 90!)
   await clickLogical(page, canvas, getTutorialBubbleLayout('settlement').continueClickPoint);
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
   await waitForPawnshopPhase(page, 'morning');
@@ -326,7 +326,7 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
 
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2.day).toBe(2);
-  expect(day2.money).toBe(75);
+  expect(day2.money).toBe(90);
   expect(day2.itemsOrder).toContain('bicycle');
 
   // Advance until bicycle is on screen and verify low tier (40 yuan <= 75 yuan) is affordable!
@@ -346,8 +346,8 @@ test('P10 E2E 2: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  // seed=4 Day 1 lineup: ['watch', 'bicycle', 'ring']
-  await page.goto('/?seed=4');
+  // seed=30 Day 1 lineup: ['bicycle', 'harmonica', 'ring']
+  await page.goto('/?seed=30');
   await page.evaluate(
     ([saveKey, tutKey, priceKey]) => {
       localStorage.removeItem(saveKey);
@@ -363,7 +363,7 @@ test('P10 E2E 2: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleStart);
 
-  // Skip watch, skip bicycle, buy ring at High (90 yuan -> money 150, rep +1, deck ['守诺'])
+  // Skip bicycle, skip harmonica, buy ring at High (90 yuan -> money 150, rep +1, deck ['守诺'])
   await waitForPawnshopPhase(page, 'negotiating');
   await clickLogical(page, canvas, BUTTONS.skipCustomer);
   await waitForPawnshopPhase(page, 'negotiating');
@@ -425,8 +425,8 @@ test('P10 E2E 3: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  // seed=4 Day 1 lineup: ['watch', 'bicycle', 'ring']
-  await page.goto('/?seed=4');
+  // seed=30 Day 1 lineup: ['bicycle', 'harmonica', 'ring']
+  await page.goto('/?seed=30');
   await page.evaluate(
     ([saveKey, tutKey, priceKey]) => {
       localStorage.removeItem(saveKey);
@@ -442,7 +442,7 @@ test('P10 E2E 3: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleStart);
 
-  // Skip watch & bicycle, buy ring at High (90 -> money 150, rep +1, deck ['守诺'])
+  // Skip bicycle & harmonica, buy ring at High (90 -> money 150, rep +1, deck ['守诺'])
   await waitForPawnshopPhase(page, 'negotiating');
   await clickLogical(page, canvas, BUTTONS.skipCustomer);
   await waitForPawnshopPhase(page, 'negotiating');
@@ -481,8 +481,8 @@ test('P10 E2E 4: Demon opening banner & details explicitly link to daytime custo
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  // seed=4 Day 1 lineup starts with watch (旧手表); pawning it links Night 1 Demon A (药费) to the father
-  await page.goto('/?seed=4&deck=test');
+  // seed=29 Day 1 lineup starts with watch (旧手表); pawning it links Night 1 Demon A (药费) to the father
+  await page.goto('/?seed=29&deck=test');
   await page.evaluate(
     ([saveKey, tutKey]) => {
       localStorage.removeItem(saveKey);

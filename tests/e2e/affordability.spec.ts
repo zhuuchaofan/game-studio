@@ -98,7 +98,7 @@ test('unaffordable tiers are disabled: clicking them is a no-op and never consum
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.goto('/?seed=7&deck=test');
+  await page.goto('/?seed=75&deck=test');
 
   // Seed a Day 1 save with only 25 money, then reload and Continue into it.
   await page.evaluate((key) => {
@@ -126,7 +126,7 @@ test('unaffordable tiers are disabled: clicking them is a no-op and never consum
   const start = await waitForPawnshopPhase(page, 'negotiating');
   expect(start.money).toBe(25);
   expect(start.customerIndex).toBe(0);
-  expect(start.itemsOrder).toEqual(['erhu', 'watch', 'old_book']);
+  expect(start.itemsOrder).toEqual(['erhu', 'ledger', 'old_book']);
 
   // Customer 1: Erhu (trueValue 50) -> low 25 / fair 50 / high 75.
   // 25 money buys exactly the low tier (price == money) and nothing else.
@@ -155,7 +155,7 @@ test('unaffordable tiers are disabled: clicking them is a no-op and never consum
 
   // Click the affordable Low tier: normal offer flow.
   // The two disabled clicks must NOT have consumed RNG: the Low offer is the
-  // first roll of seed=7 (0.0117 < 0.3) -> ACCEPT, money 25 - 25 = 0.
+  // first roll of seed=75 (~0.2425 < 0.3) -> ACCEPT, money 25 - 25 = 0.
   await clickLogical(page, canvas, BUTTONS.tierLow);
   const afterLow = await waitForPawnshopPhase(page, 'feedback');
   expect(afterLow.money).toBe(0);
@@ -163,7 +163,7 @@ test('unaffordable tiers are disabled: clicking them is a no-op and never consum
   expect(afterLow.reputation).toBe(-1);
   expect(afterLow.deck).toEqual(['余音']);
 
-  // Advance to Customer 2 (Watch) with 0 money: every tier is unaffordable.
+  // Advance to Customer 2 (Ledger, low 25) with 0 money: every tier is unaffordable.
   await clickLogical(page, canvas, BUTTONS.nextOrSummary);
   const customer2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(customer2.customerIndex).toBe(1);
@@ -188,9 +188,9 @@ test('A3: money 50 with high price 60 disables high tier, shows "钱不够" toas
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.goto('/?seed=4');
+  await page.goto('/?seed=24');
 
-  // Seed Day 1 save with 50 money; seed=4 Day 1 customer 1 is watch (trueValue 40 -> low 20 / fair 40 / high 60)
+  // Seed Day 1 save with 50 money; seed=24 Day 1 customer 1 is watch (trueValue 40 -> low 20 / fair 40 / high 60)
   await page.evaluate((key) => {
     const save50: SaveSnapshot = {
       version: 1,

@@ -36,6 +36,8 @@ const VALID_EFFECT_TYPES: ReadonlySet<CardEffectType> = new Set<CardEffectType>(
   'reflect',
   'reveal',
   'damage_conditional',
+  'shield_conditional',
+  'draw_conditional',
   'discard_for_renqing',
 ]);
 
@@ -47,7 +49,22 @@ const VALUE_REQUIRED_EFFECTS: ReadonlySet<CardEffectType> = new Set<CardEffectTy
   'renqing',
   'renqing_next',
   'damage_conditional',
+  'shield_conditional',
+  'draw_conditional',
   'discard_for_renqing',
+]);
+
+const BONUS_REQUIRED_EFFECTS: ReadonlySet<CardEffectType> = new Set<CardEffectType>([
+  'damage_conditional',
+  'shield_conditional',
+  'draw_conditional',
+]);
+
+const VALID_CONDITIONS: ReadonlySet<string> = new Set([
+  'demon_acted',
+  'has_item_card_in_hand',
+  'enemy_hp_le',
+  'has_shield',
 ]);
 
 const VALID_TEMPERAMENTS: ReadonlySet<CustomerTemperament> = new Set<CustomerTemperament>([
@@ -116,10 +133,20 @@ export function validateCards(cards: readonly CardDef[]): DataValidationResult {
         } else if (effect.value !== undefined && !isNonNegativeFinite(effect.value)) {
           errors.push(`${effLabel}: value must be non-negative, got ${String(effect.value)}`);
         }
-        if (effect.type === 'damage_conditional' && !isNonNegativeFinite(effect.bonus)) {
-          errors.push(`${effLabel}: effect "damage_conditional" requires non-negative bonus, got ${String(effect.bonus)}`);
+        if (BONUS_REQUIRED_EFFECTS.has(effect.type) && !isNonNegativeFinite(effect.bonus)) {
+          errors.push(`${effLabel}: effect "${effect.type}" requires non-negative bonus, got ${String(effect.bonus)}`);
         } else if (effect.bonus !== undefined && !isNonNegativeFinite(effect.bonus)) {
           errors.push(`${effLabel}: bonus must be non-negative, got ${String(effect.bonus)}`);
+        }
+        if (effect.condition !== undefined && !VALID_CONDITIONS.has(effect.condition)) {
+          errors.push(`${effLabel}: unknown condition "${String(effect.condition)}"`);
+        }
+        if (effect.condition === 'enemy_hp_le') {
+          if (!isNonNegativeFinite(effect.threshold)) {
+            errors.push(`${effLabel}: condition "enemy_hp_le" requires non-negative threshold, got ${String(effect.threshold)}`);
+          }
+        } else if (effect.threshold !== undefined) {
+          errors.push(`${effLabel}: threshold is only allowed with condition "enemy_hp_le"`);
         }
       });
     }

@@ -427,8 +427,8 @@ describe('Renqing scaling, demon rotation & day customer shuffle', () => {
     expect(demonIdForDay(8)).toBe('d');
   });
 
-  it('shuffleItems is deterministic for a fixed seed + day, preserves all 6 items, and slices to 3 daily customers', () => {
-    expect(ITEMS).toHaveLength(6);
+  it('shuffleItems is deterministic for a fixed seed + day, preserves all 12 items, and slices to 3 daily customers', () => {
+    expect(ITEMS).toHaveLength(12);
     expect(DAILY_CUSTOMER_COUNT).toBe(3);
 
     const order1 = shuffleItems(ITEMS, mulberry32(deriveDaySeed(7, 1)));
@@ -499,4 +499,5 @@ describe('Renqing scaling, demon rotation & day customer shuffle', () => {
     expect(bad.save).toBeNull();
     expect(bad.quarantinedCorrupt).toBe(true);
   });
+
 });

@@ -407,9 +407,9 @@ describe('Battle state machine & BattleEvent stream', () => {
     expect(afterAttempt.events).toEqual([]);
     expect(afterAttempt.state.hand).toEqual(debtState.hand);
 
-    // 3. resolveWinReward NEVER returns 欠条 even when all 23 playable cards are owned
+    // 3. resolveWinReward NEVER returns 欠条 even when all 29 playable cards are owned
     const allPlayableNames = CARDS.filter((c) => !c.unplayable).map((c) => c.name);
-    expect(allPlayableNames).toHaveLength(23);
+    expect(allPlayableNames).toHaveLength(29);
     const bonusReward = resolveWinReward(allPlayableNames, CARDS, BALANCE, mulberry32(1));
     expect(bonusReward).toEqual({
       money: BALANCE.winRewardMoney * 2,

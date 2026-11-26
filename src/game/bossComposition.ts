@@ -11,11 +11,11 @@ import { ITEMS, type PawnItem } from './pawnshop';
 export interface ComposedBossResult {
   /** Ready-to-fight DemonDef with composed HP, R1 shield, round damage deltas, and charge threshold. */
   bossDef: DemonDef;
-  /** Deduplicated active components present in the player's deck (0..6). */
+  /** Deduplicated active components present in the player's deck (0..12). */
   activeComponents: BossComponentDef[];
   /** Full configured component table in canonical order. */
   allComponents: BossComponentDef[];
-  /** Deduplicated component count (0..6). */
+  /** Deduplicated component count (0..12). */
   componentCount: number;
   /** True when 0 pawnshop item cards are in deck (素体 fallback). */
   isBare: boolean;
@@ -26,7 +26,7 @@ export interface ComposedBossResult {
   finalHp: number;
   maxCompositionHp: number;
   absoluteMaxHp: number;
-  /** True when rawTotalHp > absoluteMaxHp (e.g. 6 components 44 + credit_stock 6 = 50 -> capped at 48). */
+  /** True when rawTotalHp > absoluteMaxHp (e.g. 6 components 36 + credit_stock 6 = 42 -> capped at 40). */
   hpCapped: boolean;
   r1Shield: number;
   chargeThreshold: number;
@@ -88,10 +88,10 @@ export function getBossCompositionConfig(
 /**
  * Pure Boss composition function (P11 Sub-item 1):
  * Computes the Night 7 Boss definition from the player's current deck + pact state.
- * - Counts deduplicated pawnshop item cards (0..6); duplicate copies of the same item count once.
+ * - Counts deduplicated pawnshop item cards (0..12); duplicate copies of the same item count once.
  * - Non-item victory reward cards do not count.
- * - Base HP 32, +2 per component (composition cap 44), +6 for credit_stock pact,
- *   absolute cap 48 (with hpCapped=true so pre-battle preview explicitly states "已到顶").
+ * - Base HP 30, +1 per component (composition cap 36), +6 for credit_stock pact,
+ *   absolute cap 40 (with hpCapped=true so pre-battle preview explicitly states "已到顶").
  * - 0 components falls back cleanly to bare Boss (素体) with introLine "柜子空了，债主只身前来".
  * - Does not alter R2 charge/interrupt rules; only adds JSON-driven deltas.
  */

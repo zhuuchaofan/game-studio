@@ -395,6 +395,11 @@ export class CardBattleScene extends Phaser.Scene {
       const lineB = [frags[1], frags[4], frags[5]].join('·'); // 戒·琴·邮 (18字)
       return [lineA, lineB, composed.introSummary];
     }
+    if (frags.length > 6) {
+      const row1 = frags.slice(0, 3).join('·');
+      const row2 = `${frags.slice(3, 5).join('·')}·等${frags.length}件`;
+      return [row1, row2, composed.introSummary];
+    }
     const splitAt = Math.ceil(frags.length / 2);
     const row1 = frags.slice(0, splitAt).join('·');
     const row2 = frags.slice(splitAt).join('·');
@@ -899,6 +904,18 @@ export class CardBattleScene extends Phaser.Scene {
     }
     if (card.id === 'tin_frog') {
       return `${card.name}(${card.cost}费):造成3伤，敌行动后改6伤`;
+    }
+    if (card.id === 'harmonica') {
+      return `${card.name}(${card.cost}费):伤害2，手中有旧物牌时4`;
+    }
+    if (card.id === 'ledger') {
+      return `${card.name}(${card.cost}费):抽1张牌，有旧物牌再抽1`;
+    }
+    if (card.id === 'tin_trunk') {
+      return `${card.name}(${card.cost}费):得4盾，已有护盾再得3盾`;
+    }
+    if (card.id === 'gold_watch') {
+      return `${card.name}(${card.cost}费):伤害5，敌方生命10以下时9`;
     }
     return `${card.name}(${card.cost}费):${formatEffectDescription(card)}`;
   }

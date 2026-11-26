@@ -1,3 +1,4 @@
+import itemsJson from '../data/items.json';
 import type { RngFn } from '../utils/rng';
 import type { HookRegistry } from './hooks';
 
@@ -13,12 +14,32 @@ export type CardEffectType =
   | 'reflect'
   | 'reveal'
   | 'damage_conditional'
+  | 'shield_conditional'
+  | 'draw_conditional'
   | 'discard_for_renqing';
 
 export interface CardEffect {
   type: CardEffectType;
   value?: number;
   bonus?: number;
+  condition?: CardEffectCondition;
+  threshold?: number;
+}
+
+export type CardEffectCondition =
+  | 'demon_acted'
+  | 'has_item_card_in_hand'
+  | 'enemy_hp_le'
+  | 'has_shield';
+
+const ITEM_CARD_NAMES: ReadonlySet<string> = new Set(itemsJson.map((item) => item.cardName));
+
+/**
+ * True when the hand holds an item (旧物) card. The card being played has already left the
+ * hand when its effects resolve, so this naturally means "another" item card.
+ */
+export function hasItemCardInHand(hand: readonly string[]): boolean {
+  return hand.some((name) => ITEM_CARD_NAMES.has(name));
 }
 
 export interface CardDef {
@@ -446,9 +467,39 @@ export function applyEffectWithEvents(
     case 'damage_conditional': {
       const base = effect.value ?? 0;
       const bonus = effect.bonus ?? 0;
-      const amount = next.demonHasActed ? base + bonus : base;
+      let met: boolean;
+      switch (effect.condition) {
+        case 'has_item_card_in_hand':
+          met = hasItemCardInHand(next.hand);
+          break;
+        case 'enemy_hp_le':
+          met = next.demonHp <= (effect.threshold ?? 0);
+          break;
+        default:
+          met = next.demonHasActed;
+      }
+      const amount = met ? base + bonus : base;
       applyDamageToDemon(next, amount, sourceName, events);
       return { state: next, events };
+    }
+
+    case 'shield_conditional': {
+      const met = effect.condition === 'has_shield' && next.shield > 0;
+      const amount = (effect.value ?? 0) + (met ? (effect.bonus ?? 0) : 0);
+      next.shield += amount;
+      events.push({
+        type: 'SHIELD_GAINED',
+        amount,
+        shieldAfter: next.shield,
+        source: sourceName,
+      });
+      return { state: next, events };
+    }
+
+    case 'draw_conditional': {
+      const met = effect.condition === 'has_item_card_in_hand' && hasItemCardInHand(next.hand);
+      const count = (effect.value ?? 0) + (met ? (effect.bonus ?? 0) : 0);
+      return drawCardsWithEvents(next, count, ctx);
     }
 
     case 'shield': {

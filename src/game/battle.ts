@@ -756,6 +756,10 @@ export function formatEffectShort(card: CardDef): string {
         return `伤${e.value ?? 0}`;
       case 'damage_conditional':
         return `伤${e.value ?? 0}/${(e.value ?? 0) + (e.bonus ?? 0)}`;
+      case 'shield_conditional':
+        return `盾${e.value ?? 0}/${(e.value ?? 0) + (e.bonus ?? 0)}`;
+      case 'draw_conditional':
+        return `抽${e.value ?? 0}/${(e.value ?? 0) + (e.bonus ?? 0)}`;
       case 'shield':
         return `盾${e.value ?? 0}`;
       case 'draw':
@@ -792,8 +796,20 @@ export function formatEffectDescription(card: CardDef): string {
     switch (e.type) {
       case 'damage':
         return `造成${e.value ?? 0}点伤害`;
-      case 'damage_conditional':
-        return `造成${e.value ?? 0}点伤害，心魔行动过后改为${(e.value ?? 0) + (e.bonus ?? 0)}点`;
+      case 'damage_conditional': {
+        const high = (e.value ?? 0) + (e.bonus ?? 0);
+        if (e.condition === 'has_item_card_in_hand') {
+          return `造成${e.value ?? 0}点伤害，手中有旧物牌时改为${high}点`;
+        }
+        if (e.condition === 'enemy_hp_le') {
+          return `造成${e.value ?? 0}点伤害，敌方生命${e.threshold ?? 0}以下时改为${high}点`;
+        }
+        return `造成${e.value ?? 0}点伤害，心魔行动过后改为${high}点`;
+      }
+      case 'shield_conditional':
+        return `获得${e.value ?? 0}点护盾，已有护盾时再获得${e.bonus ?? 0}点护盾`;
+      case 'draw_conditional':
+        return `抽${e.value ?? 0}张牌，手中有旧物牌时再抽${e.bonus ?? 0}张`;
       case 'shield':
         return `获得${e.value ?? 0}点护盾`;
       case 'draw':

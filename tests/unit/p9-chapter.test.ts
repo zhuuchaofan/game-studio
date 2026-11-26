@@ -308,7 +308,7 @@ describe('P9 Day 4 Pact 3 options, free trim & Day 6 Side Quest', () => {
     expect(trimmed).toEqual(['倒转', '飞驰']);
 
     const ownedDeck = ['倒转', '守诺', '旧书', '飞驰', '余音']; // missing only 集邮 (stamp_album)
-    const picked = pickSideQuestItem(ownedDeck, ITEMS, mulberry32(42));
+    const picked = pickSideQuestItem(ownedDeck, ITEMS.slice(0, 6), mulberry32(42));
     expect(picked?.id).toBe('stamp_album');
     expect(picked?.cardName).toBe('集邮');
 

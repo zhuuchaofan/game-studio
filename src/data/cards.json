@@ -233,5 +233,59 @@
     "effects": [],
     "story": "输夜留下的债，占一张手牌，打不出去",
     "color": "#B03A2E"
+  },
+  {
+    "id": "cloth_ticket",
+    "name": "布票",
+    "item": "布票",
+    "cost": 1,
+    "effects": [{ "type": "draw", "value": 1 }, { "type": "shield", "value": 2 }],
+    "story": "攒了一年的布票，想给孩子做件新衣",
+    "color": "#F2E3C6"
+  },
+  {
+    "id": "harmonica",
+    "name": "口琴",
+    "item": "口琴",
+    "cost": 1,
+    "effects": [{ "type": "damage_conditional", "value": 2, "bonus": 2, "condition": "has_item_card_in_hand" }],
+    "story": "工人的口琴，攒了三个月钱买的",
+    "color": "#8FA8C8"
+  },
+  {
+    "id": "medicine_box",
+    "name": "药箱",
+    "item": "药箱",
+    "cost": 1,
+    "effects": [{ "type": "heal", "value": 4 }],
+    "story": "救人的老头，背了二十年的药箱",
+    "color": "#2E4A73"
+  },
+  {
+    "id": "ledger",
+    "name": "账本",
+    "item": "账本",
+    "cost": 1,
+    "effects": [{ "type": "draw_conditional", "value": 1, "bonus": 1, "condition": "has_item_card_in_hand" }],
+    "story": "当铺对门的账本，记了十年的赊账",
+    "color": "#D9A066"
+  },
+  {
+    "id": "tin_trunk",
+    "name": "顶住",
+    "item": "铁皮箱",
+    "cost": 1,
+    "effects": [{ "type": "shield_conditional", "value": 4, "bonus": 3, "condition": "has_shield" }],
+    "story": "出门打工的人，家当都在这只铁皮箱里",
+    "color": "#B03A2E"
+  },
+  {
+    "id": "gold_watch",
+    "name": "金表",
+    "item": "金表",
+    "cost": 2,
+    "effects": [{ "type": "damage_conditional", "value": 5, "bonus": 4, "condition": "enemy_hp_le", "threshold": 10 }],
+    "story": "当了金表的人，说是家里传下来的",
+    "color": "#C9973F"
   }
 ]

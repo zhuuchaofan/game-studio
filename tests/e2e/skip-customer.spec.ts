@@ -119,7 +119,7 @@ test('seed=4 Day 1 deadlock: when all 3 tiers are unaffordable on Ring, skip but
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.goto('/?seed=4');
+  await page.goto('/?seed=1752');
   // 新局开局钱已升到 240（任务书 18），死角需要 200 的紧手状态，故预置 Day 1 存档
   await page.evaluate((key) => {
     const day1Save: SaveSnapshot = {
@@ -141,7 +141,7 @@ test('seed=4 Day 1 deadlock: when all 3 tiers are unaffordable on Ring, skip but
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
 
-  // Day 1 with seed=4: watch (60 high) -> bicycle (120 high) -> ring (30/60/90)
+  // Day 1 with seed=1752: watch (60 high) -> bicycle (120 high) -> ring (30/60/90)
   const c1 = await waitForPawnshopPhase(page, 'negotiating');
   expect(c1.day).toBe(1);
   expect(c1.money).toBe(200);
@@ -230,7 +230,7 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.goto('/?seed=4');
+  await page.goto('/?seed=599');
   // Pre-seed Day 4 save with 35 money (exact post-Day-3-high-route balance from §11.3)
   await page.evaluate((key) => {
     const day4LowMoneySave: SaveSnapshot = {
@@ -262,14 +262,14 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
 
-  // Day 4 with seed=4 + P11 D2 (unowned bicycle & stamp_album prioritized, then watch):
-  // bicycle (40/80/120), stamp_album (15/30/45), watch (20/40/60)
+  // Day 4 with seed=599 + P11 D2 (unowned bicycle, stamp_album, medicine_box):
+  // bicycle (40/80/120), stamp_album (15/30/45), medicine_box (20/40/60)
   const c1 = await waitForPawnshopPhase(page, 'negotiating');
   expect(c1.day).toBe(4);
   expect(c1.customerIndex).toBe(0);
   expect(c1.money).toBe(35);
   expect(c1.reputation).toBe(5);
-  expect(c1.itemsOrder).toEqual(['bicycle', 'stamp_album', 'watch']);
+  expect(c1.itemsOrder).toEqual(['bicycle', 'stamp_album', 'medicine_box']);
   // Bicycle low 40 > 35 -> all 3 tiers unaffordable!
   expect(c1.tierAffordability).toEqual({ low: false, fair: false, high: false });
   expect(c1.canSkip).toBe(true);
@@ -287,7 +287,7 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   expect(c2.tierAffordability).toEqual({ low: true, fair: true, high: false });
   expect(c2.canSkip).toBe(true);
 
-  // Skip Customer 2 (Stamp Album) -> advances to Customer 3 (Watch)
+  // Skip Customer 2 (Stamp Album) -> advances to Customer 3 (Medicine Box)
   await clickLogical(page, canvas, BUTTONS.skipCustomer);
   await expect
     .poll(async () => (await getPawnshopState(page)).customerIndex)
@@ -300,14 +300,14 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
   expect(c3.tierAffordability).toEqual({ low: true, fair: false, high: false });
   expect(c3.canSkip).toBe(true);
 
-  // Skip Customer 3 (Watch) -> summary
+  // Skip Customer 3 (Medicine Box) -> summary
   await clickLogical(page, canvas, BUTTONS.skipCustomer);
   const summary = await waitForPawnshopPhase(page, 'summary');
   expect(summary.customerIndex).toBe(3);
   expect(summary.money).toBe(35);
   expect(summary.reputation).toBe(5);
   expect(summary.deck).toEqual(['倒转', '守诺', '旧书', '余音', '守诺']);
-  expect(summary.log.slice(-3)).toEqual(['永久自行车:跳过', '邮票册:跳过', '旧手表:跳过']);
+  expect(summary.log.slice(-3)).toEqual(['永久自行车:跳过', '邮票册:跳过', '药箱:跳过']);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
