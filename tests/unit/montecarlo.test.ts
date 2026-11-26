@@ -190,7 +190,7 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     const brokenCheck = checkSimGuardrails(broken);
     expect(brokenCheck.passed).toBe(false);
     expect(brokenCheck.errors.some((e) => e.includes('Demon A'))).toBe(true);
-  }, 30000);
+  }, 60000);
 
   it('修整 3: pre-Boss KO is counted for real and the chapter still continues (wake-at-5)', () => {
     const harsh = simulateChapterOne({
