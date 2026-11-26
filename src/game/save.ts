@@ -265,6 +265,25 @@ function isValidChapterSaveState(raw: unknown): raw is ChapterSaveState {
   return true;
 }
 
+function isValidMorningChoice(raw: unknown): raw is { day: number; customerCount: number } {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return false;
+  }
+  const mc = raw as Record<string, unknown>;
+  if (
+    typeof mc.day !== 'number' ||
+    !Number.isInteger(mc.day) ||
+    mc.day < 1 ||
+    mc.day > CHAPTER_DAYS
+  ) {
+    return false;
+  }
+  if (mc.customerCount !== 2 && mc.customerCount !== 3) {
+    return false;
+  }
+  return true;
+}
+
 function isValidSaveData(raw: unknown): raw is SaveData {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     return false;
@@ -303,6 +322,9 @@ function isValidSaveData(raw: unknown): raw is SaveData {
       obj.currentHp < 0 ||
       obj.currentHp > MAX_PLAYER_HP)
   ) {
+    return false;
+  }
+  if (obj.morningChoice !== undefined && !isValidMorningChoice(obj.morningChoice)) {
     return false;
   }
   if (!isValidChapterSaveState(obj.chapter)) {
@@ -457,7 +479,10 @@ export function loadSaveDetailed(storage?: StorageLike | null): SaveLoadResult {
       loaded.currentHp = valid.currentHp;
     }
     if (valid.morningChoice) {
-      loaded.morningChoice = { ...valid.morningChoice };
+      loaded.morningChoice = {
+        day: valid.morningChoice.day,
+        customerCount: valid.morningChoice.customerCount,
+      };
     }
     return {
       save: loaded,
@@ -503,8 +528,11 @@ export function saveGame(data: SaveData, storage?: StorageLike | null): void {
     if (typeof data.currentHp === 'number') {
       normalized.currentHp = data.currentHp;
     }
-    if (data.morningChoice) {
-      normalized.morningChoice = { ...data.morningChoice };
+    if (isValidMorningChoice(data.morningChoice)) {
+      normalized.morningChoice = {
+        day: data.morningChoice.day,
+        customerCount: data.morningChoice.customerCount,
+      };
     }
     store.setItem(SAVE_STORAGE_KEY, JSON.stringify(normalized));
   } catch {

@@ -290,7 +290,7 @@ describe('skipCustomer & hasAnyAffordableTier', () => {
 
   it('skipCustomer on the last customer transitions directly to summary with state preserved', () => {
     // Reproduce seed=4 Day 1: watch (high 60) + bicycle (high 120) -> 20 money left on ring (low 30)
-    const day1Items = shuffleItems(ITEMS, mulberry32(deriveDaySeed(4, 1))).slice(0, 3);
+    const day1Items = shuffleItems(ITEMS.slice(0, 6), mulberry32(deriveDaySeed(4, 1))).slice(0, 3);
     expect(day1Items.map((it) => it.id)).toEqual(['watch', 'bicycle', 'ring']);
 
     let state = createInitialState({ day: 1, items: day1Items, money: 200 }); // 紧手状态：原开局 200
@@ -611,9 +611,9 @@ describe('P7: Customer temperaments, 1987 offer dialogue & economic invariants',
   });
 });
 
-describe('P8 feedback story wrapping (all 6 items)', () => {
+describe('P8 feedback story wrapping (all 12 items)', () => {
   it('wraps every item feedback story within <=2 lines and panel right margin without altering copy', () => {
-    expect(ITEMS).toHaveLength(6);
+    expect(ITEMS).toHaveLength(12);
     const panelRight = 310;
     const textStartX = 60;
     const maxChars = 20;

@@ -210,7 +210,7 @@ test('Title volume toggle persists mute state, tracks switch day->night, and act
     }
   });
 
-  await page.goto('/?seed=2&deck=test');
+  await page.goto('/?seed=3&deck=test');
   await page.evaluate(
     ([saveKey, tutKey, audioKey]) => {
       localStorage.removeItem(saveKey);

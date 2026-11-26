@@ -175,11 +175,11 @@ test('P8 Fix 2: all 6 item deal feedback stories wrap inside settlement panel an
   const seenItems = new Set<string>();
   const canvas = page.locator('#game-container canvas');
 
-  // seed=2 covers [old_book, erhu, stamp_album]; seed=4 covers [watch, bicycle, ring]
+  // seed=9 covers [ring, stamp_album, bicycle]; seed=29 covers [watch, old_book, erhu]; seed=7 starts with stamp_album
   const runs: readonly { seed: number; enableTutorial: boolean }[] = [
-    { seed: 2, enableTutorial: false },
-    { seed: 4, enableTutorial: false },
-    { seed: 10, enableTutorial: true }, // stamp_album first with 3/6 tutorial bubble active
+    { seed: 9, enableTutorial: false },
+    { seed: 29, enableTutorial: false },
+    { seed: 7, enableTutorial: true }, // stamp_album first with 3/6 tutorial bubble active
   ];
 
   for (const run of runs) {

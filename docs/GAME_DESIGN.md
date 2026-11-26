@@ -582,3 +582,38 @@
 - **字库与版本号**：新增文案全数避开 §0 禁用字并使用 `pixel-font.json`（774 字形）内字符，`fontCoverage.test.ts` 零缺字；`GAME_VERSION` 与 `package.json` 同步升为 `v0.4.5-NightStakes` / `0.4.5`。
 
 
+
+## §25 P12 内容扩容轮增补（阶段 A：数据地基，2026-11-26）
+
+> 本节只记阶段 A（旧物 6→12、牌 24→30、Boss 组合表 12 件、效果类型扩展）；阶段 B–E 的内容由后续阶段补写。版本号不变，仍为 `v0.4.5-NightStakes`。
+
+- **新旧物 6 件（`items.json`，同时进入 `chapters.json` 第 1 章 `itemPool`）**：
+
+| id | 名称 | 真值 | 性情 | 牌名 | 牌费 | 故事 |
+|---|---|---|---|---|---|---|
+| `cloth_ticket` | 布票 | 20 | urgent | 布票 | 1 | 攒了一年的布票，想给孩子做件新衣 |
+| `harmonica` | 口琴 | 30 | sentimental | 口琴 | 1 | 工人的口琴，攒了三个月钱买的 |
+| `medicine_box` | 药箱 | 40 | sentimental | 药箱 | 1 | 救人的老头，背了二十年的药箱 |
+| `ledger` | 账本 | 50 | proud | 账本 | 1 | 当铺对门的账本，记了十年的赊账 |
+| `tin_trunk` | 铁皮箱 | 60 | urgent | 顶住 | 1 | 出门打工的人，家当都在这只铁皮箱里 |
+| `gold_watch` | 金表 | 100 | proud | 金表 | 2 | 当了金表的人，说是家里传下来的 |
+
+- **新牌 6 张（`cards.json` 第 25–30 张，卡 id 与旧物 id 相同；自动进胜利奖励池）**：
+
+| 牌 | 费 | 效果 | 牌面短行 | 牌面文案 |
+|---|---|---|---|---|
+| 布票 | 1 | `draw 1` + `shield 2` | 抽1盾2 | 抽 1 张牌，得 2 盾 |
+| 口琴 | 1 | `damage_conditional 2 / +2`（手中有旧物牌） | 伤2/4 | 伤害 2，手中有旧物牌时 4 |
+| 药箱 | 1 | `heal 4`（封顶 30） | 回4 | 恢复 4 点生命 |
+| 账本 | 1 | `draw_conditional 1 / +1`（手中有旧物牌） | 抽1/2 | 抽 1 张牌，手中有旧物牌时再抽 1 张 |
+| 顶住 | 1 | `shield_conditional 4 / +3`（已有护盾） | 盾4/7 | 得 4 盾，已有护盾时再得 3 盾 |
+| 金表 | 2 | `damage_conditional 5 / +4`（敌方生命 10 以下） | 伤5/9 | 伤害 5，敌方生命 10 以下时 9 |
+
+- **效果类型扩展（`effects.ts` / `validate.ts` / `battle.ts` 三处同步）**：
+  - `CardEffect` 新增可选 `condition`（`demon_acted` | `has_item_card_in_hand` | `enemy_hp_le` | `has_shield`）与 `threshold`（仅 `enemy_hp_le`）；`CardEffectType` 新增 `shield_conditional`、`draw_conditional`。存档版本不动。
+  - `damage_conditional` 按 `condition` 分支，缺省 `demon_acted`（铁皮青蛙口径不变）；`has_item_card_in_hand` 判定手牌中是否有**另一张**旧物牌（打出的本张牌结算时已离手），旧物牌认定沿用 `items.json` 的 `cardName` 集合，辅助函数 `hasItemCardInHand`（`effects.ts`）供后续阶段复用。
+  - `validate.ts`：三种条件类型 `bonus` 必填；`condition` 白名单；`threshold` 仅 `enemy_hp_le` 必填且非负，其他条件不得带。
+  - `formatEffectShort` / `formatEffectDescription` 新类型逐一加分支，`damage_conditional` 描述按 `condition` 分支。
+- **Boss 组合表 12 件（`demons.json` `boss_ch1.composition.components`）**：原 6 件不变；新增 布票的执念（R4 伤害 +2）、口琴的执念（R3 伤害 +2）、药箱的执念（封门阈值 +1）、账本的执念（R1 伤害 +1）、铁箱的执念（开局盾 +2）、金表的执念（R4 伤害 +3），每件 `hpBonus` 1。`baseHp 30 / maxCompositionHp 36 / absoluteMaxHp 40` 不动（上限抬升属后续阶段的 sim 门控决策）。
+- **像素画**：6 张原创 32×32 图（布票/口琴/药箱/账本/铁皮箱·顶住/金表），旧物与同名牌共用同一张（沿用既有旧物与牌共图的先例）；登记于 `docs/ASSET_LEDGER.md`。
+- **sim**：合成 Boss 扫描扩到 n=0..12；新增护栏：n=6..9 守 [35%, 85%]、满配+赊账（n=12）≥ 25%；n=10..12 只出数字；单调性与赎当削弱路径覆盖全部 12 档。

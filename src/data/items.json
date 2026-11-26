@@ -58,5 +58,65 @@
     "cardCost": 1,
     "color": "#4E739E",
     "temperament": "proud"
+  },
+  {
+    "id": "cloth_ticket",
+    "name": "布票",
+    "trueValue": 20,
+    "story": "攒了一年的布票，想给孩子做件新衣",
+    "cardName": "布票",
+    "cardCost": 1,
+    "color": "#F2E3C6",
+    "temperament": "urgent"
+  },
+  {
+    "id": "harmonica",
+    "name": "口琴",
+    "trueValue": 30,
+    "story": "工人的口琴，攒了三个月钱买的",
+    "cardName": "口琴",
+    "cardCost": 1,
+    "color": "#8FA8C8",
+    "temperament": "sentimental"
+  },
+  {
+    "id": "medicine_box",
+    "name": "药箱",
+    "trueValue": 40,
+    "story": "救人的老头，背了二十年的药箱",
+    "cardName": "药箱",
+    "cardCost": 1,
+    "color": "#2E4A73",
+    "temperament": "sentimental"
+  },
+  {
+    "id": "ledger",
+    "name": "账本",
+    "trueValue": 50,
+    "story": "当铺对门的账本，记了十年的赊账",
+    "cardName": "账本",
+    "cardCost": 1,
+    "color": "#D9A066",
+    "temperament": "proud"
+  },
+  {
+    "id": "tin_trunk",
+    "name": "铁皮箱",
+    "trueValue": 60,
+    "story": "出门打工的人，家当都在这只铁皮箱里",
+    "cardName": "顶住",
+    "cardCost": 1,
+    "color": "#B03A2E",
+    "temperament": "urgent"
+  },
+  {
+    "id": "gold_watch",
+    "name": "金表",
+    "trueValue": 100,
+    "story": "当了金表的人，说是家里传下来的",
+    "cardName": "金表",
+    "cardCost": 2,
+    "color": "#C9973F",
+    "temperament": "proud"
   }
 ]

@@ -427,8 +427,8 @@ describe('Renqing scaling, demon rotation & day customer shuffle', () => {
     expect(demonIdForDay(8)).toBe('d');
   });
 
-  it('shuffleItems is deterministic for a fixed seed + day, preserves all 6 items, and slices to 3 daily customers', () => {
-    expect(ITEMS).toHaveLength(6);
+  it('shuffleItems is deterministic for a fixed seed + day, preserves all 12 items, and slices to 3 daily customers', () => {
+    expect(ITEMS).toHaveLength(12);
     expect(DAILY_CUSTOMER_COUNT).toBe(3);
 
     const order1 = shuffleItems(ITEMS, mulberry32(deriveDaySeed(7, 1)));
@@ -498,5 +498,75 @@ describe('Renqing scaling, demon rotation & day customer shuffle', () => {
     const bad = loadSaveDetailed(storage);
     expect(bad.save).toBeNull();
     expect(bad.quarantinedCorrupt).toBe(true);
+  });
+
+  it('F1: validates morningChoice shape in isValidSaveData and guards saveGame normalize path', () => {
+    const storage = createMemoryStorage();
+    const base = createNewGame();
+
+    // Valid morningChoice values round-trip cleanly
+    for (const validChoice of [
+      { day: 1, customerCount: 2 },
+      { day: 2, customerCount: 2 },
+      { day: 7, customerCount: 3 },
+    ]) {
+      const save: SaveData = { ...base, day: validChoice.day, morningChoice: validChoice };
+      saveGame(save, storage);
+      const loaded = loadSaveDetailed(storage);
+      expect(loaded.quarantinedCorrupt).toBe(false);
+      expect(loaded.save?.morningChoice).toEqual(validChoice);
+    }
+
+    // Invalid morningChoice values quarantine as corrupt via loadSaveDetailed
+    const invalidPayloads: unknown[] = [
+      { day: 2, customerCount: 1 },
+      { day: 2, customerCount: 4 },
+      { day: 2, customerCount: 99 },
+      { day: 2, customerCount: '3' },
+      { day: 0, customerCount: 2 },
+      { day: 8, customerCount: 3 },
+      { day: 1.5, customerCount: 2 },
+      [],
+      null,
+      'invalid',
+    ];
+    for (const badChoice of invalidPayloads) {
+      storage.setItem(SAVE_STORAGE_KEY, JSON.stringify({ ...base, morningChoice: badChoice }));
+      const res = loadSaveDetailed(storage);
+      expect(res.save).toBeNull();
+      expect(res.quarantinedCorrupt).toBe(true);
+    }
+
+    // customerCount: NaN (in-memory / JSON.stringify turns NaN into null, both rejected)
+    storage.setItem(
+      SAVE_STORAGE_KEY,
+      JSON.stringify({ ...base, morningChoice: { day: 2, customerCount: Number.NaN } }),
+    );
+    const nanRes = loadSaveDetailed(storage);
+    expect(nanRes.save).toBeNull();
+    expect(nanRes.quarantinedCorrupt).toBe(true);
+
+    // saveGame normalize path drops malformed morningChoice instead of persisting corrupt data
+    saveGame(
+      {
+        ...base,
+        morningChoice: { day: 2, customerCount: 99 },
+      },
+      storage,
+    );
+    const afterBadSave1 = loadSaveDetailed(storage);
+    expect(afterBadSave1.quarantinedCorrupt).toBe(false);
+    expect(afterBadSave1.save?.morningChoice).toBeUndefined();
+
+    saveGame(
+      {
+        ...base,
+        morningChoice: { day: 2, customerCount: Number.NaN },
+      },
+      storage,
+    );
+    const afterBadSave2 = loadSaveDetailed(storage);
+    expect(afterBadSave2.quarantinedCorrupt).toBe(false);
+    expect(afterBadSave2.save?.morningChoice).toBeUndefined();
   });
 });

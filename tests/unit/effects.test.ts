@@ -41,12 +41,12 @@ function makeState(overrides: Partial<BattleState> = {}): BattleState {
 }
 
 describe('cards.json integrity', () => {
-  it('contains all 24 unique cards including P1, P4 item cards, and Task 19 欠条', () => {
-    expect(CARDS).toHaveLength(24);
+  it('contains all 30 unique cards including P1, P4 item cards, and Task 19 欠条', () => {
+    expect(CARDS).toHaveLength(30);
     const ids = new Set(CARDS.map((c) => c.id));
     const names = new Set(CARDS.map((c) => c.name));
-    expect(ids.size).toBe(24);
-    expect(names.size).toBe(24);
+    expect(ids.size).toBe(30);
+    expect(names.size).toBe(30);
     expect(names.has('倒转')).toBe(true);
     expect(names.has('守诺')).toBe(true);
     expect(names.has('旧书')).toBe(true);

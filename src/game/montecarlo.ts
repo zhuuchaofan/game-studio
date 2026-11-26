@@ -98,6 +98,8 @@ export const SIM_CHAPTER_CLEAR_RATE_MAX = 0.75;
 /** P11 组合 Boss 护栏（严格按任务书 proto-tasks/14-p11-boss-composition.md，数字服从护栏）。 */
 export const SIM_COMPOSED_BOSS_TYPICAL_MIN = 0.4;
 export const SIM_COMPOSED_BOSS_TYPICAL_MAX = 0.85;
+export const SIM_COMPOSED_BOSS_HIGH_TIER_MIN = 0.35;
+export const SIM_COMPOSED_BOSS_HIGH_TIER_MAX = 0.85;
 export const SIM_COMPOSED_BOSS_BARE_MIN = 0.5;
 export const SIM_COMPOSED_BOSS_BARE_MAX = 0.9;
 export const SIM_COMPOSED_BOSS_FULL_CREDIT_MIN = 0.25;
@@ -1351,6 +1353,23 @@ const FALLBACK_SUBSETS_BY_COUNT: Record<number, readonly (readonly string[])[]> 
     ['ring', 'old_book', 'bicycle', 'erhu', 'stamp_album'],
   ],
   6: [['watch', 'ring', 'old_book', 'bicycle', 'erhu', 'stamp_album']],
+  7: [['watch', 'ring', 'old_book', 'bicycle', 'erhu', 'stamp_album', 'cloth_ticket']],
+  8: [['watch', 'ring', 'old_book', 'bicycle', 'erhu', 'stamp_album', 'cloth_ticket', 'harmonica']],
+  9: [
+    ['watch', 'ring', 'old_book', 'bicycle', 'erhu', 'stamp_album', 'cloth_ticket', 'harmonica', 'medicine_box'],
+  ],
+  10: [
+    [
+      'watch', 'ring', 'old_book', 'bicycle', 'erhu', 'stamp_album',
+      'cloth_ticket', 'harmonica', 'medicine_box', 'ledger',
+    ],
+  ],
+  11: [
+    [
+      'watch', 'ring', 'old_book', 'bicycle', 'erhu', 'stamp_album',
+      'cloth_ticket', 'harmonica', 'medicine_box', 'ledger', 'tin_trunk',
+    ],
+  ],
 };
 
 function subsetKey(ids: readonly string[]): string {
@@ -1463,8 +1482,8 @@ function simulateComposedBossSubset(
 
 /**
  * P11 组合 Boss 扫描模拟：
- * - 覆盖 n = 0..6（赊账开 / 关）、n = 1 六单件敏感性、n = 2..5 实测最常见子集、满配 + 赊账 48 血；
- * - 赎当削弱验证（同一终局牌组分布下逐件拆组件 n = 6 -> 0）；
+ * - 覆盖 n = 0..12（赊账开 / 关）、n = 1 十二单件敏感性、n = 2..5 实测最常见子集、满配 + 赊账 40 血；
+ * - 赎当削弱验证（同一终局牌组分布下逐件拆组件 n = 12 -> 0）；
  * - 邮票册打断专项（含邮票册阈值 14 vs 不含邮票册阈值 10）；
  * - TEST_DECK 对照（n = 3 典型组合 vs 现行 48.5%）。
  */
@@ -1499,7 +1518,7 @@ export function simulateBossCompositionScan(
 
   const allItemIds = items.map((i) => i.id);
 
-  // Single-item sensitivity (n = 1, all 6 items, credit_stock OFF)
+  // Single-item sensitivity (n = 1, all items, credit_stock OFF)
   const singleItemSensitivity: BossSubsetSimStats[] = allItemIds.map((id) =>
     simulateComposedBossSubset(
       cards,
@@ -1514,10 +1533,10 @@ export function simulateBossCompositionScan(
     ),
   );
 
-  // Build tiers n = 0..6 for creditStock OFF and ON
+  // Build tiers n = 0..allItemIds.length (12) for creditStock OFF and ON
   const buildTiers = (creditStock: boolean): BossTierSummary[] => {
     const tiers: BossTierSummary[] = [];
-    for (let n = 0; n <= 6; n += 1) {
+    for (let n = 0; n <= allItemIds.length; n += 1) {
       let subsets: BossSubsetSimStats[];
       if (n === 0) {
         subsets = [
@@ -1549,7 +1568,7 @@ export function simulateBossCompositionScan(
               ),
             )
           : singleItemSensitivity;
-      } else if (n === 6) {
+      } else if (n === allItemIds.length) {
         subsets = [
           simulateComposedBossSubset(
             cards,
@@ -1604,12 +1623,15 @@ export function simulateBossCompositionScan(
   const tiersWithCredit = buildTiers(true);
 
   const bareStats = tiersNoCredit[0].subsets[0];
-  const fullStats = tiersNoCredit[6].subsets[0];
-  const fullWithCreditStats = tiersWithCredit[6].subsets[0];
+  const fullStats = tiersNoCredit[allItemIds.length].subsets[0];
+  const fullWithCreditStats = tiersWithCredit[allItemIds.length].subsets[0];
 
-  // Redemption weakening verification: from full composition (n=6) remove 1 component at a time (n=6 -> 0)
+  // Redemption weakening verification: from full composition (n=12) remove 1 component at a time (n=12 -> 0)
   // Order: stamp_album -> ring -> old_book -> watch -> erhu -> bicycle (each step removes a Boss component)
-  const redeemOrder = ['stamp_album', 'ring', 'old_book', 'watch', 'erhu', 'bicycle'];
+  const redeemOrder = [
+    'gold_watch', 'tin_trunk', 'ledger', 'medicine_box', 'harmonica', 'cloth_ticket',
+    'stamp_album', 'ring', 'old_book', 'watch', 'erhu', 'bicycle',
+  ];
   const redemptionPath: RedemptionPathStep[] = [];
   let remaining = [...allItemIds];
   let prevWinRate = fullStats.winRate;
@@ -2231,7 +2253,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     persistentHp: DEFAULT_PERSISTENT_HP_OPTIONS,
   });
 
-  // P11 Composed Boss sweep (n = 0..6, credit_stock on/off, single-item sensitivity, redemption path, stamp interrupt study)
+  // P11 Composed Boss sweep (n = 0..12, credit_stock on/off, single-item sensitivity, redemption path, stamp interrupt study)
   const bossComposition = simulateBossCompositionScan({
     cards,
     demons,
@@ -2370,9 +2392,22 @@ export function checkSimGuardrails(report: BalanceSimulationReport): SimGuardrai
     }
   }
 
+  for (const tier of bc.tiersNoCredit) {
+    if (tier.componentCount >= 6 && tier.componentCount <= 9) {
+      if (
+        tier.avgWinRate < SIM_COMPOSED_BOSS_HIGH_TIER_MIN ||
+        tier.avgWinRate > SIM_COMPOSED_BOSS_HIGH_TIER_MAX
+      ) {
+        errors.push(
+          `Composed Boss tier n=${tier.componentCount} winRate ${(tier.avgWinRate * 100).toFixed(1)}% out of [${(SIM_COMPOSED_BOSS_HIGH_TIER_MIN * 100).toFixed(0)}%, ${(SIM_COMPOSED_BOSS_HIGH_TIER_MAX * 100).toFixed(0)}%]`,
+        );
+      }
+    }
+  }
+
   if (bc.fullWithCreditStats.winRate < SIM_COMPOSED_BOSS_FULL_CREDIT_MIN) {
     errors.push(
-      `Composed Boss full+credit (n=6, ${bc.fullWithCreditStats.bossHp} HP) winRate ${(bc.fullWithCreditStats.winRate * 100).toFixed(1)}% below guardrail ${(SIM_COMPOSED_BOSS_FULL_CREDIT_MIN * 100).toFixed(0)}%`,
+      `Composed Boss full+credit (n=12, ${bc.fullWithCreditStats.bossHp} HP) winRate ${(bc.fullWithCreditStats.winRate * 100).toFixed(1)}% below guardrail ${(SIM_COMPOSED_BOSS_FULL_CREDIT_MIN * 100).toFixed(0)}%`,
     );
   }
 
@@ -2466,7 +2501,7 @@ export function formatSimReport(report: BalanceSimulationReport): string {
     return { avgRound, avgRemainHp };
   };
   lines.push(`\n[P11 组合 Boss 扫描 (真实第7天牌组分布, ${bc.runsPerBucket} 局/档)]`);
-  lines.push('  -- 赊账 OFF (n = 0..6) --');
+  lines.push('  -- 赊账 OFF (n = 0..12) --');
   for (const tier of bc.tiersNoCredit) {
     const sampleHp = tier.subsets[0]?.bossHp ?? bc.bareStats.bossHp;
     const { avgRound, avgRemainHp } = avgTierMetrics(tier);
@@ -2496,7 +2531,7 @@ export function formatSimReport(report: BalanceSimulationReport): string {
       `    单件 ${s.itemIds[0]} (${s.bossHp}血, 阈值${s.chargeThreshold}): 胜率 ${(s.winRate * 100).toFixed(1)}% | 打断率 ${(s.interruptRate * 100).toFixed(1)}% | 均回合 ${s.avgEndRound.toFixed(2)} | 胜场残血 ${s.avgWinRemainingHp.toFixed(1)}`,
     );
   }
-  lines.push('  -- 赎当削弱路径 (n = 6 -> 0) --');
+  lines.push('  -- 赎当削弱路径 (n = 12 -> 0) --');
   for (const step of bc.redemptionPath) {
     const label = step.redeemedItemId ? `赎回 ${step.redeemedItemId}` : '初始满配';
     const deltaStr =

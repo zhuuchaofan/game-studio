@@ -402,14 +402,14 @@ export class CalendarMapScene extends Phaser.Scene {
         .setStrokeStyle(2, composed.componentCount > 0 ? PALETTE.vermilion.num : PALETTE.mistBlue.num),
     );
     this.contentLayer.add(
-      addPixelText(this, 28, 191, '执念:', {
+      addPixelText(this, 24, 191, '执念', {
         color: PALETTE.lampYellow.hex,
         origin: [0, 0.5],
       }),
     );
 
     composed.allComponents.forEach((comp, cIdx) => {
-      const bx = 122 + cIdx * 34;
+      const bx = 88 + cIdx * 28;
       const by = 191;
       const isActive = activeSet.has(comp.itemId);
       const itemMeta = ITEMS.find((it) => it.id === comp.itemId);
@@ -432,12 +432,13 @@ export class CalendarMapScene extends Phaser.Scene {
       ]);
     });
 
+    const totalCompCount = composed.allComponents.length;
     const rightTag =
       composed.r1Shield > 0
-        ? `${composed.componentCount}/6块 盾+${composed.r1Shield} 阈${composed.chargeThreshold}`
-        : `${composed.componentCount}/6块 阈${composed.chargeThreshold}`;
+        ? `${composed.componentCount}/${totalCompCount}块 盾+${composed.r1Shield} 阈${composed.chargeThreshold}`
+        : `${composed.componentCount}/${totalCompCount}块 阈${composed.chargeThreshold}`;
     this.contentLayer.add(
-      addPixelText(this, 612, 191, rightTag, {
+      addPixelText(this, 618, 191, rightTag, {
         color: composed.componentCount > 0 ? PALETTE.lampYellow.hex : PALETTE.silverBlue.hex,
         origin: [1, 0.5],
       }),

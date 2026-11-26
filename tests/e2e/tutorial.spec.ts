@@ -244,7 +244,7 @@ test('first play walks all 6 Day 1 guide bubbles in order, persists completion, 
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  await page.goto('/?seed=2&deck=test');
+  await page.goto('/?seed=3&deck=test');
   await clearAllStorage(page);
   await page.reload();
 

@@ -218,8 +218,8 @@ test('Task 19 §2/§3/§6: persistent HP carries across nights (+5 sleep heal), 
   expect(n1Res.result).toBe('lose_timeout');
   expect(n1Res.normalFailContinueLine).toBe('输了这一夜，留下一张欠条，口碑-1，明天继续');
   expect(n1Res.savedData?.currentHp).toBe(26);
-  expect(n1Res.savedData?.reputation).toBe(2); // Day 1 high on erhu/watch/old_book +3, Night 1 loss -1 => 2
-  expect(n1Res.savedData?.deck).toEqual(['余音', '倒转', '旧书', '欠条']);
+  expect(n1Res.savedData?.reputation).toBe(3); // Day 1 high on stamp_album(+2)/tin_trunk(+1)/erhu(+1) = +4, Night 1 loss -1 => 3
+  expect(n1Res.savedData?.deck).toEqual(['集邮', '顶住', '余音', '欠条']);
 
   // Advance to Day 2 morning -> pick 打理当铺 -> Night 2 enters at 26/30 HP
   await clickLogical(page, canvas, RESULT_NEXT_DAY_BUTTON);
