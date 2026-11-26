@@ -1570,8 +1570,8 @@ function simulateComposedBossSubset(
  * P11 组合 Boss 扫描模拟：
  * - 覆盖 n = 0..12（赊账开 / 关）、n = 1 十二单件敏感性、n = 2..5 实测最常见子集、满配 + 赊账 40 血；
  * - 赎当削弱验证（同一终局牌组分布下逐件拆组件 n = 12 -> 0）；
- * - 邮票册打断专项（含邮票册阈值 14 vs 不含邮票册阈值 10）；
- * - TEST_DECK 对照（n = 3 典型组合 vs 现行 48.5%）。
+ * - 邮票册打断专项（含邮票册阈值 13 打断率 24.3% / 胜率 51.6% vs 不含阈值 11 打断率 33.9% / 胜率 50.7%）；
+ * - TEST_DECK 对照（n = 3 子集 [watch,ring,old_book]，33 血，Lv.3 人情 5 胜率 80.4% / 打断率 29.6%）。
  */
 export function simulateBossCompositionScan(
   opts: BossCompositionScanOptions,
@@ -1760,7 +1760,7 @@ export function simulateBossCompositionScan(
     prevWinRate = stats.winRate;
   }
 
-  // Stamp album interrupt study: full (with stamp_album, threshold 14) vs 5-component without stamp_album (threshold 10)
+  // Stamp album interrupt study: full n=12 (with stamp_album, threshold 13) vs 11-component without stamp_album (threshold 11)
   const withoutStampIds = allItemIds.filter((id) => id !== 'stamp_album');
   const withoutStampStats = simulateComposedBossSubset(
     cards,
@@ -1782,7 +1782,7 @@ export function simulateBossCompositionScan(
     withoutStampInterruptRate: withoutStampStats.interruptRate,
   };
 
-  // TEST_DECK control: composeBoss(TEST_DECK, null) -> n=3 (watch, ring, old_book, 38 HP) at Lv.3 renqing 5
+  // TEST_DECK control: composeBoss(TEST_DECK, null) -> n=3 (watch, ring, old_book, 33 HP) at Lv.3 renqing 5
   const testComposed = composeBoss(TEST_DECK, null, baseBoss);
   const testBossBal: BattleBalanceConfig = {
     ...battleBalance,
