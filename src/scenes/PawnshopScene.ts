@@ -188,6 +188,9 @@ export class PawnshopScene extends Phaser.Scene {
     const startingHp = this.save.currentHp ?? MAX_PLAYER_HP;
     if (this.save.day === 1) {
       this.enterPostMorningPhase(startingHp, this.save.money, DAILY_CUSTOMER_COUNT, false);
+    } else if (this.save.morningChoice?.day === this.save.day) {
+      this.dailyCustomerCount = this.save.morningChoice.customerCount;
+      this.enterPostMorningPhase(startingHp, this.save.money, this.dailyCustomerCount, false);
     } else {
       this.state = {
         ...createInitialState({
@@ -896,6 +899,7 @@ export class PawnshopScene extends Phaser.Scene {
       ...this.save,
       money: res.money,
       currentHp: res.currentHp,
+      morningChoice: { day: this.save.day, customerCount: res.customerCount },
     };
     saveGame(this.save);
     this.enterPostMorningPhase(res.currentHp, res.money, res.customerCount, true);

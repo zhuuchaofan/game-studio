@@ -1505,6 +1505,11 @@ export class CardBattleScene extends Phaser.Scene {
   private presentBattleEvents(events: readonly BattleEvent[], anchorX: number, anchorY: number): void {
     for (const ev of events) {
       switch (ev.type) {
+        case 'CARDS_DRAWN':
+          if (ev.cards.includes(DEBT_NOTE_CARD_NAME)) {
+            this.maybeShowGlossaryTip('debt_note');
+          }
+          break;
         case 'DAMAGE_DEALT':
           if (ev.target === 'demon' && ev.amount > 0) {
             audio.playSfx('hit_demon');

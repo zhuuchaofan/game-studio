@@ -157,7 +157,7 @@ export interface PersistentHpSimMetrics {
   avgBossEntryHp: number;
   medianBossEntryHp: number;
   bossEntryHpLt10Rate: number;
-  preBossDeathRate: number;
+  preBossKoRate: number;
   firstLowHpShare: number;
   lossStreakGe3Rate: number;
   avgRestsPerRun: number;
@@ -984,7 +984,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
   const baseBoss = getBossDemonDef(demons, chapter.bossId);
   const persistentHp = opts.persistentHp;
   const bossEntryHps: number[] = [];
-  let preBossDeaths = 0;
+  let preBossKoRuns = 0;
   let firstLowHpCount = 0;
   let lossStreakGe3Count = 0;
   let totalRests = 0;
@@ -1009,6 +1009,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     let nightsWon = 0;
     let currentHp = battleBalance.startingHp;
     let hadLowEndHp = false;
+    let hadPreBossKo = false;
     let consecutiveLosses = 0;
     let maxConsecutiveLosses = 0;
 
@@ -1244,6 +1245,10 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         }
         if (day < CHAPTER_DAYS) {
           // wake-at-5 rule: KO (endHp=0) + sleepHeal(5) => 5 HP next morning, chapter continues
+          if (finalBattle.playerHp <= 0 && !hadPreBossKo) {
+            hadPreBossKo = true;
+            preBossKoRuns += 1;
+          }
           currentHp = Math.min(
             battleBalance.startingHp,
             Math.max(0, finalBattle.playerHp) + persistentHp.sleepHeal,
@@ -1302,7 +1307,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
               bossEntryHps.length > 0
                 ? bossEntryHps.filter((hp) => hp < 10).length / bossEntryHps.length
                 : 0,
-            preBossDeathRate: runs > 0 ? preBossDeaths / runs : 0,
+            preBossKoRate: runs > 0 ? preBossKoRuns / runs : 0,
             firstLowHpShare: runs > 0 ? firstLowHpCount / runs : 0,
             lossStreakGe3Rate: runs > 0 ? lossStreakGe3Count / runs : 0,
             avgRestsPerRun: runs > 0 ? totalRests / runs : 0,
@@ -2442,7 +2447,7 @@ export function formatSimReport(report: BalanceSimulationReport): string {
       `  进 Boss 血量: 均值/中位 ${phm.avgBossEntryHp.toFixed(2)}/${phm.medianBossEntryHp.toFixed(1)} | <10 血占率: ${(phm.bossEntryHpLt10Rate * 100).toFixed(1)}%`,
     );
     lines.push(
-      `  连败指标: Boss 夜前归零率: ${(phm.preBossDeathRate * 100).toFixed(1)}% | 首次局末 <10 血率: ${(phm.firstLowHpShare * 100).toFixed(1)}% | 连输 >=3 夜率: ${(phm.lossStreakGe3Rate * 100).toFixed(1)}%`,
+      `  连败指标: Boss 夜前 KO 率: ${(phm.preBossKoRate * 100).toFixed(1)}% | 首次局末 <10 血率: ${(phm.firstLowHpShare * 100).toFixed(1)}% | 连输 >=3 夜率: ${(phm.lossStreakGe3Rate * 100).toFixed(1)}%`,
     );
     lines.push(
       `  早上三选一(均/局): 休息 ${phm.avgRestsPerRun.toFixed(2)} 买补药 ${phm.avgMedicinesPerRun.toFixed(2)} (买率 ${(phm.medicineTriggerRate * 100).toFixed(2)}%) 打理 ${phm.avgWorksPerRun.toFixed(2)} | 欠条加(均/局): ${phm.avgDebtNotesAddedPerRun.toFixed(2)}`,

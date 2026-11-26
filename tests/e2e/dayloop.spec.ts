@@ -388,10 +388,8 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   expect(titleWithSave.shopLevel).toBe(2);
   await page.screenshot({ path: 'test-results/dayloop-desktop-title-continue.png' });
 
-  // Click Continue -> Day 2 morning choice -> "打理当铺" -> restores Day 2 PawnshopScene
+  // Click Continue -> morning already chosen today -> restores Day 2 PawnshopScene directly
   await clickLogical(page, canvas, BUTTONS.titleContinue);
-  await waitForPawnshopPhase(page, 'morning');
-  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const restoredDay2 = await waitForPawnshopPhase(page, 'negotiating');

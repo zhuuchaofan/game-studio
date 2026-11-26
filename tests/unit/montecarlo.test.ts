@@ -5,10 +5,12 @@ import demonsJson from '../../src/data/demons.json';
 import type { BattleBalanceConfig, CardDef, DemonDef } from '../../src/game/battle';
 import {
   checkSimGuardrails,
+  DEFAULT_PERSISTENT_HP_OPTIONS,
   formatSimReport,
   parseSimTuneEnv,
   runBalanceSimulation,
   runMonteCarlo,
+  simulateChapterOne,
   simulateNewPlayerFirstNight,
   simulateSevenDayEconomy,
   simulateThinDeckPath,
@@ -173,7 +175,8 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     expect(text).toContain('单伤害牌路径模拟');
     expect(text).toContain('实测路线 [余音/倒转/旧书]');
     expect(text).toContain('生命结转章节模拟');
-    expect(baseline.chapter1PersistentHp.persistentHpMetrics?.preBossDeathRate).toBe(0);
+    expect(text).toContain('Boss 夜前 KO 率');
+    expect(text).not.toContain('Boss 夜前归零率');
     expect(baseline.chapter1PersistentHp.clearRate).toBeGreaterThanOrEqual(0.35);
     expect(baseline.chapter1PersistentHp.clearRate).toBeLessThanOrEqual(0.75);
 
@@ -187,6 +190,19 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     const brokenCheck = checkSimGuardrails(broken);
     expect(brokenCheck.passed).toBe(false);
     expect(brokenCheck.errors.some((e) => e.includes('Demon A'))).toBe(true);
+  }, 30000);
+
+  it('修整 3: pre-Boss KO is counted for real and the chapter still continues (wake-at-5)', () => {
+    const harsh = simulateChapterOne({
+      runs: 200,
+      persistentHp: {
+        ...DEFAULT_PERSISTENT_HP_OPTIONS,
+        restHeal: 0,
+        medicineHeal: 0,
+      },
+    });
+    expect(harsh.persistentHpMetrics?.preBossKoRate).toBeGreaterThan(0);
+    expect(harsh.bossReached).toBeGreaterThan(0);
   }, 30000);
 
   it('P10: simulates 1000 realistic new-player Night 1 runs (Day 1 3-item pool, not TEST_DECK) and reports single-attack win rate', () => {

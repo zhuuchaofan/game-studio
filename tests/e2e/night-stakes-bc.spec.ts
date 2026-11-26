@@ -526,3 +526,127 @@ test('Task 19 §4: morning 3-way board disabled states, rest (2 customers), medi
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+test('Task 19 修整 1: morning choice persists per day — refresh cannot re-rest or re-buy medicine', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+  await page.goto('/?seed=7');
+  await page.evaluate(
+    ([tutKey, glosKey]) => {
+      localStorage.setItem(tutKey, '1');
+      localStorage.setItem(
+        glosKey,
+        JSON.stringify(['reputation', 'renqing', 'obsession', 'charge_threshold']),
+      );
+    },
+    [TUTORIAL_STORAGE_KEY, GLOSSARY_STORAGE_KEY] as const,
+  );
+  const canvas = page.locator('#game-container canvas');
+
+  const seed = async (money: number, currentHp: number) => {
+    await page.evaluate(
+      ([saveKey, save]) => localStorage.setItem(saveKey, save),
+      [SAVE_STORAGE_KEY, buildSeededSave({ day: 2, money, currentHp, deck: ['倒转'] })] as const,
+    );
+    await page.reload();
+    await waitForPawnshopPhase(page, 'title');
+    await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  };
+
+  // Rest at 10 HP -> 20 HP, 2 customers; refresh must not offer the board again
+  await seed(100, 10);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.rest);
+  const rested = await waitForPawnshopPhase(page, 'negotiating');
+  expect(rested.currentHp).toBe(20);
+  expect(rested.dailyCustomerCount).toBe(2);
+
+  await page.reload();
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  const restedAgain = await waitForPawnshopPhase(page, 'negotiating');
+  expect(restedAgain.currentHp).toBe(20);
+  expect(restedAgain.money).toBe(100);
+  expect(restedAgain.dailyCustomerCount).toBe(2);
+
+  // Medicine at 16 HP, money 100 -> 26 HP, 80 money, 3 customers; refresh must not allow another purchase
+  await seed(100, 16);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.medicine);
+  const bought = await waitForPawnshopPhase(page, 'negotiating');
+  expect(bought.currentHp).toBe(26);
+  expect(bought.money).toBe(80);
+
+  await page.reload();
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  const boughtAgain = await waitForPawnshopPhase(page, 'negotiating');
+  expect(boughtAgain.currentHp).toBe(26);
+  expect(boughtAgain.money).toBe(80);
+  expect(boughtAgain.dailyCustomerCount).toBe(3);
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('Task 19 修整 2: 欠条 first seen on a later draw auto-shows the glossary tip once', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+  await page.goto('/?seed=7&demon=a');
+  await page.evaluate(
+    ([saveKey, tutKey, glosKey, save]) => {
+      localStorage.setItem(tutKey, '1');
+      localStorage.setItem(
+        glosKey,
+        JSON.stringify(['reputation', 'renqing', 'obsession', 'charge_threshold']),
+      );
+      localStorage.setItem(saveKey, save);
+    },
+    [
+      SAVE_STORAGE_KEY,
+      TUTORIAL_STORAGE_KEY,
+      GLOSSARY_STORAGE_KEY,
+      buildSeededSave({
+        day: 2,
+        money: 100,
+        currentHp: 30,
+        deck: ['欠条', '秤砣', '秤砣', '秤砣', '秤砣', '秤砣'],
+      }),
+    ] as const,
+  );
+  await page.reload();
+
+  const canvas = page.locator('#game-container canvas');
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+  for (let i = 0; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  }
+  await waitForPawnshopPhase(page, 'summary');
+  await clickLogical(page, canvas, PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON);
+
+  const start = await waitForBattleReady(page, 'play');
+  expect(start.hand).not.toContain('欠条');
+  expect(start.lastGlossaryTip ?? null).toBeNull();
+
+  await clickLogical(page, canvas, BATTLE_END_TURN_BUTTON);
+  await expect
+    .poll(async () => {
+      const s = await getBattleState(page);
+      return !s.isAnimating && s.round === 2;
+    })
+    .toBe(true);
+  const round2 = await getBattleState(page);
+  expect(round2.hand).toContain('欠条');
+  expect(round2.lastGlossaryTip).toBe('欠条：输夜留下的债，占一张手牌，打不出去');
+  const seen = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? '[]') as string[], GLOSSARY_STORAGE_KEY);
+  expect(seen.filter((id) => id === 'debt_note')).toHaveLength(1);
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});

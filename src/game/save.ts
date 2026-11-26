@@ -37,6 +37,8 @@ export interface SaveData {
   redeemTickets: number;
   /** 任务书 19：当前生命值（可选向后兼容字段，老存档缺省按 MAX_PLAYER_HP = 30 处理）。 */
   currentHp?: number;
+  /** 修整 1：当天早上已选（按天持久化，刷新不可重选）；老存档缺省为未选。 */
+  morningChoice?: { day: number; customerCount: number };
   /** Optional backward-compatible tutorial completion flag (defaults to incomplete when omitted). */
   tutorialCompleted?: boolean;
   /** P9 Chapter progression block (v3). */
@@ -454,6 +456,9 @@ export function loadSaveDetailed(storage?: StorageLike | null): SaveLoadResult {
     if (typeof valid.currentHp === 'number') {
       loaded.currentHp = valid.currentHp;
     }
+    if (valid.morningChoice) {
+      loaded.morningChoice = { ...valid.morningChoice };
+    }
     return {
       save: loaded,
       migratedFrom: migrated.migratedFrom,
@@ -497,6 +502,9 @@ export function saveGame(data: SaveData, storage?: StorageLike | null): void {
     }
     if (typeof data.currentHp === 'number') {
       normalized.currentHp = data.currentHp;
+    }
+    if (data.morningChoice) {
+      normalized.morningChoice = { ...data.morningChoice };
     }
     store.setItem(SAVE_STORAGE_KEY, JSON.stringify(normalized));
   } catch {

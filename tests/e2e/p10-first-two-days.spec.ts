@@ -412,8 +412,6 @@ test('P10 E2E 2: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   await page.reload();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
-  await waitForPawnshopPhase(page, 'morning');
-  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const afterReload = await waitForPawnshopPhase(page, 'negotiating');
   expect(afterReload.day).toBe(2);
   expect(afterReload.money).toBe(258);

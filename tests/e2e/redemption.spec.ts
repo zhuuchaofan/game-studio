@@ -152,8 +152,6 @@ test('C4 redemption accept: removes card from deck, adds dealPrice * 1.2 money, 
   await page.reload();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
-  await waitForPawnshopPhase(page, 'morning');
-  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const reloaded = await waitForPawnshopPhase(page, 'negotiating');
   expect(reloaded.money).toBe(158);
   expect(reloaded.redeemTickets).toBe(0);
@@ -218,8 +216,6 @@ test('C4 redemption reject: preserves card, money, reputation, and redeemTickets
   await page.reload();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
-  await waitForPawnshopPhase(page, 'morning');
-  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const afterReload = await waitForPawnshopPhase(page, 'negotiating');
   expect(afterReload.day).toBe(2);
   expect(afterReload.redeemTickets).toBe(2);
