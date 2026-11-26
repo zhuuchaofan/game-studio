@@ -19,7 +19,8 @@ export const TITLE_TUTORIAL_BUTTON = { x: 528, y: 312, width: 132, height: 38 } 
 
 // PawnshopScene
 export const PAWNSHOP_HUD_HEIGHT = 34;
-export const PAWNSHOP_CALENDAR_BUTTON = { x: 594, y: 17, width: 76, height: 28 } as const;
+export const PAWNSHOP_LEDGER_BUTTON = { x: 546, y: 17, width: 56, height: 28 } as const;
+export const PAWNSHOP_CALENDAR_BUTTON = { x: 608, y: 17, width: 56, height: 28 } as const;
 export const PAWNSHOP_TIER_BUTTONS = {
   low: { x: 116, y: 330, width: 184, height: 56 },
   fair: { x: 320, y: 330, width: 184, height: 56 },
@@ -27,8 +28,23 @@ export const PAWNSHOP_TIER_BUTTONS = {
 } as const;
 export const PAWNSHOP_SKIP_BUTTON = { x: 562, y: 249, width: 128, height: 32 } as const;
 export const PAWNSHOP_FEEDBACK_NEXT_BUTTON = { x: 320, y: 325, width: 236, height: 54 } as const;
+export const PAWNSHOP_SUMMARY_LEDGER_BUTTON = { x: 544, y: 64, width: 92, height: 26 } as const;
 export const PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON = { x: 184, y: 314, width: 244, height: 48 } as const;
 export const PAWNSHOP_SUMMARY_RETURN_TITLE_BUTTON = { x: 456, y: 314, width: 244, height: 48 } as const;
+
+// LedgerOverlay (552x288 centered at 320x180 -> x=44..596, y=36..324)
+export const LEDGER_OVERLAY_RECT = { x: 320, y: 180, width: 552, height: 288 } as const;
+export const LEDGER_TAB_BUTTONS = {
+  deck: { x: 176, y: 52, width: 104, height: 26 },
+  heirlooms: { x: 292, y: 52, width: 116, height: 26 },
+  collection: { x: 408, y: 52, width: 104, height: 26 },
+} as const;
+export const LEDGER_CLOSE_BUTTON = { x: 576, y: 52, width: 30, height: 26 } as const;
+export const LEDGER_DECK_PREV_BUTTON = { x: 168, y: 308, width: 108, height: 22 } as const;
+export const LEDGER_DECK_NEXT_BUTTON = { x: 472, y: 308, width: 108, height: 22 } as const;
+export const LEDGER_COLLECTION_CLIP_RECT = { x: 52, y: 94, width: 512, height: 176 } as const;
+export const LEDGER_COLLECTION_SCROLL_UP_BUTTON = { x: 578, y: 112, width: 22, height: 28 } as const;
+export const LEDGER_COLLECTION_SCROLL_DOWN_BUTTON = { x: 578, y: 252, width: 22, height: 28 } as const;
 export const REDEMPTION_ACCEPT_BUTTON = { x: 192, y: 306, width: 248, height: 62 } as const;
 export const REDEMPTION_REJECT_BUTTON = { x: 448, y: 306, width: 248, height: 62 } as const;
 export const SIDE_QUEST_ACCEPT_BUTTON = { x: 192, y: 306, width: 248, height: 62 } as const;

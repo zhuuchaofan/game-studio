@@ -18,6 +18,7 @@ import {
   type EndingLedgerSummary,
 } from '../game/bossComposition';
 import { cloneChapterState, getChapterConfig } from '../game/chapters';
+import { evaluateDiaryFragmentUnlocks, recordCardSeen } from '../game/collection';
 import {
   addHeirloom,
   deriveHeirloomSeed,
@@ -195,6 +196,16 @@ export class ResultScene extends Phaser.Scene {
       reward,
       isBossBattle,
       endHp: playerHp,
+    });
+
+    if (result === 'win' && reward?.cardName) {
+      nextSave.chapter = recordCardSeen(nextSave.chapter, reward.cardName);
+    }
+    nextSave.chapter.diaryFragments = evaluateDiaryFragmentUnlocks({
+      chapter1Completed: nextSave.chapter.chapter1Completed,
+      redeemedItems: nextSave.chapter.redeemedItems ?? [],
+      deckLength: nextSave.deck.length,
+      existingFragments: nextSave.chapter.diaryFragments,
     });
 
     if (isBossBattle && result === 'win') {

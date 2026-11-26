@@ -102,6 +102,14 @@ export interface ChapterSaveState {
   heirlooms?: string[];
   /** P12 阶段 C：本章已领取的口碑里程碑档位（如 [2]、[2, 4]）。 */
   heirloomMilestonesClaimed?: number[];
+  /** P12 阶段 D：见过/收过的旧物 ID 列表。 */
+  seenItems?: string[];
+  /** P12 阶段 D：见过/得过的卡牌 ID 列表。 */
+  seenCards?: string[];
+  /** P12 阶段 D：赎回过的旧物 ID 列表。 */
+  redeemedItems?: string[];
+  /** P12 阶段 D：已解锁的老掌柜日记碎片 ID 列表。 */
+  diaryFragments?: string[];
 }
 
 export const CHAPTERS_DATA: ChaptersDataFile = chaptersJson as ChaptersDataFile;
@@ -237,6 +245,10 @@ export function createInitialChapterState(
     heirloomMilestonesClaimed: overrides.heirloomMilestonesClaimed
       ? [...overrides.heirloomMilestonesClaimed]
       : [],
+    seenItems: overrides.seenItems ? [...overrides.seenItems] : [],
+    seenCards: overrides.seenCards ? [...overrides.seenCards] : [],
+    redeemedItems: overrides.redeemedItems ? [...overrides.redeemedItems] : [],
+    diaryFragments: overrides.diaryFragments ? [...overrides.diaryFragments] : [],
   };
 }
 
@@ -261,6 +273,10 @@ export function cloneChapterState(chapter: ChapterSaveState): ChapterSaveState {
     heirloomMilestonesClaimed: chapter.heirloomMilestonesClaimed
       ? [...chapter.heirloomMilestonesClaimed]
       : [],
+    seenItems: chapter.seenItems ? [...chapter.seenItems] : [],
+    seenCards: chapter.seenCards ? [...chapter.seenCards] : [],
+    redeemedItems: chapter.redeemedItems ? [...chapter.redeemedItems] : [],
+    diaryFragments: chapter.diaryFragments ? [...chapter.diaryFragments] : [],
   };
 }
 

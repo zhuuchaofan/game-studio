@@ -10,6 +10,7 @@ import {
 } from './save';
 
 import type { ChapterSaveState, PactId, SideQuestChoice } from './chapters';
+import type { LedgerOverlaySnapshot } from './ledgerOverlay';
 
 export type OfferTier = 'low' | 'fair' | 'high';
 
@@ -204,6 +205,8 @@ export interface PawnshopDebugSnapshot {
     shortLabel: string;
     effectText: string;
   } | null;
+  /** P12 阶段 D：账本覆层只读快照（供 E2E 测试断言用）。 */
+  ledger?: LedgerOverlaySnapshot;
   version?: string;
   titleCompletedTeaser?: string | null;
   titleSettlementLine?: string | null;
