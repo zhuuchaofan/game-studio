@@ -230,6 +230,13 @@ function cloneDemonDef(demon: DemonDef): DemonDef {
   return {
     ...demon,
     ...(demon.linkedItemIds ? { linkedItemIds: [...demon.linkedItemIds] } : {}),
+    ...(demon.linkedItemNarratives
+      ? {
+          linkedItemNarratives: Object.fromEntries(
+            Object.entries(demon.linkedItemNarratives).map(([k, v]) => [k, { ...v }]),
+          ),
+        }
+      : {}),
     ...(demon.obsession
       ? {
           obsession: {
@@ -369,15 +376,16 @@ export function resolveDemonNarrative(
       return Boolean(linkedItem && pawnedItemIds.includes(id) && deck.includes(linkedItem.cardName));
     }) ?? null;
   const isLinked = matchedId !== null;
+  const itemNarrative = matchedId ? demon.linkedItemNarratives?.[matchedId] : undefined;
 
   return {
     isLinked,
     linkedItemId: matchedId ?? linkedIds[0] ?? null,
     customerLink: isLinked
-      ? (demon.customerLink ?? '')
+      ? (itemNarrative?.customerLink ?? demon.customerLink ?? '')
       : (demon.genericCustomerLink ?? DEFAULT_GENERIC_CUSTOMER_LINK),
     aftermathLine: isLinked
-      ? (demon.aftermathLine ?? '')
+      ? (itemNarrative?.aftermathLine ?? demon.aftermathLine ?? '')
       : (demon.genericAftermathLine ?? DEFAULT_GENERIC_AFTERMATH),
   };
 }

@@ -4,6 +4,12 @@
     "name": "药费",
     "hp": 20,
     "linkedItemIds": ["watch", "medicine_box"],
+    "linkedItemNarratives": {
+      "medicine_box": {
+        "customerLink": "白天当了药箱的老头的难处",
+        "aftermathLine": "白天药箱还在柜里，下月账单还在。"
+      }
+    },
     "mechanicLine": "第三回合伤害 5",
     "introLine": "这个月的药费单，又来了。",
     "customerLink": "白天当了手表的父亲的难处",
@@ -23,6 +29,16 @@
     "name": "车票",
     "hp": 22,
     "linkedItemIds": ["ring", "harmonica", "gold_watch"],
+    "linkedItemNarratives": {
+      "harmonica": {
+        "customerLink": "白天当了口琴的工人的难处",
+        "aftermathLine": "白天口琴仍在铺里，远路还得自己走。"
+      },
+      "gold_watch": {
+        "customerLink": "白天当了金表的人的难处",
+        "aftermathLine": "白天金表仍在铺里，远路还得自己走。"
+      }
+    },
     "mechanicLine": "两回合都得 1 盾",
     "obsession": {
       "roundDeltas": { "3": 2 },
@@ -47,6 +63,16 @@
     "name": "房租",
     "hp": 26,
     "linkedItemIds": ["old_book", "tin_trunk", "ledger"],
+    "linkedItemNarratives": {
+      "tin_trunk": {
+        "customerLink": "白天当了铁皮箱的打工人的难处",
+        "aftermathLine": "白天铁皮箱仍堆在柜后，下月房租还在。"
+      },
+      "ledger": {
+        "customerLink": "白天当了账本的人的难处",
+        "aftermathLine": "白天账本仍堆在柜后，下月房租还在。"
+      }
+    },
     "mechanicLine": "伤害每回合涨，3/5/7",
     "obsession": {
       "hpBonus": 2,
@@ -71,6 +97,12 @@
     "name": "学费",
     "hp": 20,
     "linkedItemIds": ["bicycle", "cloth_ticket"],
+    "linkedItemNarratives": {
+      "cloth_ticket": {
+        "customerLink": "白天当了布票的母亲的难处",
+        "aftermathLine": "白天布票仍在铺里，学费单子还在。"
+      }
+    },
     "mechanicLine": "两回合都得 2 盾",
     "obsession": {
       "roundDeltas": { "3": 2 },

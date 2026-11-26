@@ -66,6 +66,8 @@ interface BattleDebugState {
   demonMechanicLine?: string;
   demonObsessionActive?: boolean;
   demonObsessionLabel?: string | null;
+  demonCustomerLink?: string;
+  aftermathLine?: string | null;
   demonIntroBannerText?: string;
   introBannerVisible?: boolean;
   hand: string[];
@@ -614,6 +616,94 @@ test('P12 Follow-up 1: owned items never reappear in customer pool and short poo
   await waitForPawnshopPhase(page, 'negotiating');
   await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
   await waitForPawnshopPhase(page, 'summary');
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+async function winBattleWithCard(
+  page: Page,
+  canvas: Locator,
+  preferredCardName: string,
+): Promise<BattleDebugState> {
+  let state = await waitForBattleReady(page, 'play');
+  for (let safety = 0; safety < 20 && state.phase === 'play'; safety += 1) {
+    if (state.hand.includes(preferredCardName) && state.renqing >= 1) {
+      state = await playHandCardByName(page, canvas, preferredCardName);
+      continue;
+    }
+    state = await advanceEndTurn(page, canvas, state.round);
+  }
+  return waitForBattleReady(page, 'result_scene');
+}
+
+test('P12 Phase B fix: non-primary linked items (harmonica / medicine_box) show per-item banner and victory aftermath narrative', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+  const canvas = page.locator('#game-container canvas');
+
+  // 1) Only 口琴 (harmonica) pawned -> Night 2 Demon B shows 口琴 narrative, not 婚戒/新娘
+  await seedAndStartSavedDay(
+    page,
+    canvas,
+    '/?seed=7',
+    buildSeededSave({
+      day: 2,
+      deck: ['口琴', '秤砣', '秤砣', '秤砣', '秤砣', '秤砣'],
+      pawnedItemIds: ['harmonica'],
+    }),
+  );
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+  for (let i = 0; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  }
+  await waitForPawnshopPhase(page, 'summary');
+  await clickLogical(page, canvas, PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON);
+
+  const bStart = await waitForBattleReady(page, 'play');
+  expect(bStart.demonId).toBe('b');
+  expect(bStart.demonIntroBannerText).toContain('白天当了口琴的工人的难处');
+  expect(bStart.demonIntroBannerText).not.toContain('婚戒');
+  expect(bStart.demonIntroBannerText).not.toContain('新娘');
+  await dismissBattleBannerIfPresent(page, canvas);
+
+  const bResult = await winBattleWithCard(page, canvas, '秤砣');
+  expect(bResult.result).toBe('win');
+  expect(bResult.aftermathLine).toBe('白天口琴仍在铺里，远路还得自己走。');
+  expect(bResult.aftermathLine).not.toContain('婚戒');
+
+  // 2) Only 药箱 (medicine_box) pawned -> Night 1 Demon A shows 药箱 narrative, not 手表/父亲
+  await seedAndStartSavedDay(
+    page,
+    canvas,
+    '/?seed=7&demon=a',
+    buildSeededSave({
+      day: 2,
+      deck: ['药箱', '秤砣', '秤砣', '秤砣', '秤砣', '秤砣'],
+      pawnedItemIds: ['medicine_box'],
+    }),
+  );
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+  for (let i = 0; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  }
+  await waitForPawnshopPhase(page, 'summary');
+  await clickLogical(page, canvas, PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON);
+
+  const aStart = await waitForBattleReady(page, 'play');
+  expect(aStart.demonId).toBe('a');
+  expect(aStart.demonIntroBannerText).toContain('白天当了药箱的老头的难处');
+  expect(aStart.demonIntroBannerText).not.toContain('手表');
+  expect(aStart.demonIntroBannerText).not.toContain('父亲');
+  await dismissBattleBannerIfPresent(page, canvas);
+
+  const aResult = await winBattleWithCard(page, canvas, '秤砣');
+  expect(aResult.result).toBe('win');
+  expect(aResult.aftermathLine).toBe('白天药箱还在柜里，下月账单还在。');
+  expect(aResult.aftermathLine).not.toContain('手表');
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);

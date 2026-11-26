@@ -88,6 +88,11 @@ export interface DemonObsessionConfig {
   pawnHint: string;
 }
 
+export interface DemonItemNarrative {
+  customerLink: string;
+  aftermathLine: string;
+}
+
 export interface BossComponentDef {
   itemId: string;
   cardName: string;
@@ -117,6 +122,7 @@ export interface DemonDef {
   isBoss?: boolean;
   chapter?: number;
   linkedItemIds?: string[];
+  linkedItemNarratives?: Record<string, DemonItemNarrative>;
   mechanicLine?: string;
   obsession?: DemonObsessionConfig;
   introLine?: string;

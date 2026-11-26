@@ -74,6 +74,37 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
     };
     expect(validateDemons([missingMechanic]).errors.some((e) => e.includes('mechanicLine'))).toBe(true);
 
+    const badNarrativeKey: DemonDef = {
+      ...DEMONS[1],
+      linkedItemNarratives: {
+        ...(DEMONS[1].linkedItemNarratives ?? {}),
+        unknown_item: { customerLink: '测试', aftermathLine: '测试' },
+      },
+    };
+    expect(
+      validateDemons([badNarrativeKey]).errors.some((e) => e.includes('must be present in linkedItemIds')),
+    ).toBe(true);
+
+    const emptyNarrativeLink: DemonDef = {
+      ...DEMONS[1],
+      linkedItemNarratives: {
+        harmonica: { customerLink: '', aftermathLine: '测试' },
+      },
+    };
+    expect(
+      validateDemons([emptyNarrativeLink]).errors.some((e) => e.includes('customerLink must be non-empty')),
+    ).toBe(true);
+
+    const emptyNarrativeAftermath: DemonDef = {
+      ...DEMONS[1],
+      linkedItemNarratives: {
+        harmonica: { customerLink: '测试', aftermathLine: '  ' },
+      },
+    };
+    expect(
+      validateDemons([emptyNarrativeAftermath]).errors.some((e) => e.includes('aftermathLine must be non-empty')),
+    ).toBe(true);
+
     expect(validateAllGameData(CARDS, ITEMS, DEMONS, CHAPTERS).errors).toEqual([]);
   });
 
@@ -144,6 +175,82 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
     const narrC = resolveDemonNarrative(demonC, ['顶住'], ['tin_trunk'], ITEMS);
     expect(narrC.isLinked).toBe(true);
     expect(narrC.linkedItemId).toBe('tin_trunk');
+  });
+
+  it('Block 2 分件叙事：6 件非首选关联牌返回各自两行文案，4 件首选牌仍返回心魔级文案', () => {
+    const demonA = DEMONS.find((d) => d.id === 'a')!;
+    const demonB = DEMONS.find((d) => d.id === 'b')!;
+    const demonC = DEMONS.find((d) => d.id === 'c')!;
+    const demonD = DEMONS.find((d) => d.id === 'd')!;
+
+    const nonPrimaryCases = [
+      {
+        demon: demonA,
+        itemId: 'medicine_box',
+        cardName: '药箱',
+        expectedLink: '白天当了药箱的老头的难处',
+        expectedAftermath: '白天药箱还在柜里，下月账单还在。',
+      },
+      {
+        demon: demonB,
+        itemId: 'harmonica',
+        cardName: '口琴',
+        expectedLink: '白天当了口琴的工人的难处',
+        expectedAftermath: '白天口琴仍在铺里，远路还得自己走。',
+      },
+      {
+        demon: demonB,
+        itemId: 'gold_watch',
+        cardName: '金表',
+        expectedLink: '白天当了金表的人的难处',
+        expectedAftermath: '白天金表仍在铺里，远路还得自己走。',
+      },
+      {
+        demon: demonC,
+        itemId: 'tin_trunk',
+        cardName: '顶住',
+        expectedLink: '白天当了铁皮箱的打工人的难处',
+        expectedAftermath: '白天铁皮箱仍堆在柜后，下月房租还在。',
+      },
+      {
+        demon: demonC,
+        itemId: 'ledger',
+        cardName: '账本',
+        expectedLink: '白天当了账本的人的难处',
+        expectedAftermath: '白天账本仍堆在柜后，下月房租还在。',
+      },
+      {
+        demon: demonD,
+        itemId: 'cloth_ticket',
+        cardName: '布票',
+        expectedLink: '白天当了布票的母亲的难处',
+        expectedAftermath: '白天布票仍在铺里，学费单子还在。',
+      },
+    ];
+
+    for (const c of nonPrimaryCases) {
+      const res = resolveDemonNarrative(c.demon, [c.cardName], [c.itemId], ITEMS);
+      expect(res.isLinked).toBe(true);
+      expect(res.linkedItemId).toBe(c.itemId);
+      expect(res.customerLink).toBe(c.expectedLink);
+      expect(res.aftermathLine).toBe(c.expectedAftermath);
+      expect(res.customerLink).not.toBe(c.demon.customerLink);
+    }
+
+    const primaryCases = [
+      { demon: demonA, itemId: 'watch', cardName: '倒转' },
+      { demon: demonB, itemId: 'ring', cardName: '守诺' },
+      { demon: demonC, itemId: 'old_book', cardName: '旧书' },
+      { demon: demonD, itemId: 'bicycle', cardName: '飞驰' },
+    ];
+
+    for (const c of primaryCases) {
+      const res = resolveDemonNarrative(c.demon, [c.cardName], [c.itemId], ITEMS);
+      expect(res.isLinked).toBe(true);
+      expect(res.linkedItemId).toBe(c.itemId);
+      expect(res.customerLink).toBe(c.demon.customerLink);
+      expect(res.aftermathLine).toBe(c.demon.aftermathLine);
+    }
   });
 
   it('§3.2 四心魔各自机制：A 3/3/5、B R1/R2 各 1 盾、C 3/5/7、D R1/R2 各 2 盾（含 R2 盾刷新）', () => {

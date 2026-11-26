@@ -2611,6 +2611,7 @@ export function checkSimGuardrails(report: BalanceSimulationReport): SimGuardrai
     }
   }
 
+  // P12 §3.1 验收口径：仅 Lv.2 执念开档进 [40%, 95%] 门控；Lv.1 执念开档（前两夜全输可达，如房租 C 18.4%）记为已知边缘，不进门控
   for (const obs of report.obsessionComparison) {
     if (obs.lv2On.winRate < SIM_WIN_RATE_MIN || obs.lv2On.winRate > SIM_WIN_RATE_MAX) {
       errors.push(

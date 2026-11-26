@@ -265,6 +265,40 @@ export function validateDemons(demons: readonly DemonDef[]): DataValidationResul
       }
     }
 
+    if (demon.linkedItemNarratives !== undefined) {
+      if (
+        typeof demon.linkedItemNarratives !== 'object' ||
+        demon.linkedItemNarratives === null ||
+        Array.isArray(demon.linkedItemNarratives)
+      ) {
+        errors.push(`${label}: linkedItemNarratives must be an object`);
+      } else {
+        const linkedSet = new Set(demon.linkedItemIds ?? []);
+        for (const [itemId, entry] of Object.entries(demon.linkedItemNarratives)) {
+          if (!linkedSet.has(itemId)) {
+            errors.push(
+              `${label}.linkedItemNarratives[${itemId}]: itemId must be present in linkedItemIds`,
+            );
+          }
+          if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+            errors.push(`${label}.linkedItemNarratives[${itemId}]: entry must be an object`);
+            continue;
+          }
+          const typedEntry = entry as Partial<Record<'customerLink' | 'aftermathLine', unknown>>;
+          if (!isNonEmptyString(typedEntry.customerLink)) {
+            errors.push(
+              `${label}.linkedItemNarratives[${itemId}]: customerLink must be non-empty string`,
+            );
+          }
+          if (!isNonEmptyString(typedEntry.aftermathLine)) {
+            errors.push(
+              `${label}.linkedItemNarratives[${itemId}]: aftermathLine must be non-empty string`,
+            );
+          }
+        }
+      }
+    }
+
     if (demon.obsession !== undefined) {
       const obs = demon.obsession;
       if (obs.hpBonus !== undefined && !isNonNegativeFinite(obs.hpBonus)) {
