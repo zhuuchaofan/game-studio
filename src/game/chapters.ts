@@ -2,7 +2,7 @@ import chaptersJson from '../data/chapters.json';
 import { hashSeed, mulberry32, type RngFn } from '../utils/rng';
 import type { PawnItem } from './pawnshop';
 
-export type PactId = 'high_margin' | 'credit_stock' | 'steady_shop';
+export type PactId = 'high_margin' | 'credit_stock' | 'steady_shop' | 'street_favor';
 
 export type SideQuestChoice = 'accepted' | 'rejected';
 
@@ -26,6 +26,7 @@ export interface PactDef {
   immediateMoney?: number;
   bossHpBonus?: number;
   immediateReputation?: number;
+  immediateHeirloom?: boolean;
 }
 
 export interface SideQuestConfig {
@@ -97,6 +98,10 @@ export interface ChapterSaveState {
   pawnedItemIds?: string[];
   /** P11 子项 2③：第 7 夜开战时实际构成 Boss 的旧物 ID 快照（供结局翻账本点名）。 */
   bossComponentItemIds?: string[];
+  /** P12 阶段 C：当前持有的老物件 ID 列表（最多 3 件）。 */
+  heirlooms?: string[];
+  /** P12 阶段 C：本章已领取的口碑里程碑档位（如 [3]、[3, 5]）。 */
+  heirloomMilestonesClaimed?: number[];
 }
 
 export const CHAPTERS_DATA: ChaptersDataFile = chaptersJson as ChaptersDataFile;
@@ -112,10 +117,20 @@ export const CREDIT_STOCK_BOSS_HP_BONUS = 6;
 export const STEADY_SHOP_IMMEDIATE_REP = 1;
 export const SIDE_QUEST_NIGHT_DEMON_HP_BONUS = 4;
 
-export const VALID_PACT_IDS: readonly PactId[] = ['high_margin', 'credit_stock', 'steady_shop'];
+export const VALID_PACT_IDS: readonly PactId[] = [
+  'high_margin',
+  'credit_stock',
+  'steady_shop',
+  'street_favor',
+];
 
 export function isValidPactId(value: unknown): value is PactId {
-  return value === 'high_margin' || value === 'credit_stock' || value === 'steady_shop';
+  return (
+    value === 'high_margin' ||
+    value === 'credit_stock' ||
+    value === 'steady_shop' ||
+    value === 'street_favor'
+  );
 }
 
 export function isValidSideQuestChoice(value: unknown): value is SideQuestChoice {
@@ -218,6 +233,10 @@ export function createInitialChapterState(
     ...(overrides.bossComponentItemIds !== undefined
       ? { bossComponentItemIds: [...overrides.bossComponentItemIds] }
       : {}),
+    heirlooms: overrides.heirlooms ? [...overrides.heirlooms] : [],
+    heirloomMilestonesClaimed: overrides.heirloomMilestonesClaimed
+      ? [...overrides.heirloomMilestonesClaimed]
+      : [],
   };
 }
 
@@ -238,6 +257,10 @@ export function cloneChapterState(chapter: ChapterSaveState): ChapterSaveState {
     ...(chapter.bossComponentItemIds !== undefined
       ? { bossComponentItemIds: [...chapter.bossComponentItemIds] }
       : {}),
+    heirlooms: chapter.heirlooms ? [...chapter.heirlooms] : [],
+    heirloomMilestonesClaimed: chapter.heirloomMilestonesClaimed
+      ? [...chapter.heirloomMilestonesClaimed]
+      : [],
   };
 }
 
@@ -306,6 +329,7 @@ export interface PactEffectDelta {
   bossHpBonus: number;
   redemptionMultiplier: number;
   skipReputationDelta: number;
+  immediateHeirloom: boolean;
 }
 
 export function getPactEffectDelta(
@@ -320,6 +344,7 @@ export function getPactEffectDelta(
     bossHpBonus: pact?.bossHpBonus ?? 0,
     redemptionMultiplier: pact?.redemptionMultiplier ?? DEFAULT_REDEMPTION_MULTIPLIER,
     skipReputationDelta: pact?.skipReputationDelta ?? 0,
+    immediateHeirloom: Boolean(pact?.immediateHeirloom),
   };
 }
 

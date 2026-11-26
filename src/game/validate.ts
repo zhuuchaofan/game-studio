@@ -1,6 +1,7 @@
 import cardsJson from '../data/cards.json';
 import chaptersJson from '../data/chapters.json';
 import demonsJson from '../data/demons.json';
+import heirloomsJson from '../data/heirlooms.json';
 import itemsJson from '../data/items.json';
 import {
   CHAPTER_DAYS,
@@ -11,6 +12,8 @@ import {
   type PactDef,
 } from './chapters';
 import type { CardDef, CardEffectType, DemonDef } from './effects';
+import type { HeirloomDef } from './heirlooms';
+import { BATTLE_HOOK_NAMES } from './hooks';
 import {
   DAILY_CUSTOMER_COUNT,
   REDEMPTION_COOLDOWN_DAYS,
@@ -517,9 +520,9 @@ export function validateChapters(
       });
     }
 
-    // Validate Day 4 pacts
-    if (!Array.isArray(chapter.day4Pacts) || chapter.day4Pacts.length !== 3) {
-      errors.push(`${label}: day4Pacts must contain exactly 3 pacts`);
+    // Validate Day 4 pacts (3 or 4 options)
+    if (!Array.isArray(chapter.day4Pacts) || chapter.day4Pacts.length < 3 || chapter.day4Pacts.length > 4) {
+      errors.push(`${label}: day4Pacts must contain 3 to 4 pacts`);
     } else {
       const seenPacts = new Set<string>();
       chapter.day4Pacts.forEach((pact: PactDef, pIdx: number) => {
@@ -548,17 +551,84 @@ export function validateChapters(
   return { valid: errors.length === 0, errors };
 }
 
+const VALID_HOOK_NAME_SET: ReadonlySet<string> = new Set(BATTLE_HOOK_NAMES);
+
+export function validateHeirlooms(heirlooms: readonly HeirloomDef[]): DataValidationResult {
+  const errors: string[] = [];
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  const seenLabels = new Set<string>();
+
+  if (!Array.isArray(heirlooms) || heirlooms.length === 0) {
+    return { valid: false, errors: ['heirlooms.json must be a non-empty array'] };
+  }
+
+  heirlooms.forEach((h, index) => {
+    const label = `heirlooms[${index}] (${h?.id ?? h?.name ?? 'unknown'})`;
+
+    if (!isNonEmptyString(h.id)) {
+      errors.push(`${label}: id must be a non-empty string`);
+    } else if (seenIds.has(h.id)) {
+      errors.push(`${label}: duplicate heirloom id "${h.id}"`);
+    } else {
+      seenIds.add(h.id);
+    }
+
+    if (!isNonEmptyString(h.name)) {
+      errors.push(`${label}: name must be a non-empty string`);
+    } else if (seenNames.has(h.name)) {
+      errors.push(`${label}: duplicate heirloom name "${h.name}"`);
+    } else {
+      seenNames.add(h.name);
+    }
+
+    if (!isNonEmptyString(h.shortLabel) || [...h.shortLabel].length !== 1) {
+      errors.push(`${label}: shortLabel must be a single character`);
+    } else if (seenLabels.has(h.shortLabel)) {
+      errors.push(`${label}: duplicate shortLabel "${h.shortLabel}"`);
+    } else {
+      seenLabels.add(h.shortLabel);
+    }
+
+    if (!VALID_HOOK_NAME_SET.has(h.hook)) {
+      errors.push(`${label}: unknown hook "${String(h.hook)}"`);
+    }
+
+    if (!isNonNegativeFinite(h.value)) {
+      errors.push(`${label}: value must be a non-negative number, got ${String(h.value)}`);
+    }
+
+    if (!isNonEmptyString(h.effectText)) {
+      errors.push(`${label}: effectText must be a non-empty string`);
+    }
+
+    if (!isNonEmptyString(h.story)) {
+      errors.push(`${label}: story must be a non-empty string`);
+    }
+  });
+
+  return { valid: errors.length === 0, errors };
+}
+
 export function validateAllGameData(
   cards: readonly CardDef[] = cardsJson as CardDef[],
   items: readonly PawnItem[] = itemsJson as PawnItem[],
   demons: readonly DemonDef[] = demonsJson as DemonDef[],
   chaptersFile: ChaptersDataFile | readonly ChapterConfig[] = chaptersJson as ChaptersDataFile,
+  heirlooms: readonly HeirloomDef[] = heirloomsJson as HeirloomDef[],
 ): DataValidationResult {
   const cardRes = validateCards(cards);
   const itemRes = validateItems(items, cards);
   const demonRes = validateDemons(demons);
   const chapterRes = validateChapters(chaptersFile, demons, items);
-  const errors = [...cardRes.errors, ...itemRes.errors, ...demonRes.errors, ...chapterRes.errors];
+  const heirloomRes = validateHeirlooms(heirlooms);
+  const errors = [
+    ...cardRes.errors,
+    ...itemRes.errors,
+    ...demonRes.errors,
+    ...chapterRes.errors,
+    ...heirloomRes.errors,
+  ];
   return { valid: errors.length === 0, errors };
 }
 
@@ -567,8 +637,9 @@ export function assertValidGameData(
   items: readonly PawnItem[] = itemsJson as PawnItem[],
   demons: readonly DemonDef[] = demonsJson as DemonDef[],
   chaptersFile: ChaptersDataFile | readonly ChapterConfig[] = chaptersJson as ChaptersDataFile,
+  heirlooms: readonly HeirloomDef[] = heirloomsJson as HeirloomDef[],
 ): void {
-  const res = validateAllGameData(cards, items, demons, chaptersFile);
+  const res = validateAllGameData(cards, items, demons, chaptersFile, heirlooms);
   if (!res.valid) {
     throw new Error(`Game data validation failed:\n- ${res.errors.join('\n- ')}`);
   }

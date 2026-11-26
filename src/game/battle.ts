@@ -147,6 +147,9 @@ export interface BattleDebugSnapshot {
     lines: string[];
   } | null;
   epilogueLines?: string[] | null;
+  /** P12 阶段 C：当前持有的老物件 ID 列表及 Boss 胜掉落（供 E2E 断言）。 */
+  heirlooms?: string[];
+  bossHeirloomDrop?: { id: string; name: string; shortLabel: string; effectText: string } | null;
   /** 新手教程状态（供 E2E 测试断言用）。 */
   tutorialActive?: boolean;
   currentStep?: string | null;
@@ -217,10 +220,10 @@ function activateRoundChargeIfAny(state: BattleState, events: BattleEvent[]): vo
 }
 
 /**
- * Initializes a new card battle state machine (draw -> play).
- * Does not read JSON directly: `cards`, `demons`, and `balance` are injected.
+ * Initializes a new card battle state machine (draw -> play) and returns both initial state
+ * and any events emitted by battleStart/turnStart hooks.
  */
-export function createBattle(
+export function createBattleWithEvents(
   deckCardNames: readonly string[],
   demonId: string,
   rng: RngFn,
@@ -229,7 +232,7 @@ export function createBattle(
   balance: BattleBalanceConfig,
   hooks?: HookRegistry,
   options?: CreateBattleOptions,
-): BattleState {
+): BattleActionResult {
   const demon = options?.demonOverride ?? demons.find((d) => d.id === demonId) ?? demons[0];
   if (!demon) {
     throw new Error(`Demon not found: ${demonId}`);
@@ -308,12 +311,43 @@ export function createBattle(
 
   activateRoundChargeIfAny(state, []);
 
+  const hookEvents: BattleEvent[] = [];
   if (hooks) {
-    state = hooks.emit('battleStart', state, { round: state.round }).state;
-    state = hooks.emit('turnStart', state, { round: state.round }).state;
+    const startRes = hooks.emit('battleStart', state, { round: state.round });
+    state = startRes.state;
+    hookEvents.push(...startRes.events);
+    const turnRes = hooks.emit('turnStart', state, { round: state.round });
+    state = turnRes.state;
+    hookEvents.push(...turnRes.events);
   }
 
-  return state;
+  return { state, events: hookEvents };
+}
+
+/**
+ * Initializes a new card battle state machine (draw -> play).
+ * Does not read JSON directly: `cards`, `demons`, and `balance` are injected.
+ */
+export function createBattle(
+  deckCardNames: readonly string[],
+  demonId: string,
+  rng: RngFn,
+  cards: readonly CardDef[],
+  demons: readonly DemonDef[],
+  balance: BattleBalanceConfig,
+  hooks?: HookRegistry,
+  options?: CreateBattleOptions,
+): BattleState {
+  return createBattleWithEvents(
+    deckCardNames,
+    demonId,
+    rng,
+    cards,
+    demons,
+    balance,
+    hooks,
+    options,
+  ).state;
 }
 
 /**

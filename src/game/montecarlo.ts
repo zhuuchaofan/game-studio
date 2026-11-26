@@ -44,6 +44,15 @@ import {
   type PactId,
 } from './chapters';
 import {
+  addHeirloom,
+  createHeirloomHookRegistry,
+  getNewlyReachedMilestones,
+  HEIRLOOM_CAP,
+  HEIRLOOMS,
+  pickRandomUnownedHeirloom,
+} from './heirlooms';
+import type { HookRegistry } from './hooks';
+import {
   BALANCE,
   countEligibleDailyItems,
   createRedemptionOffer,
@@ -193,6 +202,9 @@ export interface ChapterOneSimStats {
   shortPoolDays: number;
   totalSimulatedDays: number;
   shortPoolDayRate: number;
+  repMilestone3Rate: number;
+  repMilestone5Rate: number;
+  avgHeirloomsHeld: number;
   day7Samples: Day7EndgameSample[];
   persistentHpMetrics?: PersistentHpSimMetrics;
 }
@@ -346,11 +358,20 @@ export interface ArchetypeStudyRow {
   runs: number;
 }
 
+export interface HeirloomStudyRow {
+  label: string;
+  heirloomIds: readonly string[];
+  runs: number;
+  clears: number;
+  clearRate: number;
+}
+
 export interface BalanceSimulationReport {
   overrides: SimTuneOverrides;
   demons: MonteCarloStats[];
   obsessionComparison: ObsessionComparisonRow[];
   archetypeStudies: ArchetypeStudyRow[];
+  heirloomStudies: HeirloomStudyRow[];
   economy: SevenDayEconomyStats;
   boss: MonteCarloStats;
   chapter1: ChapterOneSimStats;
@@ -763,6 +784,8 @@ export interface ChapterOneSimOptions {
   persistentHp?: PersistentHpOptions;
   /** P12 跟进 1：收当不重复硬排除（默认 true；false 仅用于 sim 开关对照）。 */
   excludeOwnedHard?: boolean;
+  /** P12 阶段 C：固定持有老物件列表（用于单件/三件组合测量）。 */
+  fixedHeirlooms?: readonly string[];
 }
 
 function getCardBaseDamage(card: CardDef | undefined): number {
@@ -955,9 +978,10 @@ function simulateChapterBattle(
   demonId: string,
   seed: number,
   options?: CreateBattleOptions,
+  hooks?: HookRegistry,
 ): BattleState {
   const rng = mulberry32(seed);
-  let state = createBattle(deck, demonId, rng, cards, demons, balance, undefined, options);
+  let state = createBattle(deck, demonId, rng, cards, demons, balance, hooks, options);
 
   let safetyRounds = 0;
   while (state.result === 'ongoing' && safetyRounds < 20) {
@@ -1059,10 +1083,14 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
   let totalWorks = 0;
   let totalDebtNotesAdded = 0;
   let totalEndReputation = 0;
+  let reachedRep3Runs = 0;
+  let reachedRep5Runs = 0;
+  let totalHeirloomsHeld = 0;
 
   for (let seed = 1; seed <= runs; seed += 1) {
     const offerRng = mulberry32(seed * 9973 + 17);
     const rewardRng = mulberry32(seed * 6131 + 29);
+    const heirloomRng = mulberry32(seed * 7919 + 43);
 
     let money = pawnBalance.startingMoney;
     let reputation = pawnBalance.startingReputation;
@@ -1079,6 +1107,27 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     let hadPreBossKo = false;
     let consecutiveLosses = 0;
     let maxConsecutiveLosses = 0;
+    let heirlooms: string[] = opts.fixedHeirlooms ? [...opts.fixedHeirlooms] : [];
+    const claimedMilestones: number[] = [];
+    let reachedRep3 = reputation >= 3;
+    let reachedRep5 = reputation >= 5;
+
+    const handleRepUpdate = (rep: number): void => {
+      if (rep >= 3) reachedRep3 = true;
+      if (rep >= 5) reachedRep5 = true;
+      if (opts.fixedHeirlooms) {
+        return;
+      }
+      for (const m of getNewlyReachedMilestones(rep, claimedMilestones)) {
+        claimedMilestones.push(m);
+        if (heirlooms.length < HEIRLOOM_CAP) {
+          const picked = pickRandomUnownedHeirloom(heirlooms, heirloomRng);
+          if (picked) {
+            heirlooms = addHeirloom(heirlooms, picked.id, HEIRLOOM_CAP).heirlooms;
+          }
+        }
+      }
+    };
 
     for (let day = 1; day <= CHAPTER_DAYS; day += 1) {
       // 任务书 19 §9：第 2–7 天早上三选一策略（HP >= 15 打理；HP < 15 且钱 >= 60 买补药 20/+10 且 3 当客；否则休息少 1 当客）
@@ -1097,12 +1146,19 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         }
       }
 
-      // Day 4: Pact (rotate evenly across all 3 pacts so all branches are tested) + free trim
+      // Day 4: Pact (rotate evenly across all 4 pacts so all branches are tested) + free trim
       if (day === 4) {
         pactChoice = VALID_PACT_IDS[(seed - 1) % VALID_PACT_IDS.length];
         const delta = getPactEffectDelta(pactChoice, CHAPTER_ONE_ID, chapters);
         money += delta.moneyDelta;
         reputation += delta.reputationDelta;
+        if (delta.immediateHeirloom && !opts.fixedHeirlooms && heirlooms.length < HEIRLOOM_CAP) {
+          const picked = pickRandomUnownedHeirloom(heirlooms, heirloomRng);
+          if (picked) {
+            heirlooms = addHeirloom(heirlooms, picked.id, HEIRLOOM_CAP).heirlooms;
+          }
+        }
+        handleRepUpdate(reputation);
 
         // Free trim: remove debt note first if present, else 1 zero-damage non-draw/non-renqing card
         if (deck.length >= 4) {
@@ -1148,6 +1204,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
             money += offer.payout;
             reputation += 1;
             redeemTickets -= 1;
+            handleRepUpdate(reputation);
           }
         }
       }
@@ -1230,6 +1287,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
           reputation += getReputationDelta(chosenTier, true, item.temperament, pawnBalance);
           deck.push(item.cardName);
           pawnPrices = recordPawnPrice(pawnPrices, item.cardName, price);
+          handleRepUpdate(reputation);
         }
       }
 
@@ -1277,6 +1335,8 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
       }
 
       const battleSeed = seed * 1009 + day * 37;
+      const nightHooks =
+        heirlooms.length > 0 ? createHeirloomHookRegistry(heirlooms) : undefined;
       const finalBattle = simulateChapterBattle(
         cards,
         demons,
@@ -1285,6 +1345,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         demonId,
         battleSeed,
         battleOptions,
+        nightHooks,
       );
 
       if (day === CHAPTER_DAYS && finalBattle.bossChargeInterrupted) {
@@ -1356,6 +1417,9 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     if (maxConsecutiveLosses >= 3) {
       lossStreakGe3Count += 1;
     }
+    if (reachedRep3) reachedRep3Runs += 1;
+    if (reachedRep5) reachedRep5Runs += 1;
+    totalHeirloomsHeld += heirlooms.length;
     totalEndReputation += reputation;
     totalNightsWon += nightsWon;
     totalFinalMoney += money;
@@ -1381,6 +1445,9 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     shortPoolDays,
     totalSimulatedDays,
     shortPoolDayRate: totalSimulatedDays > 0 ? shortPoolDays / totalSimulatedDays : 0,
+    repMilestone3Rate: runs > 0 ? reachedRep3Runs / runs : 0,
+    repMilestone5Rate: runs > 0 ? reachedRep5Runs / runs : 0,
+    avgHeirloomsHeld: runs > 0 ? totalHeirloomsHeld / runs : 0,
     day7Samples,
     ...(persistentHp
       ? {
@@ -2408,6 +2475,54 @@ export function simulateArchetypeStudies(
   });
 }
 
+export function simulateHeirloomStudies(
+  cards: readonly CardDef[],
+  demons: readonly DemonDef[],
+  battleBalance: BattleBalanceConfig,
+  pawnBalance: BalanceConfig,
+  items: readonly PawnItem[],
+  chapters: readonly ChapterConfig[],
+  runs = 1000,
+): HeirloomStudyRow[] {
+  const configs: { label: string; heirloomIds: readonly string[] }[] = [
+    { label: '无老物件', heirloomIds: [] },
+    ...HEIRLOOMS.map((h) => ({ label: `单件 ${h.name}`, heirloomIds: [h.id] })),
+    {
+      label: '三件组合 [算+招+灯]',
+      heirloomIds: ['old_abacus', 'gold_signboard', 'paper_lantern'],
+    },
+    {
+      label: '三件组合 [被+盘+秤]',
+      heirloomIds: ['quilt', 'copper_tray', 'old_scale'],
+    },
+    {
+      label: '三件组合 [招+灯+报]',
+      heirloomIds: ['gold_signboard', 'paper_lantern', 'old_newspaper'],
+    },
+  ];
+
+  return configs.map((cfg) => {
+    const res = simulateChapterOne({
+      cards,
+      demons,
+      battleBalance,
+      pawnBalance,
+      items,
+      chapters,
+      runs,
+      persistentHp: DEFAULT_PERSISTENT_HP_OPTIONS,
+      fixedHeirlooms: cfg.heirloomIds,
+    });
+    return {
+      label: cfg.label,
+      heirloomIds: cfg.heirloomIds,
+      runs: res.runs,
+      clears: res.clears,
+      clearRate: res.clearRate,
+    };
+  });
+}
+
 /**
  * Runs the full CLI balance simulation (4 demons + 7-day economy with redemption)
  * with optional SIM_TUNE hot overrides.
@@ -2572,11 +2687,23 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     runs,
   });
 
+  // Task 20 §9.1 Item 4: Heirloom single & 3-cap combination clear rates (measurement only)
+  const heirloomStudies = simulateHeirloomStudies(
+    cards,
+    demons,
+    battleBalance,
+    pawnBalance,
+    ITEMS,
+    CHAPTERS,
+    runs,
+  );
+
   return {
     overrides,
     demons: demonStats,
     obsessionComparison,
     archetypeStudies,
+    heirloomStudies,
     economy,
     boss: bossStats,
     chapter1,
@@ -2797,6 +2924,16 @@ export function formatSimReport(report: BalanceSimulationReport): string {
     );
     lines.push(
       `  早上三选一(均/局): 休息 ${phm.avgRestsPerRun.toFixed(2)} 买补药 ${phm.avgMedicinesPerRun.toFixed(2)} (买率 ${(phm.medicineTriggerRate * 100).toFixed(2)}%) 打理 ${phm.avgWorksPerRun.toFixed(2)} | 欠条加(均/局): ${phm.avgDebtNotesAddedPerRun.toFixed(2)}`,
+    );
+  }
+  lines.push(
+    `  口碑里程碑占率(B+C生命结转): 首次到3 ${(ph.repMilestone3Rate * 100).toFixed(1)}% | 首次到5 ${(ph.repMilestone5Rate * 100).toFixed(1)}% | 均持有老物件 ${ph.avgHeirloomsHeld.toFixed(2)}`,
+  );
+
+  lines.push(`\n[老物件单件与三件组合测量(仅测量,${ph.runs}局)]`);
+  for (const row of report.heirloomStudies) {
+    lines.push(
+      `  ${row.label}: 7 天通关率 ${(row.clearRate * 100).toFixed(1)}% (${row.clears}/${row.runs})`,
     );
   }
 

@@ -34,9 +34,21 @@ export const REDEMPTION_REJECT_BUTTON = { x: 448, y: 306, width: 248, height: 62
 export const SIDE_QUEST_ACCEPT_BUTTON = { x: 192, y: 306, width: 248, height: 62 } as const;
 export const SIDE_QUEST_REJECT_BUTTON = { x: 448, y: 306, width: 248, height: 62 } as const;
 export const PACT_OPTION_BUTTONS = [
-  { id: 'high_margin' as PactId, x: 116, y: 216, width: 184, height: 240 },
-  { id: 'credit_stock' as PactId, x: 320, y: 216, width: 184, height: 240 },
-  { id: 'steady_shop' as PactId, x: 524, y: 216, width: 184, height: 240 },
+  { id: 'high_margin' as PactId, x: 86, y: 216, width: 148, height: 240 },
+  { id: 'credit_stock' as PactId, x: 242, y: 216, width: 148, height: 240 },
+  { id: 'steady_shop' as PactId, x: 398, y: 216, width: 148, height: 240 },
+  { id: 'street_favor' as PactId, x: 554, y: 216, width: 148, height: 240 },
+] as const;
+export const HEIRLOOM_BAR_RECT = { x: 140, y: 209, width: 248, height: 30 } as const;
+export const HEIRLOOM_BAR_SLOTS = [
+  { x: 138, y: 209, width: 40, height: 24 },
+  { x: 186, y: 209, width: 40, height: 24 },
+  { x: 234, y: 209, width: 40, height: 24 },
+] as const;
+export const HEIRLOOM_REPLACE_SLOTS = [
+  { x: 116, y: 206, width: 184, height: 120 },
+  { x: 320, y: 206, width: 184, height: 120 },
+  { x: 524, y: 206, width: 184, height: 120 },
 ] as const;
 export const TRIM_CARD_SLOTS = [
   { x: 116, y: 148, width: 184, height: 68 },
@@ -47,6 +59,7 @@ export const TRIM_CARD_SLOTS = [
   { x: 524, y: 232, width: 184, height: 68 },
 ] as const;
 export const TRIM_SKIP_BUTTON = { x: 320, y: 316, width: 184, height: 44 } as const;
+export const HEIRLOOM_REPLACE_SKIP_BUTTON = TRIM_SKIP_BUTTON;
 export const PAWNSHOP_TRIM_PREV_BUTTON = { x: 104, y: 316, width: 120, height: 44 } as const;
 export const PAWNSHOP_TRIM_NEXT_BUTTON = { x: 536, y: 316, width: 120, height: 44 } as const;
 export const BOSS_PREVIEW_CONFIRM_BUTTON = { x: 320, y: 316, width: 240, height: 44 } as const;

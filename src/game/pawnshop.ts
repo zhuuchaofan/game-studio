@@ -20,6 +20,7 @@ export type PawnshopPhase =
   | 'boss_preview'
   | 'pact'
   | 'trim_deck'
+  | 'replace_heirloom'
   | 'redemption'
   | 'negotiating'
   | 'feedback'
@@ -191,6 +192,18 @@ export interface PawnshopDebugSnapshot {
   sideQuestChoice?: SideQuestChoice | null;
   day3Rumor?: string | null;
   sideQuestItemId?: string | null;
+  /** P12 阶段 C：老物件栏与替换面板状态（供 E2E 测试断言用）。 */
+  heirlooms?: string[];
+  heirloomMilestonesClaimed?: number[];
+  heirloomBarVisible?: boolean;
+  inspectedHeirloomId?: string | null;
+  inspectedHeirloomText?: string | null;
+  pendingHeirloomOffer?: {
+    id: string;
+    name: string;
+    shortLabel: string;
+    effectText: string;
+  } | null;
   version?: string;
   titleCompletedTeaser?: string | null;
   titleSettlementLine?: string | null;

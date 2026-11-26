@@ -7,7 +7,7 @@ import { audio, installAudioDebugHook } from '../game/audio';
 import {
   cancelPendingChoice,
   canPlayCard,
-  createBattle,
+  createBattleWithEvents,
   endTurn,
   formatEffectDescription,
   formatEffectShort,
@@ -21,6 +21,7 @@ import {
   type CardDef,
   type DemonDef,
 } from '../game/battle';
+import { createHeirloomHookRegistry } from '../game/heirlooms';
 import {
   composeBoss,
   resolveDemonNarrative,
@@ -156,6 +157,7 @@ export class CardBattleScene extends Phaser.Scene {
   private isDemonLinked = false;
   private demonObsessionActive = false;
   private demonObsessionLabel: string | null = null;
+  private activeHeirlooms: string[] = [];
   private feedbackMessage = '';
   private inspectedCardName: string | null = null;
   private detailMode: 'effect' | 'story' = 'effect';
@@ -198,6 +200,7 @@ export class CardBattleScene extends Phaser.Scene {
     this.isDemonLinked = false;
     this.demonObsessionActive = false;
     this.demonObsessionLabel = null;
+    this.activeHeirlooms = [];
     this.feedbackMessage = '';
     this.inspectedCardName = null;
     this.detailMode = 'effect';
@@ -309,21 +312,36 @@ export class CardBattleScene extends Phaser.Scene {
       };
     }
 
-    this.state = createBattle(
+    const heirloomsParam = params.get('heirlooms');
+    this.activeHeirlooms =
+      deckParam === 'test' && heirloomsParam !== null
+        ? heirloomsParam
+            .split(',')
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        : [...(this.save?.chapter.heirlooms ?? [])];
+    const battleHooks =
+      this.activeHeirlooms.length > 0
+        ? createHeirloomHookRegistry(this.activeHeirlooms)
+        : undefined;
+
+    const initRes = createBattleWithEvents(
       resolvedDeck,
       resolvedDemonId,
       rng,
       CARDS,
       DEMONS,
       battleBalance,
-      undefined,
+      battleHooks,
       createOpts,
     );
+    this.state = initRes.state;
     this.tutorial = syncTutorialForBattle(this.tutorial, 'play');
 
     window.__BATTLE_DEBUG__ = {
       getState: () => ({
         ...toBattleDebugSnapshot(this.state, this.isAnimating || this.playQueue.length > 0),
+        heirlooms: [...this.activeHeirlooms],
         demonObsessionActive: this.demonObsessionActive,
         demonObsessionLabel: this.demonObsessionLabel,
         demonIntroBannerText: this.buildDemonIntroBannerText(),
@@ -387,6 +405,9 @@ export class CardBattleScene extends Phaser.Scene {
 
     this.createActionStrip();
     this.renderBattle();
+    if (initRes.events.length > 0) {
+      this.presentBattleEvents(initRes.events, DEMON_X, DEMON_Y);
+    }
     this.renderTutorialBubble();
     if (this.tutorial.active && this.tutorial.currentStep !== null) {
       this.pendingIntroBanner = true;
