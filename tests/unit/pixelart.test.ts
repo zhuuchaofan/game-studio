@@ -15,7 +15,7 @@ import {
 } from '../../src/game/pixelart';
 import { TUTORIAL_SKIP_LABEL, TUTORIAL_STEPS } from '../../src/game/tutorial';
 
-describe('Pixel art validation (23 cards + 6 items + 4 demons)', () => {
+describe('Pixel art validation (30 cards + 12 items + 4 demons)', () => {
   it('validates helper functions and rejects malformed sprites', () => {
     expect(parsePaletteChar('.')).toBe(-1);
     expect(parsePaletteChar('0')).toBe(0);

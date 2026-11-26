@@ -1482,7 +1482,7 @@ function simulateComposedBossSubset(
 
 /**
  * P11 组合 Boss 扫描模拟：
- * - 覆盖 n = 0..6（赊账开 / 关）、n = 1 六单件敏感性、n = 2..5 实测最常见子集、满配 + 赊账 48 血；
+ * - 覆盖 n = 0..12（赊账开 / 关）、n = 1 十二单件敏感性、n = 2..5 实测最常见子集、满配 + 赊账 40 血；
  * - 赎当削弱验证（同一终局牌组分布下逐件拆组件 n = 12 -> 0）；
  * - 邮票册打断专项（含邮票册阈值 14 vs 不含邮票册阈值 10）；
  * - TEST_DECK 对照（n = 3 典型组合 vs 现行 48.5%）。
@@ -2253,7 +2253,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     persistentHp: DEFAULT_PERSISTENT_HP_OPTIONS,
   });
 
-  // P11 Composed Boss sweep (n = 0..6, credit_stock on/off, single-item sensitivity, redemption path, stamp interrupt study)
+  // P11 Composed Boss sweep (n = 0..12, credit_stock on/off, single-item sensitivity, redemption path, stamp interrupt study)
   const bossComposition = simulateBossCompositionScan({
     cards,
     demons,
@@ -2501,7 +2501,7 @@ export function formatSimReport(report: BalanceSimulationReport): string {
     return { avgRound, avgRemainHp };
   };
   lines.push(`\n[P11 组合 Boss 扫描 (真实第7天牌组分布, ${bc.runsPerBucket} 局/档)]`);
-  lines.push('  -- 赊账 OFF (n = 0..6) --');
+  lines.push('  -- 赊账 OFF (n = 0..12) --');
   for (const tier of bc.tiersNoCredit) {
     const sampleHp = tier.subsets[0]?.bossHp ?? bc.bareStats.bossHp;
     const { avgRound, avgRemainHp } = avgTierMetrics(tier);

@@ -470,7 +470,9 @@ test('P12 Phase A (c): Day 7 Boss composition (>6 fragments), calendar preview, 
   for (const frag of NEW_BOSS_FRAGMENTS) {
     expect(bossStart.bossFragmentNames).toContain(frag);
   }
-  expect(bossStart.demonIntroBannerText).toContain('·等8件');
+  expect(bossStart.demonIntroBannerText).toContain('表·戒·票·口');
+  expect(bossStart.demonIntroBannerText).toContain('药·账·箱·金');
+  expect(bossStart.demonIntroBannerText).not.toContain('等8件');
 
   // Sub-case B: Defeat Boss with 4 new items in deck and verify ending ledger lists them
   await page.goto('/?seed=7&demon=boss_ch1');

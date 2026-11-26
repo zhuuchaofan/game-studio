@@ -203,7 +203,7 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     });
     expect(harsh.persistentHpMetrics?.preBossKoRate).toBeGreaterThan(0);
     expect(harsh.bossReached).toBeGreaterThan(0);
-  }, 30000);
+  }, 60000);
 
   it('P10: simulates 1000 realistic new-player Night 1 runs (Day 1 3-item pool, not TEST_DECK) and reports single-attack win rate', () => {
     const stats = simulateNewPlayerFirstNight({ runs: 1000 });

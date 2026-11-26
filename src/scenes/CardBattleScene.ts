@@ -396,8 +396,10 @@ export class CardBattleScene extends Phaser.Scene {
       return [lineA, lineB, composed.introSummary];
     }
     if (frags.length > 6) {
-      const row1 = frags.slice(0, 3).join('·');
-      const row2 = `${frags.slice(3, 5).join('·')}·等${frags.length}件`;
+      const labels = composed.activeComponents.map((c) => c.shortLabel);
+      const splitAt = Math.ceil(labels.length / 2);
+      const row1 = labels.slice(0, splitAt).join('·');
+      const row2 = labels.slice(splitAt).join('·');
       return [row1, row2, composed.introSummary];
     }
     const splitAt = Math.ceil(frags.length / 2);
