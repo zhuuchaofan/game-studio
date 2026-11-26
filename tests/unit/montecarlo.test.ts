@@ -11,6 +11,7 @@ import {
   runMonteCarlo,
   simulateNewPlayerFirstNight,
   simulateSevenDayEconomy,
+  simulateThinDeckPath,
   TEST_DECK,
 } from '../../src/game/montecarlo';
 
@@ -169,6 +170,8 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     expect(text).toContain('P11 组合 Boss 扫描');
     expect(text).toContain('赎当削弱路径');
     expect(text).toContain('邮票册打断专项');
+    expect(text).toContain('单伤害牌路径模拟');
+    expect(text).toContain('实测路线 [余音/倒转/旧书]');
 
     const parsed = parseSimTuneEnv('{"demonAHp":22,"runs":200}');
     expect(parsed).toEqual({ demonAHp: 22, runs: 200 });
@@ -193,5 +196,22 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     expect(stats.winRate).toBeLessThan(0.9); // Realistic 3-card Day 1 pool, NOT TEST_DECK's 91.3%
     expect(stats.singleAttackWinRate).toBeGreaterThanOrEqual(0);
     expect(stats.singleAttackWinRate).toBeLessThanOrEqual(1);
+  });
+
+  it('Task 17 §9: simulates thin-deck single-attack paths across Nights 1-3 (measurement only)', () => {
+    const report = simulateThinDeckPath({ runs: 200 });
+    expect(report.seed7Deck).toEqual(['余音', '倒转', '旧书']);
+    expect(report.seed7Route).toHaveLength(3);
+    expect(report.singleAttackDistribution).toHaveLength(3);
+
+    for (let i = 0; i < 3; i += 1) {
+      const routeNight = report.seed7Route[i];
+      const distNight = report.singleAttackDistribution[i];
+      expect(routeNight.night).toBe(i + 1);
+      expect(routeNight.winRate).toBeLessThan(0.05);
+      expect(routeNight.avgTotalDamage).toBe(18);
+      expect(distNight.runs).toBe(200);
+      expect(distNight.wins + distNight.lossesHp + distNight.lossesTimeout).toBe(200);
+    }
   });
 });

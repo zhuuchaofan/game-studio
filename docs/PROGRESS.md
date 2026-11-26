@@ -381,3 +381,17 @@
   - `npm run test:e2e`（Playwright，localhost）：49/49 全过（含 `scaling.spec.ts`、`portrait.spec.ts`、`subpath.spec.ts`）；
   - **局部截图目视核查（`/tmp/playtest-fix-screenshots/`，20 张，临时 `zz-playtest-verify.spec.ts` 已删）**：逐屏确认标题版本号、第 7 天预告、父亲/交易 Boss 血量 Toast、赎当拒绝重进、出牌手牌保持原位与飞行期禁用结束回合、Boss R2 打断与护盾拆分、连续飘字与 HUD 同框、延后心魔横幅、章节失败分支提示、第 3 天结算与 390×844 竖屏遮罩全部零重叠、零缺字、零溢出。
 
+## 2026-11-26 — 通关反馈修整轮（feature/clear-run-fix-round）
+- **范围**：按 `proto-tasks/17-clear-run-fix-round.md` 与 §15 全部拍板决定（Q1=B / Q2 改写版 / Q3 改写版 / Q4=`v0.4.3-ClearRunFix` / Q5 不做）完成通关反馈修整轮（未碰 P12 扩容、心魔伤害方向、Boss C7 参数、存档 v3、`pixel-font.json`、音频与 `.github/workflows/`）：
+  - **手牌固定槽位扇形展开（§2 方案 A）**：`src/game/layout.ts` 新增 `computeHandCardPose`（≤6 张平排，`≥7` 张用 9/11 固定槽位扇形、`±5°` 倾角、`8px` 弧落与 `size=12` 左对齐紧凑文案）；`CardBattleScene.ts` 接入 `setRotation`、左到右 `restoreHandZOrder`、悬停临时回正置顶及固定槽位 `keepPositions`。
+  - **倒转文案对齐（§3 方案 B）**：`src/game/battle.ts` `formatEffectDescription` 改为 `双方生命回到上一回合开始时`、`formatEffectShort` 改为 `血回上回`；效果与 `glossary.ts` 不改。
+  - **普通失败页三行（§4）**：`src/scenes/ResultScene.ts` 补充提醒行（`提醒：伤害牌太少，试试多收带伤的旧物` / `提醒：先攒护盾牌，顶住前两回合`）与继续行（`输了这一夜没事，钱与牌都在，明天继续`），严守 `y<=181` 避开第 1 天 `6/6` 气泡（未新增 `demonHpRemaining` / `totalDamageDealt` 字段）。
+  - **飘字禁区与跨 lane 堆叠（§5）**：`CardBattleScene.ts` `spawnFloatText` 改为自 `max(88, baseY)` 向下飘落 `+24px`，并以 `activeFloatSlots.length` 跨 lane 纵向 `+28px` 错开（`人情+1` 锚点暂不迁 HUD）。
+  - **开场横幅可点关闭与上收（§6）**：`DEMON_INTRO_BANNER_RECT` 调整为 `y=130, h=74`（Boss 3 行 `h=96`），背景可点 `dismissIntroBanner()`，横幅期间仅隐藏 `detailContentLayer`（详情/关联带）而保留 `[故]`/`[效]` 按钮可点；不做 150ms 输入锁。
+  - **标题页通关收尾与版本号（§7 / §10）**：`TitleScene.ts` 通关态扩为 `368×52` 两行玉色徽章（`第1章·已完成` + `第2章「站稳招牌」· 未完待续`）+ 下移「开始」至 `y=280` + 底栏复用翻账本数据源输出 `胜N · 收M · 钱K`；`GAME_VERSION` 与 `package.json` 同步至 `v0.4.3-ClearRunFix` / `0.4.3`。
+  - **牌组列表容差与薄牌组 sim 测量（§8 / §9）**：`PawnshopScene.ts` 白天结算 `>3` 张格高改为 `32px`、文字 `y+3`（PNG 实测净空 `6.0px`）；`montecarlo.ts` 新增仅测量的 `simulateThinDeckPath`（`[余音/倒转/旧书]` 0.0% / 均伤 18.0；真实 1 伤牌分布 9.1%/9.0%/8.4%，不进护栏）。
+  - **文档与测试**：新增 `tests/unit/layout.test.ts` 与 `tests/e2e/clear-run-fix.spec.ts`（5 用例），更新 `tests/unit/battle.test.ts`、`tests/unit/montecarlo.test.ts`、`tests/e2e/p11-boss-composition.spec.ts`、`docs/GAME_DESIGN.md`（§22）、本文件与 `proto-tasks/17-clear-run-fix-round.md`。
+- **验证证据**：
+  - `npx tsc --noEmit` 0 错误；`npm run build` 退出码 0；`npx vitest run` 17/17 文件、144/144 单测全过（含 `fontCoverage.test.ts`）；`npm run sim:check` PASSED（冻结零漂移）；`npm run test:e2e` 54/54 全过；本地截图（`clear-run-fix-screenshots/`，17 张）全部目视核查通过。
+
+

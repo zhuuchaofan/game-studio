@@ -2022,8 +2022,8 @@ export class PawnshopScene extends Phaser.Scene {
         const row = Math.floor(index / 3);
         const col = index % 3;
         const x = slotXs[col];
-        const y = isDay3Rumor ? (row === 0 ? 158 : 192) : row === 0 ? 196 : 236;
-        const boxH = isDay3Rumor ? 28 : 30;
+        const y = isDay3Rumor ? (row === 0 ? 159 : 194) : row === 0 ? 198 : 238;
+        const boxH = 32;
         const matchedItem = ITEMS.find((item) => item.cardName === cardName);
         const stripColor = matchedItem ? parseHexColor(matchedItem.color) : PALETTE.brass.num;
 
@@ -2036,7 +2036,7 @@ export class PawnshopScene extends Phaser.Scene {
           this.add.rectangle(x, y - Math.floor(boxH / 2) + 2, 160, 2, stripColor),
         );
         this.contentLayer.add(
-          addPixelText(this, x, y + 2, cardName, {
+          addPixelText(this, x, y + 3, cardName, {
             color: PALETTE.ink.hex,
             origin: 0.5,
           }),
@@ -2044,7 +2044,7 @@ export class PawnshopScene extends Phaser.Scene {
       });
       if (this.state.deck.length > maxSlots) {
         this.contentLayer.add(
-          addPixelText(this, slotXs[2], isDay3Rumor ? 192 : 236, `等${this.state.deck.length}张`, {
+          addPixelText(this, slotXs[2], isDay3Rumor ? 194 : 238, `等${this.state.deck.length}张`, {
             color: PALETTE.deepWood.hex,
             origin: 0.5,
           }),

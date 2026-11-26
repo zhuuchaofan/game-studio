@@ -324,6 +324,13 @@ export function buildEndingLedger(
   };
 }
 
+export function formatTitleSettlementSummary(
+  money: number,
+  chapter: Pick<ChapterSaveState, 'demonsDefeated' | 'pawnsCollected'>,
+): string {
+  return `胜${chapter.demonsDefeated} · 收${chapter.pawnsCollected} · 钱${money}`;
+}
+
 /**
  * P11 Sub-item 2①: Month-end epilogue lines after Chapter 3 ending (no new playable days).
  */

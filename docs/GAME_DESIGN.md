@@ -520,3 +520,22 @@
   - `charge_threshold`：`封门阈值：R2累伤打满可打断封门，返+1情`
 - **章节失败页分支提示（Q8）**：仅在 `ResultScene.renderChapterFailed` 按失败分支添加灯黄提示条——回合耗尽（`lose_timeout`）显示 `提醒：试试多攒伤害牌来打断封门`，血量归零（`lose_hp`）显示 `提醒：先攒护盾牌，顶住前两回合`（使用合成后实际数值与字库内字符）。
 - **竖屏模式与版本号（§7.5 方案 A 定稿）**：竖屏按宽度缩小可玩——移除全屏阻塞遮罩，恢复画布下方 in-flow 提示条 `↻ 横屏体验更佳`（`pointer-events: none`、无点击/关闭行为）；竖屏时 `calculateScaledDimensions` 采用 `scale = min(可用宽/640, 可用高/360)` 不取整（390×844 下约 `0.61×`、画布 `390×219`）并保持画布可见与输入可点（`game.scale.refresh()`），横屏仍保持整数倍缩放不动；`TitleScene.ts` 新增底栏版本号 `v0.4.2-PlaytestFix`（`size: 12`, `silverBlue`, `(320, 338)`），`package.json` 同步升至 `0.4.2`。
+
+---
+
+## §22 通关反馈修整轮定稿（v0.4.3-ClearRunFix，2026-11-26）
+
+依据 `proto-tasks/17-clear-run-fix-round.md` 与 §15 全部拍板决定（Q1=B / Q2 改写版 / Q3 改写版 / Q4=`v0.4.3-ClearRunFix` / Q5 不做），不改动心魔伤害方向、Boss C7 参数、P12 内容、存档 v3、`pixel-font.json`（774 字形）及音频。
+
+### 22.1 战斗可读性与手牌扇形（§2 / §3 / §5 / §6）
+- **手牌固定槽位扇形展开（方案 A）**：`layout.ts` 新增 `computeHandCardPose`——≤6 张手牌保持 104px 自然平排与 24px 居中文字；≥7 张采用固定槽位扇形（7–9 张居中映射至 9 槽位 `66px` 步距，10–11 张映射至 11 槽位 `53px` 步距，最大倾角 `±5°`、弧线下落 `8px`），并切换为左对齐 `size=12` 原生 1:1 像素牌名与效果简称（最大 48px 宽），确保相邻卡面不互挡文字；`CardBattleScene.ts` 复用 `keepHandPositions` 留空位并保持左到右层级，悬停时临时回正并置顶。
+- **「倒转」文案对齐（Q1=B）**：`battle.ts` `formatEffectDescription` 改为 `双方生命回到上一回合开始时`，简称 `formatEffectShort` 改为 `血回上回`；效果实现（仅恢复双方生命）与费用保持不变，`glossary.ts` 不新增词条。
+- **飘字禁区与跨 lane 堆叠**：`spawnFloatText` 改为自 `max(88, baseY)` 向下飘落 `+24px`（最高 `210`），彻底避开名牌行（`y=46..70`）与血条（`y=76..84`）；堆叠计数由同 lane 改为全 `activeFloatSlots` 跨 lane 计数（同批不同 lane 也 `+28px` 错开）。
+- **开场横幅可点关闭与让位**：`DEMON_INTRO_BANNER_RECT` 上收至 `y=130, h=74`（Boss 3 行高 `96`、底缘 `208`），与手牌顶间隙扩至 `≥16px`；横幅背景 `setInteractive` 支持点击任意处提前关闭；横幅展示期间仅隐藏 `detailContentLayer`（关联带与详情条），保留左侧 `[故]`/`[效]` 按钮可点并同步关横幅。不做 150ms 输入锁定。
+
+### 22.2 失败引导、标题页通关收尾、牌组容差与薄牌组测量（§4 / §7 / §8 / §9 / §10）
+- **普通失败页三行（Q2 改写版）**：`ResultScene.renderNormalResult` 失败分支在保留第 1 天 `6/6` 教程气泡（`y=186..274`）零冲突前提下（正文 `y=66..171`），补充分支提醒（回合耗尽：`提醒：伤害牌太少，试试多收带伤的旧物`；血量归零：`提醒：先攒护盾牌，顶住前两回合`）与继续说明（`输了这一夜没事，钱与牌都在，明天继续`）。本轮不新增 `demonHpRemaining` / `totalDamageDealt` 字段。
+- **标题页通关收尾（Q3 改写版）**：通关态（`chapter1Completed && status === 'completed'`）标题页徽章扩为 `368×52` 两行玉色徽章（`第1章·已完成` + `第2章「站稳招牌」· 未完待续`），「开始」下移至 `y=280`、「台历」调整至 `(528, 270, 132×34)`，底栏中隙（`y=315`）复用 `demonsDefeated` / `pawnsCollected` / `money` 展示结算摘要（`胜N · 收M · 钱K`），`GAME_VERSION` 与 `package.json` 同步升至 `v0.4.3-ClearRunFix` / `0.4.3`。
+- **第 3 天牌组列表容差**：`PawnshopScene` 白天结算 `>3` 张格高调整为 `32px`、文字中心 `y+3`（PNG 实测色条底至字墨顶净空由 `3.5px` 扩至 `6.0px`）；`>6` 张「等N张」截断行为不变。
+- **薄牌组 sim 测量项**：`montecarlo.ts` 新增 `simulateThinDeckPath`（仅出数字，不进 `checkSimGuardrails`），输出 `[余音/倒转/旧书]` 固定路线与真实第 1 天仅 1 张伤害牌分布对第 1–3 夜（药费/车票/房租）的胜率与期望总伤。
+
