@@ -429,3 +429,9 @@
   - `npm run sim:check` PASSED（冻结项零漂移：A–D 91.3%/82.1%/55.9%/91.3%、单场 Boss 61.1%；7 天通关率 50.5% 满血 / 44.3% 生命结转；新玩家首夜 38.9%、单攻击牌 5.8%（距 [5%,25%] 下限剩 0.8pp）、240 限钱 30.9%；7 天现金流中位 46.0 / 常赢 49.0；合成 Boss n=6..9 56.9%/55.4%/54.9%/53.2%、n=12 45.3%（36 血）、满配+赊账 n=12 40 血[已到顶] 34.4%）；
   - `npm run test:e2e` 73/73 全部通过（含新增 `p12-content-phase-a.spec.ts` 4 条），无失败请求、无 `pageerror`；
   - 本地交付截图（`~/workspace/game-studio/p12-phase-a-screenshots/`，17 张，覆盖标题版本号、6 件新旧物当客屏、6 张新牌、8/12 件台历与 Boss 预告/横幅 `·等12件`/结局翻账本及 `390×844` / `844×390` / `800×500` 三视口）逐张目视核查通过（临时截图脚本已删）。
+
+## 2026-11-26 — P12 内容扩容轮阶段 B：机制三要求（feature/p12-phase-b）
+- **范围**：按 `proto-tasks/20-p12-content-expansion.md` §3 完成阶段 B 三大机制（未做阶段 C–E、未改版本号 `0.4.5`、未动 Boss 上限 `36/40` 与 4 回合封门机制）：
+  - **§3.1 执念提前**：`demons.json` 将 `linkedItemId` 改为集合 `linkedItemIds`（A `[watch, medicine_box]` 无执念；B `[ring, harmonica, gold_watch]` 远行 8→10；C `[old_book, tin_trunk, ledger]` 血量 26→28；D `[bicycle, cloth_ticket]` 开学 10→12）；`bossComposition.ts` 新增 `resolveDemonObsession` / `getItemObsessionHint`（第 1 天豁免、第 2 天起取开战瞬间牌库、只触发一次不叠加、赎回即消）；三处预告落地（当客屏提示行、台历红框+执念徽章、夜里开场横幅执念行）。
+  - **§3.2 心魔各有打法**：A 催费 R3 3→5（`第三回合伤害 5`）；B 打包 R1/R2 各 +1 盾（`两回合都得 1 盾`）；C 涨租 3/5/7（`伤害每回合涨，3/5/7`）；D 攒钱 R1/R2 各 +2 盾（`两回合都得 2 盾`）。`battle.ts` 回合推进同步赋予非蓄力回合 `action.shield > 0` 护盾；`validate.ts` 补充 `action.shield`/`mechanicLine`/`linkedItemIds`/`obsession` 校验；台历与开场横幅展示机制行。
+  - **§3.3 牌组合**：`cards.json` 12 张旧物牌加 `set: "旧物"`（`validate.ts` 校验），`effects.ts` 新增 `countItemCardsInHand` 并供 `hasItemCardInHand` 复用；三流派方向（硬茬/守家/精打细算）写入 GDD §25；`montecarlo.ts` 补全条件牌评估、执念开/关双档（Lv.1/Lv.2）对照及三路线牌组测量。

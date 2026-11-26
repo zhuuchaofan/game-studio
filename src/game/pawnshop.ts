@@ -143,6 +143,8 @@ export interface PawnshopDebugSnapshot {
   currentTemperamentLabel?: string | null;
   /** 最近一次结算台词（供测试与验收）。 */
   lastMessage?: string | null;
+  /** P12 §3.1：当客屏执念提前提示文案（第 2 天起且对应今夜心魔执念时显示）。 */
+  obsessionHint?: string | null;
   /** 当前当客每档报价是否买得起（仅 negotiating 阶段由场景钩子提供）。 */
   tierAffordability?: Record<OfferTier, boolean>;
   /** 当前口碑与性格修正后的三档接受率（仅 negotiating 阶段由场景钩子提供）。 */

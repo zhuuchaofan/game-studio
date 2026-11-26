@@ -3,7 +3,8 @@
     "id": "a",
     "name": "药费",
     "hp": 20,
-    "linkedItemId": "watch",
+    "linkedItemIds": ["watch", "medicine_box"],
+    "mechanicLine": "第三回合伤害 5",
     "introLine": "这个月的药费单，又来了。",
     "customerLink": "白天当了手表的父亲的难处",
     "genericCustomerLink": "老街上又一桩没了结的事，今夜找上门来",
@@ -14,14 +15,20 @@
     "actions": [
       { "round": 1, "damage": 3 },
       { "round": 2, "damage": 3 },
-      { "round": 3, "damage": 3 }
+      { "round": 3, "damage": 5 }
     ]
   },
   {
     "id": "b",
     "name": "车票",
     "hp": 22,
-    "linkedItemId": "ring",
+    "linkedItemIds": ["ring", "harmonica", "gold_watch"],
+    "mechanicLine": "两回合都得 1 盾",
+    "obsession": {
+      "roundDeltas": { "3": 2 },
+      "effectLabel": "远行伤害 10",
+      "pawnHint": "收下它，今晚车票远行 10 伤"
+    },
     "introLine": "远行的车票攥在手里，舍不得放。",
     "customerLink": "白天当了婚戒的新娘的难处",
     "genericCustomerLink": "老街上又一桩没了结的事，今夜找上门来",
@@ -30,8 +37,8 @@
     "aftermathLine": "白天婚戒仍在铺里，远路还得自己走。",
     "genericAftermathLine": "今晚扛过去了，远路还得一步步走。",
     "actions": [
-      { "round": 1, "damage": 2 },
-      { "round": 2, "damage": 2 },
+      { "round": 1, "damage": 2, "shield": 1 },
+      { "round": 2, "damage": 2, "shield": 1 },
       { "round": 3, "damage": 8, "skill": "远行" }
     ]
   },
@@ -39,7 +46,13 @@
     "id": "c",
     "name": "房租",
     "hp": 26,
-    "linkedItemId": "old_book",
+    "linkedItemIds": ["old_book", "tin_trunk", "ledger"],
+    "mechanicLine": "伤害每回合涨，3/5/7",
+    "obsession": {
+      "hpBonus": 2,
+      "effectLabel": "血量 28",
+      "pawnHint": "收下它，今晚房租多 2 血"
+    },
     "introLine": "房东在门口敲了三下。",
     "customerLink": "白天当了旧书的学生的难处",
     "genericCustomerLink": "老街上又一桩没了结的事，今夜找上门来",
@@ -49,15 +62,21 @@
     "genericAftermathLine": "今晚扛过去了，街坊的难处还在门外。",
     "actions": [
       { "round": 1, "damage": 3 },
-      { "round": 2, "damage": 4 },
-      { "round": 3, "damage": 5 }
+      { "round": 2, "damage": 5 },
+      { "round": 3, "damage": 7 }
     ]
   },
   {
     "id": "d",
     "name": "学费",
     "hp": 20,
-    "linkedItemId": "bicycle",
+    "linkedItemIds": ["bicycle", "cloth_ticket"],
+    "mechanicLine": "两回合都得 2 盾",
+    "obsession": {
+      "roundDeltas": { "3": 2 },
+      "effectLabel": "开学伤害 12",
+      "pawnHint": "收下它，今晚学费开学 12 伤"
+    },
     "introLine": "开学的日子，越来越近了。",
     "customerLink": "白天当了自行车的父亲的难处",
     "genericCustomerLink": "老街上又一桩没了结的事，今夜找上门来",
@@ -66,8 +85,8 @@
     "aftermathLine": "白天老车仍停在铺里，学费单子还在。",
     "genericAftermathLine": "今晚扛过去了，日子的担子还得接着扛。",
     "actions": [
-      { "round": 1, "damage": 1 },
-      { "round": 2, "damage": 2 },
+      { "round": 1, "damage": 1, "shield": 2 },
+      { "round": 2, "damage": 2, "shield": 2 },
       { "round": 3, "damage": 10, "skill": "开学" }
     ]
   },

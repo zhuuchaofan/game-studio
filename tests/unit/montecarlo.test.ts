@@ -229,7 +229,8 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
       const distNight = report.singleAttackDistribution[i];
       expect(routeNight.night).toBe(i + 1);
       expect(routeNight.winRate).toBeLessThan(0.05);
-      expect(routeNight.avgTotalDamage).toBe(18);
+      // Night 2 (Demon B) now gains 1+1=2 shield across R1/R2, absorbing 2 HP damage (18 -> 16)
+      expect(routeNight.avgTotalDamage).toBe(routeNight.demonId === 'b' ? 16 : 18);
       expect(distNight.runs).toBe(200);
       expect(distNight.wins + distNight.lossesHp + distNight.lossesTimeout).toBe(200);
     }

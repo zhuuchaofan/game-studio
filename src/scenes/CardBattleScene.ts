@@ -24,6 +24,7 @@ import {
 import {
   composeBoss,
   resolveDemonNarrative,
+  resolveDemonObsession,
   type ComposedBossResult,
 } from '../game/bossComposition';
 import { TEST_DECK } from '../game/montecarlo';
@@ -153,6 +154,8 @@ export class CardBattleScene extends Phaser.Scene {
   private isEmptyDeck = false;
   private composedBoss: ComposedBossResult | null = null;
   private isDemonLinked = false;
+  private demonObsessionActive = false;
+  private demonObsessionLabel: string | null = null;
   private feedbackMessage = '';
   private inspectedCardName: string | null = null;
   private detailMode: 'effect' | 'story' = 'effect';
@@ -193,6 +196,8 @@ export class CardBattleScene extends Phaser.Scene {
     this.isEmptyDeck = false;
     this.composedBoss = null;
     this.isDemonLinked = false;
+    this.demonObsessionActive = false;
+    this.demonObsessionLabel = null;
     this.feedbackMessage = '';
     this.inspectedCardName = null;
     this.detailMode = 'effect';
@@ -284,12 +289,20 @@ export class CardBattleScene extends Phaser.Scene {
         this.save?.chapter.pawnedItemIds ?? [],
         ITEMS,
       );
+      const obsession = resolveDemonObsession(
+        baseDemon,
+        resolvedDeck,
+        this.save?.chapter.dayInChapter ?? 1,
+        ITEMS,
+      );
       this.isDemonLinked = narrative.isLinked;
+      this.demonObsessionActive = obsession.active;
+      this.demonObsessionLabel = obsession.effectLabel;
       createOpts = {
         demonHpBonus: data?.demonHpBonus ?? 0,
         initialPlayerHp,
         demonOverride: {
-          ...baseDemon,
+          ...obsession.demonDef,
           customerLink: narrative.customerLink,
           aftermathLine: narrative.aftermathLine,
         },
@@ -311,6 +324,8 @@ export class CardBattleScene extends Phaser.Scene {
     window.__BATTLE_DEBUG__ = {
       getState: () => ({
         ...toBattleDebugSnapshot(this.state, this.isAnimating || this.playQueue.length > 0),
+        demonObsessionActive: this.demonObsessionActive,
+        demonObsessionLabel: this.demonObsessionLabel,
         demonIntroBannerText: this.buildDemonIntroBannerText(),
         introBannerVisible: Boolean(this.introBanner),
         detailLayerVisible: Boolean(this.detailContentLayer?.visible),
@@ -408,19 +423,33 @@ export class CardBattleScene extends Phaser.Scene {
     return [row1, row2, composed.introSummary];
   }
 
+  private buildRegularDemonBannerLines(): { text: string; color: string }[] {
+    const lines: { text: string; color: string }[] = [
+      { text: `心魔「${this.state.demonName}」现身`, color: PALETTE.lampYellow.hex },
+    ];
+    if (this.state.demonCustomerLink) {
+      lines.push({ text: this.state.demonCustomerLink, color: PALETTE.silverBlue.hex });
+    }
+    if (this.state.demonIntroLine) {
+      lines.push({ text: this.state.demonIntroLine, color: PALETTE.paperWhite.hex });
+    }
+    if (this.state.demonMechanicLine) {
+      lines.push({ text: `机制:${this.state.demonMechanicLine}`, color: PALETTE.oldPaper.hex });
+    }
+    if (this.demonObsessionActive && this.demonObsessionLabel) {
+      lines.push({ text: `执念:${this.demonObsessionLabel}`, color: PALETTE.lampYellow.hex });
+    }
+    return lines;
+  }
+
   private buildDemonIntroBannerText(): string {
     if (this.composedBoss) {
       const header = `${this.state.demonName} 现身`;
       return [header, ...this.formatBossBannerLines(this.composedBoss)].join('\n');
     }
-    const parts: string[] = [`心魔「${this.state.demonName}」现身`];
-    if (this.state.demonCustomerLink) {
-      parts.push(this.state.demonCustomerLink);
-    }
-    if (this.state.demonIntroLine) {
-      parts.push(this.state.demonIntroLine);
-    }
-    return parts.join('\n');
+    return this.buildRegularDemonBannerLines()
+      .map((l) => l.text)
+      .join('\n');
   }
 
   private showDemonIntroBanner(): void {
@@ -429,22 +458,33 @@ export class CardBattleScene extends Phaser.Scene {
       this.maybeShowStartingGlossaryTips();
       return;
     }
-    // 五区制中部带（常规 y=130..204，Boss 2 行 y=128..204，Boss 3 行 y=112..208），
+    // 五区制中部带（常规 4 行 y=109..207，5 行 y=88..208，Boss 2 行 y=128..204，Boss 3 行 y=112..208），
     // 可点任意处关闭、底缘上收确保与手牌顶间隙 >= 14px，出现期间暂隐详情/关联带
+    const regularLines = this.composedBoss ? [] : this.buildRegularDemonBannerLines();
     const isBoss3Line = Boolean(
       this.composedBoss && !this.composedBoss.isBare && this.composedBoss.fragmentNames.length > 2,
     );
     const isBoss2Line = Boolean(
       this.composedBoss && !this.composedBoss.isBare && this.composedBoss.fragmentNames.length <= 2,
     );
-    const bannerH = isBoss3Line ? 96 : isBoss2Line ? 76 : DEMON_INTRO_BANNER_RECT.height;
-    const bannerW = this.composedBoss ? 452 : DEMON_INTRO_BANNER_RECT.width;
+    const bannerH = this.composedBoss
+      ? isBoss3Line
+        ? 96
+        : isBoss2Line
+          ? 76
+          : DEMON_INTRO_BANNER_RECT.height
+      : Math.max(DEMON_INTRO_BANNER_RECT.height, regularLines.length * 22 + 10);
+    const bannerW = this.composedBoss ? 452 : 452;
     const cx = Math.floor(DEMON_INTRO_BANNER_RECT.x + DEMON_INTRO_BANNER_RECT.width / 2);
-    const cy = isBoss3Line
-      ? 160
-      : isBoss2Line
-        ? 166
-        : Math.floor(DEMON_INTRO_BANNER_RECT.y + DEMON_INTRO_BANNER_RECT.height / 2);
+    const cy = this.composedBoss
+      ? isBoss3Line
+        ? 160
+        : isBoss2Line
+          ? 166
+          : Math.floor(DEMON_INTRO_BANNER_RECT.y + DEMON_INTRO_BANNER_RECT.height / 2)
+      : regularLines.length >= 5
+        ? 148
+        : 158;
     const topY = cy - Math.floor(bannerH / 2);
     const banner = this.add.container(0, 0).setDepth(90);
     const bg = this.add
@@ -514,36 +554,15 @@ export class CardBattleScene extends Phaser.Scene {
       return;
     }
 
-    const hasLink = Boolean(this.state.demonCustomerLink);
-    const children: Phaser.GameObjects.GameObject[] = [
-      bg,
-      addPixelText(this, cx, hasLink ? topY + 14 : topY + 20, `心魔「${this.state.demonName}」现身`, {
-        color: PALETTE.lampYellow.hex,
-        origin: 0.5,
-      }),
-    ];
-    if (this.state.demonCustomerLink) {
+    const children: Phaser.GameObjects.GameObject[] = [bg];
+    regularLines.forEach((line, idx) => {
       children.push(
-        addPixelText(this, cx, topY + 37, this.state.demonCustomerLink, {
-          color: PALETTE.silverBlue.hex,
+        addPixelText(this, cx, topY + 15 + idx * 22, line.text, {
+          color: line.color,
           origin: 0.5,
         }),
       );
-    }
-    if (this.state.demonIntroLine) {
-      children.push(
-        addPixelText(
-          this,
-          cx,
-          hasLink ? topY + 60 : topY + 50,
-          this.state.demonIntroLine,
-          {
-            color: PALETTE.paperWhite.hex,
-            origin: 0.5,
-          },
-        ),
-      );
-    }
+    });
     banner.add(children);
     this.introBanner = banner;
     this.introBannerTimer = this.time.delayedCall(INTRO_BANNER_MS, () => {

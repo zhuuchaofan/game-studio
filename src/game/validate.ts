@@ -151,6 +151,10 @@ export function validateCards(cards: readonly CardDef[]): DataValidationResult {
       });
     }
 
+    if (card.set !== undefined && card.set !== '旧物') {
+      errors.push(`${label}: invalid set "${String(card.set)}", expected "旧物"`);
+    }
+
     if (card.color !== undefined && !PALETTE_SET.has(card.color.toUpperCase())) {
       errors.push(`${label}: color "${card.color}" is not in the 16-color palette`);
     }
@@ -245,6 +249,42 @@ export function validateDemons(demons: readonly DemonDef[]): DataValidationResul
       errors.push(`${label}: hp must be > 0, got ${String(demon.hp)}`);
     }
 
+    if (!demon.isBoss && !isNonEmptyString(demon.mechanicLine)) {
+      errors.push(`${label}: regular demon requires non-empty mechanicLine`);
+    } else if (demon.mechanicLine !== undefined && !isNonEmptyString(demon.mechanicLine)) {
+      errors.push(`${label}: mechanicLine must be a non-empty string`);
+    }
+
+    if (demon.linkedItemIds !== undefined) {
+      if (
+        !Array.isArray(demon.linkedItemIds) ||
+        demon.linkedItemIds.length === 0 ||
+        demon.linkedItemIds.some((id: unknown) => !isNonEmptyString(id))
+      ) {
+        errors.push(`${label}: linkedItemIds must be a non-empty array of strings`);
+      }
+    }
+
+    if (demon.obsession !== undefined) {
+      const obs = demon.obsession;
+      if (obs.hpBonus !== undefined && !isNonNegativeFinite(obs.hpBonus)) {
+        errors.push(`${label}.obsession: hpBonus must be non-negative`);
+      }
+      if (obs.roundDeltas !== undefined) {
+        for (const [rKey, delta] of Object.entries(obs.roundDeltas)) {
+          if (typeof delta !== 'number' || !Number.isFinite(delta)) {
+            errors.push(`${label}.obsession.roundDeltas[${rKey}]: delta must be finite number`);
+          }
+        }
+      }
+      if (!isNonEmptyString(obs.effectLabel)) {
+        errors.push(`${label}.obsession: effectLabel must be non-empty string`);
+      }
+      if (!isNonEmptyString(obs.pawnHint)) {
+        errors.push(`${label}.obsession: pawnHint must be non-empty string`);
+      }
+    }
+
     if (!Array.isArray(demon.actions) || demon.actions.length < 3) {
       errors.push(`${label}: actions must cover at least rounds 1/2/3, got ${demon.actions?.length ?? 0}`);
     } else {
@@ -258,6 +298,11 @@ export function validateDemons(demons: readonly DemonDef[]): DataValidationResul
         if (!isNonNegativeFinite(action.damage)) {
           errors.push(
             `${label}.actions[${actionIdx}]: damage must be non-negative, got ${String(action.damage)}`,
+          );
+        }
+        if (action.shield !== undefined && !isNonNegativeFinite(action.shield)) {
+          errors.push(
+            `${label}.actions[${actionIdx}]: shield must be non-negative, got ${String(action.shield)}`,
           );
         }
       });
@@ -288,6 +333,16 @@ export function validateChapters(
   const itemById = new Map<string, PawnItem>();
   for (const item of items) {
     itemById.set(item.id, item);
+  }
+
+  for (const d of demons) {
+    if (d.linkedItemIds) {
+      for (const linkedId of d.linkedItemIds) {
+        if (!itemById.has(linkedId)) {
+          errors.push(`demon "${d.id}": linkedItemIds references unknown item "${linkedId}"`);
+        }
+      }
+    }
   }
 
   const seenChapterIds = new Set<number>();

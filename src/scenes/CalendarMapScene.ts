@@ -5,6 +5,7 @@ import {
   composeBoss,
   formatCalendarBossPreviewText,
   getBossDemonDef,
+  resolveDemonObsession,
   type ComposedBossResult,
 } from '../game/bossComposition';
 import {
@@ -36,6 +37,9 @@ export interface CalendarMapSceneData {
 export interface CalendarDebugDayEntry extends CalendarDayEntry {
   demonName: string;
   shortDemonName: string;
+  mechanicLine: string | null;
+  obsessionActive: boolean;
+  obsessionLabel: string | null;
 }
 
 export interface CalendarDebugSnapshot {
@@ -144,13 +148,21 @@ export class CalendarMapScene extends Phaser.Scene {
     const seed = data?.seed ?? urlSeed;
     const chapterCfg = getChapterConfig(this.chapterState.currentChapter || CHAPTER_ONE_ID);
     const rawEntries = buildCalendarEntries(this.chapterState, seed);
+    const liveDeck = loadedSave?.deck ? [...loadedSave.deck] : [];
 
     this.entries = rawEntries.map((entry) => {
       const demon = getDemonById(entry.demonId);
+      const obsession =
+        demon && !demon.isBoss
+          ? resolveDemonObsession(demon, liveDeck, entry.day, ITEMS)
+          : null;
       return {
         ...entry,
         demonName: demon?.name ?? entry.demonId,
         shortDemonName: getShortDemonName(demon),
+        mechanicLine: demon && !demon.isBoss ? (demon.mechanicLine ?? null) : null,
+        obsessionActive: Boolean(obsession?.active),
+        obsessionLabel: obsession?.effectLabel ?? null,
       };
     });
 
@@ -158,7 +170,6 @@ export class CalendarMapScene extends Phaser.Scene {
     this.isOpen = true;
 
     const baseBossDef = getBossDemonDef(DEMONS, chapterCfg.bossId);
-    const liveDeck = loadedSave?.deck ? [...loadedSave.deck] : [];
     const composed = composeBoss(liveDeck, this.chapterState.pactChoice, baseBossDef);
     this.composedBoss = composed;
     const bossHp = composed.finalHp;
@@ -283,10 +294,10 @@ export class CalendarMapScene extends Phaser.Scene {
 
       const borderColor = isSelected
         ? PALETTE.lampYellow.num
-        : entry.isBossDay
+        : entry.isBossDay || entry.obsessionActive
           ? PALETTE.vermilion.num
           : PALETTE.ink.num;
-      const borderWidth = isSelected || entry.isBossDay ? 4 : 2;
+      const borderWidth = isSelected || entry.isBossDay || entry.obsessionActive ? 4 : 2;
 
       const card = this.add
         .rectangle(cell.x, cell.y, cell.width, cell.height, bodyFill)
@@ -346,18 +357,30 @@ export class CalendarMapScene extends Phaser.Scene {
         origin: 0.5,
       });
 
-      // Row 2 (y=114): that day's demon name (or Boss name on Day 7)
+      // Row 2 (y=112): that day's demon name (or Boss name on Day 7)
       const demonColor = entry.isBossDay
         ? PALETTE.paperWhite.hex
         : entry.status === 'current' || entry.status === 'cleared'
           ? PALETTE.ink.hex
           : PALETTE.candle.hex;
-      const demonLabel = addPixelText(this, cell.x, 114, entry.shortDemonName, {
+      const demonLabel = addPixelText(this, cell.x, 112, entry.shortDemonName, {
         color: demonColor,
         origin: 0.5,
       });
 
-      // Row 3 (y=144): status stamp box (已收 / 当前 / 已过 / 未到)
+      const obsessionBadgeNodes: Phaser.GameObjects.GameObject[] = [];
+      if (entry.obsessionActive) {
+        obsessionBadgeNodes.push(
+          this.add.rectangle(cell.x, 132, 40, 14, PALETTE.vermilion.num).setStrokeStyle(2, PALETTE.ink.num),
+          addPixelText(this, cell.x, 132, '执念', {
+            size: 12,
+            color: PALETTE.lampYellow.hex,
+            origin: 0.5,
+          }),
+        );
+      }
+
+      // Row 3 (y=153): status stamp box (已收 / 当前 / 已过 / 未到)
       const stampText = formatDayStatusLabel(entry.status);
       const stampFill =
         entry.status === 'cleared'
@@ -381,14 +404,23 @@ export class CalendarMapScene extends Phaser.Scene {
             : PALETTE.paperWhite.hex;
 
       const stampBox = this.add
-        .rectangle(cell.x, 144, 68, 24, stampFill)
+        .rectangle(cell.x, 153, 68, 22, stampFill)
         .setStrokeStyle(2, stampStroke);
-      const stampLabel = addPixelText(this, cell.x, 144, stampText, {
+      const stampLabel = addPixelText(this, cell.x, 153, stampText, {
         color: stampTextColor,
         origin: 0.5,
       });
 
-      this.contentLayer.add([card, headerRect, headerText, tagLabel, demonLabel, stampBox, stampLabel]);
+      this.contentLayer.add([
+        card,
+        headerRect,
+        headerText,
+        tagLabel,
+        demonLabel,
+        ...obsessionBadgeNodes,
+        stampBox,
+        stampLabel,
+      ]);
     });
 
     const centerX = Math.floor(BASE_WIDTH / 2);
@@ -460,30 +492,40 @@ export class CalendarMapScene extends Phaser.Scene {
     );
 
     const statusName = formatDayStatusLabel(selected.status);
-    let line1 = `第${selected.day}天(${statusName}) 心魔:${selected.demonName}`;
+    const obsessionSuffix =
+      selected.obsessionActive && selected.obsessionLabel
+        ? ` 执念:${selected.obsessionLabel}`
+        : '';
+    let line1 = `第${selected.day}天(${statusName}) 心魔:${selected.demonName}${obsessionSuffix}`;
     if (selected.day === 4) {
-      line1 = `第4天·集市日(${statusName}) 心魔:${selected.demonName}`;
+      line1 = `第4天·集市(${statusName}) 心魔:${selected.demonName}${obsessionSuffix}`;
     } else if (selected.isBossDay) {
       const capSuffix = composed.hpCapped ? '[已到顶]' : '';
       line1 = `第7天·大心魔「${bossName}」${bossHp}血${capSuffix}`;
     }
 
-    let line2 = '白天3位当客，夜里心魔牌局';
+    let line2 = selected.mechanicLine
+      ? `机制:${selected.mechanicLine}`
+      : '白天3位当客，夜里心魔牌局';
     if (selected.day === 3) {
-      line2 = '收当后传出老街风声，预告第4天集市';
+      line2 = selected.mechanicLine
+        ? `风声预告集市 | 机制:${selected.mechanicLine}`
+        : '收当后传出老街风声，预告第4天集市';
     } else if (selected.day === 4) {
       const pactDef = this.chapterState.pactChoice ? getPactDef(this.chapterState.pactChoice) : null;
       line2 = pactDef
-        ? `已签契约:${pactDef.name}(${pactDef.benefit})`
-        : '开张前:掌柜契约三选一 + 免费整理柜台';
+        ? `${pactDef.name} | 机制:${selected.mechanicLine ?? ''}`
+        : `契约+删牌 | 机制:${selected.mechanicLine ?? ''}`;
     } else if (selected.day === 6) {
-      line2 = '收当后可选「偏巷暗当」:多收1件/心魔+4血';
+      line2 = selected.mechanicLine
+        ? `可选暗当 | 机制:${selected.mechanicLine}`
+        : '收当后可选「偏巷暗当」:多收1件/心魔+4血';
     } else if (selected.isBossDay) {
       const r2Shield = composed.bossDef.actions.find((a) => a.round === 2)?.shield ?? 0;
       line2 = `${composed.bossDef.actions.length}回战:R2封门${r2Shield}盾,累伤${composed.chargeThreshold}打断返+1情`;
     } else if (this.chapterState.pactChoice) {
       const pactDef = getPactDef(this.chapterState.pactChoice);
-      if (pactDef) {
+      if (pactDef && !selected.mechanicLine) {
         line2 = `本章契约:${pactDef.name}(${pactDef.benefit})`;
       }
     }

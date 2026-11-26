@@ -25,6 +25,7 @@ interface PawnshopDebugState {
 interface DemonAction {
   round: number;
   damage: number;
+  shield?: number;
   skill?: string;
 }
 
@@ -35,6 +36,7 @@ interface BattleDebugState {
   shield: number;
   renqing: number;
   demonHp: number;
+  demonShield?: number;
   hand: string[];
   handSlotXs?: number[];
   introBannerVisible?: boolean;
@@ -316,8 +318,9 @@ test('plays Demon B (车票) with fixed seed=2, verifies Round 3 "远行" warnin
   expect(r1.demonId).toBe('b');
   expect(r1.demonName).toBe('车票');
   expect(r1.demonHp).toBe(22);
+  expect(r1.demonShield).toBe(1);
   expect(r1.playerHp).toBe(30);
-  expect(r1.intent.current).toEqual({ round: 1, damage: 2 });
+  expect(r1.intent.current).toEqual({ round: 1, damage: 2, shield: 1 });
   expect(r1.intent.upcomingSkill).toBeNull();
 
   // End Round 1 -> Demon B deals 2 dmg -> hp 28, Round 2 shows "远行" 8 dmg advance warning
@@ -331,7 +334,8 @@ test('plays Demon B (车票) with fixed seed=2, verifies Round 3 "远行" warnin
 
   const r2 = await getBattleState(page);
   expect(r2.playerHp).toBe(28);
-  expect(r2.intent.current).toEqual({ round: 2, damage: 2 });
+  expect(r2.demonShield).toBe(1);
+  expect(r2.intent.current).toEqual({ round: 2, damage: 2, shield: 1 });
   expect(r2.intent.upcomingSkill).toEqual({ round: 3, damage: 8, skill: '远行' });
 
   await page.screenshot({ path: 'test-results/battle-desktop-demon-b-warning.png' });

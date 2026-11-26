@@ -35,17 +35,31 @@ export type CardEffectCondition =
 const ITEM_CARD_NAMES: ReadonlySet<string> = new Set(itemsJson.map((item) => item.cardName));
 
 /**
+ * Counts how many item (旧物) cards are currently in `hand`.
+ */
+export function countItemCardsInHand(hand: readonly string[]): number {
+  let count = 0;
+  for (const name of hand) {
+    if (ITEM_CARD_NAMES.has(name)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
  * True when the hand holds an item (旧物) card. The card being played has already left the
  * hand when its effects resolve, so this naturally means "another" item card.
  */
 export function hasItemCardInHand(hand: readonly string[]): boolean {
-  return hand.some((name) => ITEM_CARD_NAMES.has(name));
+  return countItemCardsInHand(hand) > 0;
 }
 
 export interface CardDef {
   id: string;
   name: string;
   item: string;
+  set?: '旧物';
   cost: number;
   unplayable?: boolean;
   effects: CardEffect[];
@@ -65,6 +79,13 @@ export interface DemonAction {
   skill?: string;
   shield?: number;
   charge?: DemonChargeConfig;
+}
+
+export interface DemonObsessionConfig {
+  hpBonus?: number;
+  roundDeltas?: Record<string, number>;
+  effectLabel: string;
+  pawnHint: string;
 }
 
 export interface BossComponentDef {
@@ -95,7 +116,9 @@ export interface DemonDef {
   hp: number;
   isBoss?: boolean;
   chapter?: number;
-  linkedItemId?: string;
+  linkedItemIds?: string[];
+  mechanicLine?: string;
+  obsession?: DemonObsessionConfig;
   introLine?: string;
   customerLink?: string;
   genericCustomerLink?: string;
@@ -215,6 +238,7 @@ export interface BattleState {
   demonId: string;
   demonName: string;
   isBoss: boolean;
+  demonMechanicLine: string;
   demonIntroLine: string;
   demonCustomerLink: string;
   demonCustomerTag: string;

@@ -43,6 +43,13 @@ export interface DemonNarrativeResolution {
   aftermathLine: string;
 }
 
+export interface DemonObsessionResult {
+  active: boolean;
+  matchedItemIds: string[];
+  demonDef: DemonDef;
+  effectLabel: string | null;
+}
+
 export interface EndingLedgerSummary {
   /** Items redeemed during the chapter and no longer in cabinet at Night 7 Boss fight. */
   returnedItems: string[];
@@ -219,11 +226,126 @@ export function formatBossPreviewHpLine(composed: ComposedBossResult): string {
   return `血量:${composed.finalHp}(基${composed.baseHp}+执念${composed.componentHpBonus}${pactPart},上限${composed.absoluteMaxHp})`;
 }
 
+function cloneDemonDef(demon: DemonDef): DemonDef {
+  return {
+    ...demon,
+    ...(demon.linkedItemIds ? { linkedItemIds: [...demon.linkedItemIds] } : {}),
+    ...(demon.obsession
+      ? {
+          obsession: {
+            ...demon.obsession,
+            ...(demon.obsession.roundDeltas
+              ? { roundDeltas: { ...demon.obsession.roundDeltas } }
+              : {}),
+          },
+        }
+      : {}),
+    actions: demon.actions.map((a) => ({
+      ...a,
+      ...(a.charge ? { charge: { ...a.charge } } : {}),
+    })),
+  };
+}
+
 /**
- * P11 Sub-item 3: Conditional demon banner & victory aftermath narrative resolution.
- * Shows specific customer link / aftermath ONLY when the demon's linked item was pawned in
- * this chapter AND its card is still currently in the player's deck; otherwise returns
- * grounded generic copy. Does not alter dailyDemonPools or any numbers.
+ * Applies a demon's obsession modifiers to a cloned DemonDef unconditionally (for sim comparison).
+ */
+export function applyDemonObsessionForced(demon: DemonDef): DemonDef {
+  const cloned = cloneDemonDef(demon);
+  const obs = demon.obsession;
+  if (!obs) {
+    return cloned;
+  }
+  if (obs.hpBonus) {
+    cloned.hp = Math.max(1, cloned.hp + obs.hpBonus);
+  }
+  if (obs.roundDeltas) {
+    for (const [roundKey, delta] of Object.entries(obs.roundDeltas)) {
+      const roundNum = Number(roundKey);
+      if (Number.isInteger(roundNum) && delta !== 0) {
+        const action = cloned.actions.find((a) => a.round === roundNum);
+        if (action) {
+          action.damage = Math.max(0, action.damage + delta);
+        }
+      }
+    }
+  }
+  return cloned;
+}
+
+/**
+ * P12 §3.1: Resolves early obsession twist for regular demons starting from Day 2.
+ * - Day 1 is exempt (tutorial night).
+ * - Checks `demon.linkedItemIds` against the player's current `deck` (redeeming removes the obsession).
+ * - Triggers at most once per night regardless of how many linked items are in deck.
+ */
+export function resolveDemonObsession(
+  demon: DemonDef,
+  deck: readonly string[],
+  dayInChapter: number,
+  items: readonly PawnItem[] = ITEMS,
+): DemonObsessionResult {
+  if (demon.isBoss || !demon.obsession || dayInChapter < 2) {
+    return {
+      active: false,
+      matchedItemIds: [],
+      demonDef: cloneDemonDef(demon),
+      effectLabel: null,
+    };
+  }
+
+  const linkedIds = demon.linkedItemIds ?? [];
+  const ownedCards = new Set(deck);
+  const matchedItemIds: string[] = [];
+  for (const id of linkedIds) {
+    const item = items.find((it) => it.id === id);
+    if (item && ownedCards.has(item.cardName)) {
+      matchedItemIds.push(id);
+    }
+  }
+
+  if (matchedItemIds.length === 0) {
+    return {
+      active: false,
+      matchedItemIds: [],
+      demonDef: cloneDemonDef(demon),
+      effectLabel: null,
+    };
+  }
+
+  return {
+    active: true,
+    matchedItemIds,
+    demonDef: applyDemonObsessionForced(demon),
+    effectLabel: demon.obsession.effectLabel,
+  };
+}
+
+/**
+ * P12 §3.1: Returns the pawnshop customer-screen obsession hint when `itemId` triggers
+ * tonight's demon obsession (Day 2+ only; Day 1 is exempt).
+ */
+export function getItemObsessionHint(
+  itemId: string,
+  dayInChapter: number,
+  nightDemonId: string,
+  demons: readonly DemonDef[] = DEFAULT_DEMONS,
+): string | null {
+  if (dayInChapter < 2) {
+    return null;
+  }
+  const demon = demons.find((d) => d.id === nightDemonId);
+  if (!demon || demon.isBoss || !demon.obsession || !demon.linkedItemIds?.includes(itemId)) {
+    return null;
+  }
+  return demon.obsession.pawnHint;
+}
+
+/**
+ * P11 Sub-item 3 + P12 §3.1: Conditional demon banner & victory aftermath narrative resolution.
+ * Shows specific customer link / aftermath ONLY when at least one of the demon's `linkedItemIds`
+ * was pawned in this chapter AND its card is still currently in the player's deck; otherwise
+ * returns grounded generic copy. Does not alter dailyDemonPools or any numbers.
  */
 export function resolveDemonNarrative(
   demon: DemonDef,
@@ -231,7 +353,8 @@ export function resolveDemonNarrative(
   pawnedItemIds: readonly string[],
   items: readonly PawnItem[] = ITEMS,
 ): DemonNarrativeResolution {
-  if (demon.isBoss || !demon.linkedItemId) {
+  const linkedIds = demon.linkedItemIds ?? [];
+  if (demon.isBoss || linkedIds.length === 0) {
     return {
       isLinked: false,
       linkedItemId: null,
@@ -240,16 +363,16 @@ export function resolveDemonNarrative(
     };
   }
 
-  const linkedItem = items.find((item) => item.id === demon.linkedItemId);
-  const isLinked = Boolean(
-    linkedItem &&
-      pawnedItemIds.includes(demon.linkedItemId) &&
-      deck.includes(linkedItem.cardName),
-  );
+  const matchedId =
+    linkedIds.find((id) => {
+      const linkedItem = items.find((item) => item.id === id);
+      return Boolean(linkedItem && pawnedItemIds.includes(id) && deck.includes(linkedItem.cardName));
+    }) ?? null;
+  const isLinked = matchedId !== null;
 
   return {
     isLinked,
-    linkedItemId: demon.linkedItemId,
+    linkedItemId: matchedId ?? linkedIds[0] ?? null,
     customerLink: isLinked
       ? (demon.customerLink ?? '')
       : (demon.genericCustomerLink ?? DEFAULT_GENERIC_CUSTOMER_LINK),

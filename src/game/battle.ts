@@ -4,7 +4,9 @@ import {
   applyEffectWithEvents,
   cloneBattleState,
   clonePendingChoice,
+  countItemCardsInHand,
   drawCardsWithEvents,
+  hasItemCardInHand,
   isAttackCard,
   shuffleArray,
   type BattleActionResult,
@@ -19,6 +21,7 @@ import {
   type DemonAction,
   type DemonChargeConfig,
   type DemonDef,
+  type DemonObsessionConfig,
   type EffectContext,
   type PendingChoice,
   type RoundSnapshot,
@@ -39,11 +42,19 @@ export type {
   DemonAction,
   DemonChargeConfig,
   DemonDef,
+  DemonObsessionConfig,
   EffectContext,
   PendingChoice,
   RoundSnapshot,
 };
-export { applyEffect, applyEffectWithEvents, isAttackCard, shuffleArray };
+export {
+  applyEffect,
+  applyEffectWithEvents,
+  countItemCardsInHand,
+  hasItemCardInHand,
+  isAttackCard,
+  shuffleArray,
+};
 
 export interface IntentInfo {
   current: DemonAction | null;
@@ -92,10 +103,14 @@ export interface BattleDebugSnapshot {
   resultView?: 'normal' | 'diary' | 'ending' | 'epilogue' | 'chapter_failed';
   demonId: string;
   demonName: string;
+  demonMechanicLine?: string;
+  demonObsessionActive?: boolean;
+  demonObsessionLabel?: string | null;
   demonIntroLine?: string;
   demonCustomerLink?: string;
   demonCustomerTag?: string;
   demonIntroBannerText?: string;
+  log?: string[];
   victoryLine?: string | null;
   aftermathLine?: string | null;
   intent: IntentInfo;
@@ -244,6 +259,7 @@ export function createBattle(
     demonId: demon.id,
     demonName: demon.name,
     isBoss: Boolean(demon.isBoss),
+    demonMechanicLine: demon.mechanicLine ?? '',
     demonIntroLine: demon.introLine ?? '',
     demonCustomerLink: demon.customerLink ?? '',
     demonCustomerTag: demon.customerTag ?? '',
@@ -274,7 +290,7 @@ export function createBattle(
     roundSnapshots: [{ playerHp: initialPlayerHp, demonHp: effectiveDemonHp }],
     pendingChoice: null,
     result: 'ongoing',
-    log: [],
+    log: initialDemonShield > 0 ? [`R1:心魔获${initialDemonShield}盾`] : [],
     cardsByName,
     balance: { ...balance },
     rng,
@@ -647,6 +663,12 @@ export function endTurn(state: BattleState): BattleActionResult {
   current.phase = 'play';
   events.push({ type: 'TURN_STARTED', round: current.round, renqing: current.renqing });
 
+  const nextAction = current.demonActions.find((a) => a.round === current.round);
+  if (nextAction && !nextAction.charge && (nextAction.shield ?? 0) > 0) {
+    current.demonShield = nextAction.shield ?? 0;
+    current.log.push(`R${current.round}:心魔获${current.demonShield}盾`);
+  }
+
   activateRoundChargeIfAny(current, events);
 
   if (current.hooks) {
@@ -735,11 +757,13 @@ export function toBattleDebugSnapshot(
     result: state.result,
     demonId: state.demonId,
     demonName: state.demonName,
+    demonMechanicLine: state.demonMechanicLine,
     demonIntroLine: state.demonIntroLine,
     demonCustomerLink: state.demonCustomerLink,
     demonCustomerTag: state.demonCustomerTag,
     intent: getIntent(state),
     isAnimating,
+    log: [...state.log],
   };
 }
 
