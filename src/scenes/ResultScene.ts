@@ -18,6 +18,15 @@ import {
   type EndingLedgerSummary,
 } from '../game/bossComposition';
 import { cloneChapterState, getChapterConfig } from '../game/chapters';
+import {
+  addHeirloom,
+  deriveHeirloomSeed,
+  getHeirloomById,
+  HEIRLOOM_CAP,
+  pickRandomUnownedHeirloom,
+  replaceHeirloomAtIndex,
+  type HeirloomDef,
+} from '../game/heirlooms';
 import { ITEMS, PALETTE, wrapCjkText } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
 import {
@@ -46,10 +55,12 @@ import {
   ENDING_EPILOGUE_BUTTON,
   ENDING_RESTART_BUTTON,
   ENDING_TITLE_BUTTON,
+  HEIRLOOM_REPLACE_SKIP_BUTTON,
+  HEIRLOOM_REPLACE_SLOTS,
   RESULT_NEXT_DAY_BUTTON,
   RESULT_RETURN_BUTTON,
 } from '../game/layout';
-import { createRngFromUrl } from '../utils/rng';
+import { createRngFromUrl, mulberry32 } from '../utils/rng';
 import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
 export {
@@ -105,6 +116,9 @@ export class ResultScene extends Phaser.Scene {
   private chapterFailHint: string | null = null;
   private normalFailHint: string | null = null;
   private normalFailContinueLine: string | null = null;
+  private bossHeirloomDrop: HeirloomDef | null = null;
+  private bossDropNeedsReplace = false;
+  private bossReward: WinReward | null = null;
   private handleWindowResize?: () => void;
 
   constructor() {
@@ -119,6 +133,9 @@ export class ResultScene extends Phaser.Scene {
     this.chapterFailHint = null;
     this.normalFailHint = null;
     this.normalFailContinueLine = null;
+    this.bossHeirloomDrop = null;
+    this.bossDropNeedsReplace = false;
+    this.bossReward = null;
     const result = data?.result ?? 'lose_timeout';
     const deck = data?.deck ?? [];
     const demonId = data?.demonId ?? 'a';
@@ -155,9 +172,11 @@ export class ResultScene extends Phaser.Scene {
 
     let reward: WinReward | null = null;
     let loseReason: string | null = null;
+    let urlSeed = 1;
 
     if (result === 'win') {
-      const { rng } = createRngFromUrl();
+      const { seed, rng } = createRngFromUrl();
+      urlSeed = seed;
       reward = resolveWinReward(deck, CARDS, RESULT_BALANCE, rng);
       if (reward.cardName) {
         audio.playSfx('receive_card');
@@ -177,7 +196,27 @@ export class ResultScene extends Phaser.Scene {
       isBossBattle,
       endHp: playerHp,
     });
-    saveGame(nextSave);
+
+    if (isBossBattle && result === 'win') {
+      const dropRng = mulberry32(
+        deriveHeirloomSeed(urlSeed, `boss_ch${currentSave.chapter.currentChapter}`),
+      );
+      const dropped = pickRandomUnownedHeirloom(nextSave.chapter.heirlooms ?? [], dropRng);
+      if (dropped) {
+        this.bossHeirloomDrop = dropped;
+        const addRes = addHeirloom(nextSave.chapter.heirlooms ?? [], dropped.id, HEIRLOOM_CAP);
+        if (addRes.added) {
+          nextSave.chapter.heirlooms = addRes.heirlooms;
+        } else if (addRes.needsReplace) {
+          this.bossDropNeedsReplace = true;
+        }
+      }
+      this.bossReward = reward;
+    }
+
+    if (!this.bossDropNeedsReplace) {
+      saveGame(nextSave);
+    }
 
     if (isBossBattle && result === 'win') {
       this.endingLedger = buildEndingLedger(nextSave.deck, nextSave.chapter, ITEMS);
@@ -245,6 +284,16 @@ export class ResultScene extends Phaser.Scene {
         bossContributionLines: this.bossContributionLines.length > 0 ? [...this.bossContributionLines] : undefined,
         endingLedger: this.endingLedger,
         epilogueLines: this.epilogueLines,
+        heirlooms: [...(nextSave.chapter.heirlooms ?? [])],
+        bossDropNeedsReplace: this.bossDropNeedsReplace,
+        bossHeirloomDrop: this.bossHeirloomDrop
+          ? {
+              id: this.bossHeirloomDrop.id,
+              name: this.bossHeirloomDrop.name,
+              shortLabel: this.bossHeirloomDrop.shortLabel,
+              effectText: this.bossHeirloomDrop.effectText,
+            }
+          : null,
         tutorialActive: this.tutorial.active,
         currentStep: this.tutorial.currentStep,
         tutorialDone: this.tutorial.done || loadTutorialDone(),
@@ -291,15 +340,15 @@ export class ResultScene extends Phaser.Scene {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
-      addPixelText(this, centerX, 82, chapterCfg.diary.subtitle, {
+      addPixelText(this, centerX, 80, chapterCfg.diary.subtitle, {
         color: PALETTE.deepWood.hex,
         origin: 0.5,
       }),
-      this.add.rectangle(centerX, 100, 520, 2, PALETTE.oldPaper.num),
-      addPixelText(this, 48, 112, wrapCjkText(chapterCfg.diary.body, 22), {
+      this.add.rectangle(centerX, 95, 520, 2, PALETTE.oldPaper.num),
+      addPixelText(this, 44, 102, wrapCjkText(chapterCfg.diary.body, 23), {
         color: PALETTE.ink.hex,
         origin: [0, 0],
-        lineSpacing: 3,
+        lineSpacing: 1,
       }),
     ]);
 
@@ -309,13 +358,50 @@ export class ResultScene extends Phaser.Scene {
         ? `本战执念(${ledger.bossFragmentItems.length}块):${ledger.bossFragmentItems.join('·')}`
         : '本战执念:素体(债主只身前来)';
     this.contentLayer.add(
-      addPixelText(this, centerX, 258, wrapCjkText(diaryObsessionSummary, 22), {
+      addPixelText(this, centerX, 214, diaryObsessionSummary, {
+        size: 12,
         color: PALETTE.vermilion.hex,
         origin: 0.5,
-        align: 1,
-        lineSpacing: 1,
       }),
     );
+
+    this.contentLayer.add(this.add.rectangle(centerX, 228, 520, 2, PALETTE.oldPaper.num));
+
+    const reward = this.bossReward;
+    const rewardText = reward
+      ? `胜战得钱+${reward.money} · ${reward.cardName ? `得牌:${reward.cardName}` : '全牌已集齐'}`
+      : '胜战通关';
+    this.contentLayer.add(
+      addPixelText(this, centerX, 246, rewardText, {
+        color: PALETTE.deepWood.hex,
+        origin: 0.5,
+      }),
+    );
+
+    if (this.bossHeirloomDrop) {
+      const dropText = this.bossDropNeedsReplace
+        ? `大心魔掉落老物件:${this.bossHeirloomDrop.name}(已满3件，可替换)`
+        : `大心魔掉落老物件:${this.bossHeirloomDrop.name}(${this.bossHeirloomDrop.shortLabel})`;
+      this.contentLayer.add(
+        addPixelText(this, centerX, 274, dropText, {
+          color: PALETTE.vermilion.hex,
+          origin: 0.5,
+        }),
+      );
+    }
+
+    if (this.bossDropNeedsReplace && this.bossHeirloomDrop) {
+      this.createResultButton(192, DIARY_CONTINUE_BUTTON.y, 212, DIARY_CONTINUE_BUTTON.height, '替换老物件', () => {
+        this.renderBossHeirloomReplace(nextSave);
+      });
+      this.createResultButton(448, DIARY_CONTINUE_BUTTON.y, 212, DIARY_CONTINUE_BUTTON.height, '翻到结局', () => {
+        this.bossDropNeedsReplace = false;
+        saveGame(nextSave);
+        this.resultView = 'ending';
+        this.renderEndingScreen(nextSave);
+      });
+      return;
+    }
 
     this.createResultButton(
       DIARY_CONTINUE_BUTTON.x,
@@ -326,6 +412,101 @@ export class ResultScene extends Phaser.Scene {
       () => {
         this.resultView = 'ending';
         this.renderEndingScreen(nextSave);
+      },
+    );
+  }
+
+  private renderBossHeirloomReplace(nextSave: SaveData): void {
+    const offer = this.bossHeirloomDrop;
+    if (!offer) {
+      this.renderDiaryPage(nextSave);
+      return;
+    }
+    this.contentLayer.removeAll(true);
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const centerY = Math.floor(BASE_HEIGHT / 2);
+
+    this.contentLayer.add([
+      this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.ink.num),
+      this.add
+        .rectangle(centerX, 64, BASE_WIDTH - 32, 34, PALETTE.deepWood.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
+      addPixelText(this, centerX, 64, '老物件已满 · 选1件换掉', {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      }),
+      this.add
+        .rectangle(centerX, 110, BASE_WIDTH - 32, 52, PALETTE.candle.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
+      addPixelText(this, centerX, 97, `新得:${offer.name}(${offer.shortLabel})`, {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      }),
+      addPixelText(this, centerX, 124, offer.effectText, {
+        size: 12,
+        color: PALETTE.deepWood.hex,
+        origin: 0.5,
+      }),
+    ]);
+
+    const owned = nextSave.chapter.heirlooms ?? [];
+    owned.forEach((id, slotIdx) => {
+      const slot = HEIRLOOM_REPLACE_SLOTS[slotIdx];
+      const h = getHeirloomById(id);
+      if (!slot || !h) {
+        return;
+      }
+      const bg = this.add
+        .rectangle(slot.x, slot.y, slot.width, slot.height, PALETTE.paperWhite.num)
+        .setStrokeStyle(2, PALETTE.ink.num)
+        .setInteractive({ useHandCursor: true });
+      const strip = this.add.rectangle(slot.x, slot.y - 56, slot.width - 4, 6, PALETTE.brass.num);
+      const nameTxt = addPixelText(this, slot.x, slot.y - 36, `${h.name}(${h.shortLabel})`, {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      });
+      const effTxt = addPixelText(this, slot.x, slot.y - 4, wrapCjkText(h.effectText, 13), {
+        size: 12,
+        color: PALETTE.deepWood.hex,
+        origin: 0.5,
+        align: 1,
+        lineSpacing: 2,
+      });
+      const replaceTxt = addPixelText(this, slot.x, slot.y + 40, '点此换掉', {
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+      });
+
+      bg.on('pointerover', () => {
+        bg.setFillStyle(PALETTE.candle.num);
+        bg.setStrokeStyle(2, PALETTE.vermilion.num);
+      });
+      bg.on('pointerout', () => {
+        bg.setFillStyle(PALETTE.paperWhite.num);
+        bg.setStrokeStyle(2, PALETTE.ink.num);
+      });
+      bg.on('pointerdown', () => {
+        audio.unlock();
+        audio.playSfx('receive_card');
+        nextSave.chapter.heirlooms = replaceHeirloomAtIndex(owned, slotIdx, offer.id);
+        this.bossDropNeedsReplace = false;
+        saveGame(nextSave);
+        this.renderDiaryPage(nextSave);
+      });
+
+      this.contentLayer.add([bg, strip, nameTxt, effTxt, replaceTxt]);
+    });
+
+    this.createResultButton(
+      HEIRLOOM_REPLACE_SKIP_BUTTON.x,
+      HEIRLOOM_REPLACE_SKIP_BUTTON.y,
+      HEIRLOOM_REPLACE_SKIP_BUTTON.width,
+      HEIRLOOM_REPLACE_SKIP_BUTTON.height,
+      '暂不换',
+      () => {
+        this.bossDropNeedsReplace = false;
+        saveGame(nextSave);
+        this.renderDiaryPage(nextSave);
       },
     );
   }

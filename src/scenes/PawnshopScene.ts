@@ -12,6 +12,16 @@ import {
 import { cloneChapterState, deriveSideQuestSeed, getChapterConfig, getNightDemonHpBonus, getRedemptionMultiplier, getSkipCustomerReputationDelta, isBossDay, pickSideQuestItem, removeCardAtIndex, selectDemonForChapterDay, type PactId } from '../game/chapters';
 import { consumeFirstGlossaryTip, hasSeenGlossaryTerm, type GlossaryTermId } from '../game/glossary';
 import {
+  addHeirloom,
+  deriveHeirloomSeed,
+  getHeirloomById,
+  getNewlyReachedMilestones,
+  HEIRLOOM_CAP,
+  pickRandomUnownedHeirloom,
+  replaceHeirloomAtIndex,
+  type HeirloomDef,
+} from '../game/heirlooms';
+import {
   advanceCustomer,
   applyMorningChoice,
   BALANCE,
@@ -84,6 +94,10 @@ import {
 import { createTutorialBubble } from '../game/tutorialBubble';
 import {
   BOSS_PREVIEW_CONFIRM_BUTTON,
+  HEIRLOOM_BAR_RECT,
+  HEIRLOOM_BAR_SLOTS,
+  HEIRLOOM_REPLACE_SKIP_BUTTON,
+  HEIRLOOM_REPLACE_SLOTS,
   MORNING_OPTION_BUTTONS,
   PACT_OPTION_BUTTONS,
   PAWNSHOP_CALENDAR_BUTTON,
@@ -107,6 +121,9 @@ import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
 export {
   BOSS_PREVIEW_CONFIRM_BUTTON,
+  HEIRLOOM_BAR_SLOTS,
+  HEIRLOOM_REPLACE_SKIP_BUTTON,
+  HEIRLOOM_REPLACE_SLOTS,
   MORNING_OPTION_BUTTONS,
   PACT_OPTION_BUTTONS,
   PAWNSHOP_CALENDAR_BUTTON,
@@ -155,6 +172,10 @@ export class PawnshopScene extends Phaser.Scene {
   private glossaryTimer?: Phaser.Time.TimerEvent;
   private glossaryDelayTimer?: Phaser.Time.TimerEvent;
   private lastGlossaryTip: string | null = null;
+  private inspectedHeirloomId: string | null = null;
+  private heirloomTooltip?: Phaser.GameObjects.Container;
+  private pendingHeirloomQueue: { heirloom: HeirloomDef; sourceLabel: string }[] = [];
+  private afterHeirloomReplaceCallback: (() => void) | null = null;
   private hudMoneyText!: Phaser.GameObjects.BitmapText;
   private hudHpText!: Phaser.GameObjects.BitmapText;
   private hudRepText!: Phaser.GameObjects.BitmapText;
@@ -216,6 +237,10 @@ export class PawnshopScene extends Phaser.Scene {
     this.glossaryTimer = undefined;
     this.glossaryDelayTimer = undefined;
     this.lastGlossaryTip = null;
+    this.inspectedHeirloomId = null;
+    this.heirloomTooltip = undefined;
+    this.pendingHeirloomQueue = [];
+    this.afterHeirloomReplaceCallback = null;
     this.tutorial = createTutorialState({
       day: this.state.day,
       tutorialDone: loadTutorialDone(),
@@ -412,6 +437,10 @@ export class PawnshopScene extends Phaser.Scene {
           this.state.phase === 'morning'
             ? getMorningActionAvailability(currentHp, this.state.money)
             : null;
+        const inspectedHeirloom = this.inspectedHeirloomId
+          ? getHeirloomById(this.inspectedHeirloomId)
+          : undefined;
+        const pendingOffer = this.pendingHeirloomQueue[0]?.heirloom ?? null;
         return {
           ...toDebugSnapshot(this.state),
           day: this.state.day,
@@ -445,6 +474,22 @@ export class PawnshopScene extends Phaser.Scene {
           sideQuestChoice: this.save.chapter.sideQuestChoice,
           day3Rumor,
           sideQuestItemId: this.pendingSideQuestItem?.id ?? null,
+          heirlooms: [...(this.save.chapter.heirlooms ?? [])],
+          heirloomMilestonesClaimed: [...(this.save.chapter.heirloomMilestonesClaimed ?? [])],
+          heirloomBarVisible:
+            this.state.phase === 'negotiating' || this.state.phase === 'feedback',
+          inspectedHeirloomId: this.inspectedHeirloomId,
+          inspectedHeirloomText: inspectedHeirloom
+            ? `${inspectedHeirloom.name} | ${inspectedHeirloom.effectText} | ${inspectedHeirloom.story}`
+            : null,
+          pendingHeirloomOffer: pendingOffer
+            ? {
+                id: pendingOffer.id,
+                name: pendingOffer.name,
+                shortLabel: pendingOffer.shortLabel,
+                effectText: pendingOffer.effectText,
+              }
+            : null,
         };
       },
     };
@@ -581,6 +626,8 @@ export class PawnshopScene extends Phaser.Scene {
       this.hudProgressText.setText('掌柜契约');
     } else if (this.state.phase === 'trim_deck') {
       this.hudProgressText.setText('整理柜台');
+    } else if (this.state.phase === 'replace_heirloom') {
+      this.hudProgressText.setText('换老物件');
     } else if (this.state.phase === 'redemption') {
       this.hudProgressText.setText('旧客赎当');
     } else if (this.state.phase === 'side_quest') {
@@ -597,6 +644,7 @@ export class PawnshopScene extends Phaser.Scene {
     this.updateHud();
     this.contentLayer.removeAll(true);
     this.clearToast(false);
+    this.clearHeirloomTooltip();
 
     if (this.state.phase === 'morning') {
       this.renderMorning();
@@ -606,6 +654,8 @@ export class PawnshopScene extends Phaser.Scene {
       this.renderPact();
     } else if (this.state.phase === 'trim_deck') {
       this.renderTrimDeck();
+    } else if (this.state.phase === 'replace_heirloom') {
+      this.renderReplaceHeirloom();
     } else if (this.state.phase === 'redemption') {
       this.renderRedemption();
     } else if (this.state.phase === 'negotiating') {
@@ -1106,16 +1156,20 @@ export class PawnshopScene extends Phaser.Scene {
     }
   }
 
-  private notifyDay7BossHpChange(prevHp: number): void {
+  private notifyDay7BossHpChange(prevHp: number): boolean {
     if (this.save.chapter.dayInChapter !== 7) {
-      return;
+      return false;
     }
     const nextHp = this.getComposedBossPreview().finalHp;
     if (nextHp < prevHp) {
       this.showToast(`Boss已变弱 ${prevHp}->${nextHp}`, 2600);
-    } else if (nextHp > prevHp) {
-      this.showToast(`Boss已涨血 ${prevHp}->${nextHp}`, 2600);
+      return true;
     }
+    if (nextHp > prevHp) {
+      this.showToast(`Boss已涨血 ${prevHp}->${nextHp}`, 2600);
+      return true;
+    }
+    return false;
   }
 
   private showToast(message: string, durationMs = TOAST_DURATION_MS): void {
@@ -1205,7 +1259,7 @@ export class PawnshopScene extends Phaser.Scene {
         .setStrokeStyle(2, PALETTE.brass.num),
     );
     this.contentLayer.add(
-      addPixelText(this, centerX, 64, '第4天集市 · 掌柜契约(三选一)', {
+      addPixelText(this, centerX, 64, '第4天集市 · 掌柜契约(四选一)', {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
@@ -1215,6 +1269,7 @@ export class PawnshopScene extends Phaser.Scene {
       if (text === '赎当倍率1.2变1.5') return '赎当倍率\n1.2变1.5';
       if (text === '跳过当客口碑-1') return '跳过当客\n口碑-1';
       if (text === '第7夜Boss血量+6') return '第7夜Boss\n血量+6';
+      if (text === '立得 1 件老物件') return '立得 1 件\n老物件';
       if (text === '无额外代价') return '无额外\n代价';
       return wrapCjkText(text, 6);
     };
@@ -1243,10 +1298,11 @@ export class PawnshopScene extends Phaser.Scene {
       const benefitBody = addPixelText(this, slot.x, slot.y - 30, formatPactTwoLines(pact.benefit), {
         color: PALETTE.ink.hex,
         origin: 0.5,
+        align: 1,
         lineSpacing: 1,
       });
 
-      const divider = this.add.rectangle(slot.x, slot.y - 2, slot.width - 24, 2, PALETTE.oldPaper.num);
+      const divider = this.add.rectangle(slot.x, slot.y - 2, slot.width - 20, 2, PALETTE.oldPaper.num);
 
       const costTitle = addPixelText(this, slot.x, slot.y + 14, '代价', {
         color: PALETTE.vermilion.hex,
@@ -1255,11 +1311,12 @@ export class PawnshopScene extends Phaser.Scene {
       const costBody = addPixelText(this, slot.x, slot.y + 49, formatPactTwoLines(pact.cost), {
         color: PALETTE.vermilion.hex,
         origin: 0.5,
+        align: 1,
         lineSpacing: 1,
       });
 
       const ctaBg = this.add
-        .rectangle(slot.x, slot.y + 98, slot.width - 20, 28, PALETTE.oldPaper.num)
+        .rectangle(slot.x, slot.y + 98, slot.width - 16, 28, PALETTE.oldPaper.num)
         .setStrokeStyle(2, PALETTE.ink.num);
       const ctaText = addPixelText(this, slot.x, slot.y + 98, '选此契约', {
         color: PALETTE.ink.hex,
@@ -1315,18 +1372,49 @@ export class PawnshopScene extends Phaser.Scene {
       reputation: updated.reputation,
       deck: [...updated.deck],
     };
-    saveGame(this.save);
 
-    if (this.state.deck.length > 0 && !this.save.chapter.day4TrimDone) {
-      this.trimPage = 0;
-      this.state = { ...this.state, phase: 'trim_deck' };
-      this.renderCurrentPhase();
+    const toastParts: string[] = [];
+    if (pactId === 'street_favor') {
+      const pactGrant = this.grantHeirloomFromSource(
+        `pact_day${this.state.day}`,
+        '老街人情',
+      );
+      if (pactGrant.granted && !pactGrant.queuedReplace) {
+        toastParts.push(`得老物件:${pactGrant.granted.name}`);
+      }
+    }
+    const milestoneToast = this.checkReputationMilestones();
+    if (milestoneToast) {
+      toastParts.push(milestoneToast);
+    }
+    const needsTrim = this.state.deck.length > 0 && !this.save.chapter.day4TrimDone;
+    if (!needsTrim) {
+      this.save.chapter.day4TrimDone = true;
+    }
+
+    const proceedAfterPact = (): void => {
+      if (needsTrim) {
+        this.trimPage = 0;
+        this.state = { ...this.state, phase: 'trim_deck' };
+        this.renderCurrentPhase();
+        if (toastParts.length > 0) {
+          this.showToast(toastParts[0], 2600);
+        }
+        return;
+      }
+
+      this.enterPostDay4Events();
+      if (toastParts.length > 0) {
+        this.showToast(toastParts[0], 2600);
+      }
+    };
+
+    if (this.enterReplaceHeirloomIfNeeded(proceedAfterPact)) {
       return;
     }
 
-    this.save.chapter.day4TrimDone = true;
     saveGame(this.save);
-    this.enterPostDay4Events();
+    proceedAfterPact();
   }
 
   private renderTrimDeck(): void {
@@ -1907,10 +1995,6 @@ export class PawnshopScene extends Phaser.Scene {
       redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
       chapter: nextChapter,
     };
-    saveGame(this.save);
-    if (this.state.pawnPrices) {
-      savePawnPrices(this.state.pawnPrices);
-    }
 
     // P10 子项 4 & P11 子项 2②：新娘/父亲故事事件不占当日随机赎当名额；结束后照常检查当日随机赎当（不改动 createRedemptionOffer）
     if (wasBride || wasFather) {
@@ -1947,9 +2031,31 @@ export class PawnshopScene extends Phaser.Scene {
     if (this.state.phase === 'summary') {
       this.maybeTriggerDay6SideQuestOrSummary();
     }
+
+    const milestoneToast = accept ? this.checkReputationMilestones() : null;
+    const postPhase = this.state.phase;
+    if (
+      this.enterReplaceHeirloomIfNeeded(() => {
+        this.state = { ...this.state, phase: postPhase };
+        this.renderCurrentPhase();
+        if (accept && prevBossHp !== null) {
+          this.notifyDay7BossHpChange(prevBossHp);
+        }
+      })
+    ) {
+      return;
+    }
+
+    saveGame(this.save);
+    if (this.state.pawnPrices) {
+      savePawnPrices(this.state.pawnPrices);
+    }
+
     this.renderCurrentPhase();
-    if (accept && prevBossHp !== null) {
-      this.notifyDay7BossHpChange(prevBossHp);
+    const showedBossToast =
+      accept && prevBossHp !== null ? this.notifyDay7BossHpChange(prevBossHp) : false;
+    if (milestoneToast && !showedBossToast) {
+      this.showToast(milestoneToast, 2600);
     }
   }
 
@@ -2057,6 +2163,7 @@ export class PawnshopScene extends Phaser.Scene {
     );
 
     // 报价区顶部：口碑接受率修正提示条（y=274..298，彻底移出 1/6 气泡区域）
+    this.renderHeirloomBar();
     const centerX = Math.floor(BASE_WIDTH / 2);
     const repFill = this.state.reputation < 0 ? PALETTE.vermilion.num : PALETTE.deepWood.num;
     const repColor =
@@ -2185,6 +2292,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     const isLastCustomer = this.state.customerIndex >= this.state.items.length - 1;
     const nextLabel = isLastCustomer ? '白天结束' : '下一位';
+    this.renderHeirloomBar();
 
     this.addActionButton(
       PAWNSHOP_FEEDBACK_NEXT_BUTTON.x,
@@ -2586,9 +2694,6 @@ export class PawnshopScene extends Phaser.Scene {
       if (this.state.day === 1 && item.id === BRIDE_RING_ITEM_ID) {
         this.save.chapter.day1RingPawned = true;
       }
-      if (this.state.pawnPrices) {
-        savePawnPrices(this.state.pawnPrices);
-      }
       audio.playSfx('deal_closed');
       this.time.delayedCall(140, () => {
         if (this.scene.isActive()) {
@@ -2598,9 +2703,332 @@ export class PawnshopScene extends Phaser.Scene {
     } else {
       audio.playSfx('offer_rejected');
     }
+
+    let milestoneToast: string | null = null;
+    if (accepted) {
+      this.save = {
+        ...this.save,
+        money: this.state.money,
+        reputation: this.state.reputation,
+        deck: [...this.state.deck],
+        currentHp: this.state.currentHp ?? this.save.currentHp ?? MAX_PLAYER_HP,
+        redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
+      };
+      milestoneToast = this.checkReputationMilestones();
+    }
+
+    if (
+      this.enterReplaceHeirloomIfNeeded(() => {
+        this.state = { ...this.state, phase: 'feedback' };
+        this.renderCurrentPhase();
+        if (accepted && prevBossHp !== null) {
+          this.notifyDay7BossHpChange(prevBossHp);
+        }
+      })
+    ) {
+      return;
+    }
+
+    if (accepted) {
+      if (this.state.pawnPrices) {
+        savePawnPrices(this.state.pawnPrices);
+      }
+      if (milestoneToast) {
+        saveGame(this.save);
+      }
+    }
+
     this.renderCurrentPhase();
-    if (accepted && prevBossHp !== null) {
-      this.notifyDay7BossHpChange(prevBossHp);
+    const showedBossToast =
+      accepted && prevBossHp !== null ? this.notifyDay7BossHpChange(prevBossHp) : false;
+    if (milestoneToast && !showedBossToast) {
+      this.showToast(milestoneToast, 2600);
+    }
+  }
+
+  private renderHeirloomBar(): void {
+    const ownedIds = this.save.chapter.heirlooms ?? [];
+    this.contentLayer.add(
+      this.add
+        .rectangle(
+          HEIRLOOM_BAR_RECT.x,
+          HEIRLOOM_BAR_RECT.y,
+          HEIRLOOM_BAR_RECT.width,
+          HEIRLOOM_BAR_RECT.height,
+          PALETTE.deepWood.num,
+        )
+        .setStrokeStyle(2, PALETTE.brass.num),
+    );
+    this.contentLayer.add(
+      addPixelText(this, 24, HEIRLOOM_BAR_RECT.y, '老物件:', {
+        color: PALETTE.candle.hex,
+        origin: [0, 0.5],
+      }),
+    );
+
+    HEIRLOOM_BAR_SLOTS.forEach((slot, idx) => {
+      const id = ownedIds[idx];
+      const heirloom = id ? getHeirloomById(id) : undefined;
+      if (!heirloom) {
+        this.contentLayer.add([
+          this.add
+            .rectangle(slot.x, slot.y, slot.width, slot.height, PALETTE.ink.num)
+            .setStrokeStyle(2, PALETTE.woodBrown.num),
+          addPixelText(this, slot.x, slot.y, '-', {
+            color: PALETTE.oldPaper.hex,
+            origin: 0.5,
+          }),
+        ]);
+        return;
+      }
+
+      const bg = this.add
+        .rectangle(slot.x, slot.y, slot.width, slot.height, PALETTE.candle.num)
+        .setStrokeStyle(2, PALETTE.lampYellow.num)
+        .setInteractive({ useHandCursor: true });
+      const txt = addPixelText(this, slot.x, slot.y, heirloom.shortLabel, {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      });
+      bg.on('pointerover', () => bg.setFillStyle(PALETTE.lampYellow.num));
+      bg.on('pointerout', () => bg.setFillStyle(PALETTE.candle.num));
+      bg.on('pointerdown', () => {
+        audio.unlock();
+        audio.playSfx('button_click');
+        if (this.inspectedHeirloomId === heirloom.id && this.heirloomTooltip) {
+          this.clearHeirloomTooltip();
+        } else {
+          this.showHeirloomTooltip(heirloom);
+        }
+      });
+      this.contentLayer.add([bg, txt]);
+    });
+  }
+
+  private showHeirloomTooltip(heirloom: HeirloomDef): void {
+    this.clearHeirloomTooltip();
+    this.inspectedHeirloomId = heirloom.id;
+
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const tipY = 136;
+    const container = this.add.container(0, 0).setDepth(118);
+    const bg = this.add
+      .rectangle(centerX, tipY, 560, 92, PALETTE.nightBlack.num)
+      .setStrokeStyle(2, PALETTE.lampYellow.num)
+      .setInteractive({ useHandCursor: true });
+    const title = addPixelText(this, centerX, 108, heirloom.name, {
+      color: PALETTE.lampYellow.hex,
+      origin: 0.5,
+    });
+    const effectTxt = addPixelText(this, centerX, 136, heirloom.effectText, {
+      color: PALETTE.paperWhite.hex,
+      origin: 0.5,
+    });
+    const storyTxt = addPixelText(this, centerX, 164, heirloom.story, {
+      color: PALETTE.candle.hex,
+      origin: 0.5,
+    });
+    bg.on('pointerdown', () => this.clearHeirloomTooltip());
+    container.add([bg, title, effectTxt, storyTxt]);
+    this.heirloomTooltip = container;
+  }
+
+  private clearHeirloomTooltip(): void {
+    this.inspectedHeirloomId = null;
+    if (this.heirloomTooltip) {
+      this.heirloomTooltip.destroy();
+      this.heirloomTooltip = undefined;
+    }
+  }
+
+  private grantHeirloomFromSource(
+    seedTag: string,
+    sourceLabel: string,
+  ): { granted: HeirloomDef | null; queuedReplace: boolean } {
+    const owned = this.save.chapter.heirlooms ?? [];
+    const queuedIds = this.pendingHeirloomQueue.map((q) => q.heirloom.id);
+    const rng = mulberry32(deriveHeirloomSeed(this.seed, seedTag));
+    const picked = pickRandomUnownedHeirloom([...owned, ...queuedIds], rng);
+    if (!picked) {
+      return { granted: null, queuedReplace: false };
+    }
+    const addRes = addHeirloom(owned, picked.id, HEIRLOOM_CAP);
+    if (addRes.added) {
+      this.save.chapter.heirlooms = addRes.heirlooms;
+      audio.playSfx('receive_card');
+      return { granted: picked, queuedReplace: false };
+    }
+    if (addRes.needsReplace) {
+      this.pendingHeirloomQueue.push({ heirloom: picked, sourceLabel });
+      return { granted: picked, queuedReplace: true };
+    }
+    return { granted: null, queuedReplace: false };
+  }
+
+  private checkReputationMilestones(): string | null {
+    const claimed = this.save.chapter.heirloomMilestonesClaimed ?? [];
+    const newlyReached = getNewlyReachedMilestones(this.state.reputation, claimed);
+    if (newlyReached.length === 0) {
+      return null;
+    }
+    let lastToast: string | null = null;
+    for (const milestone of newlyReached) {
+      this.save.chapter.heirloomMilestonesClaimed = [
+        ...(this.save.chapter.heirloomMilestonesClaimed ?? []),
+        milestone,
+      ];
+      const res = this.grantHeirloomFromSource(
+        `rep_${milestone}_day${this.state.day}`,
+        `口碑满${milestone}`,
+      );
+      if (res.granted && !res.queuedReplace) {
+        lastToast = `口碑满${milestone}，得老物件:${res.granted.name}`;
+      }
+    }
+    return lastToast;
+  }
+
+  private enterReplaceHeirloomIfNeeded(onComplete: () => void): boolean {
+    if (this.pendingHeirloomQueue.length === 0) {
+      return false;
+    }
+    this.afterHeirloomReplaceCallback = onComplete;
+    this.state = { ...this.state, phase: 'replace_heirloom' };
+    this.renderCurrentPhase();
+    return true;
+  }
+
+  private renderReplaceHeirloom(): void {
+    const offer = this.pendingHeirloomQueue[0];
+    if (!offer) {
+      const cb = this.afterHeirloomReplaceCallback;
+      this.afterHeirloomReplaceCallback = null;
+      if (cb) cb();
+      return;
+    }
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    this.contentLayer.add([
+      this.add
+        .rectangle(centerX, 64, BASE_WIDTH - 32, 34, PALETTE.deepWood.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
+      addPixelText(this, centerX, 64, '老物件已满 · 选1件换掉', {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      }),
+      this.add
+        .rectangle(centerX, 110, BASE_WIDTH - 32, 52, PALETTE.candle.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
+      addPixelText(this, centerX, 97, `新得:${offer.heirloom.name}(${offer.heirloom.shortLabel})`, {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      }),
+      addPixelText(this, centerX, 124, offer.heirloom.effectText, {
+        size: 12,
+        color: PALETTE.deepWood.hex,
+        origin: 0.5,
+      }),
+    ]);
+
+    const owned = this.save.chapter.heirlooms ?? [];
+    owned.forEach((id, slotIdx) => {
+      const slot = HEIRLOOM_REPLACE_SLOTS[slotIdx];
+      const h = getHeirloomById(id);
+      if (!slot || !h) {
+        return;
+      }
+      const bg = this.add
+        .rectangle(slot.x, slot.y, slot.width, slot.height, PALETTE.paperWhite.num)
+        .setStrokeStyle(2, PALETTE.ink.num)
+        .setInteractive({ useHandCursor: true });
+      const strip = this.add.rectangle(slot.x, slot.y - 56, slot.width - 4, 6, PALETTE.brass.num);
+      const nameTxt = addPixelText(this, slot.x, slot.y - 36, `${h.name}(${h.shortLabel})`, {
+        color: PALETTE.ink.hex,
+        origin: 0.5,
+      });
+      const effTxt = addPixelText(this, slot.x, slot.y - 4, wrapCjkText(h.effectText, 13), {
+        size: 12,
+        color: PALETTE.deepWood.hex,
+        origin: 0.5,
+        align: 1,
+        lineSpacing: 2,
+      });
+      const replaceTxt = addPixelText(this, slot.x, slot.y + 40, '点此换掉', {
+        color: PALETTE.vermilion.hex,
+        origin: 0.5,
+      });
+
+      bg.on('pointerover', () => {
+        bg.setFillStyle(PALETTE.candle.num);
+        bg.setStrokeStyle(2, PALETTE.vermilion.num);
+      });
+      bg.on('pointerout', () => {
+        bg.setFillStyle(PALETTE.paperWhite.num);
+        bg.setStrokeStyle(2, PALETTE.ink.num);
+      });
+      bg.on('pointerdown', () => this.handleReplaceHeirloom(slotIdx));
+
+      this.contentLayer.add([bg, strip, nameTxt, effTxt, replaceTxt]);
+    });
+
+    this.addActionButton(
+      HEIRLOOM_REPLACE_SKIP_BUTTON.x,
+      HEIRLOOM_REPLACE_SKIP_BUTTON.y,
+      HEIRLOOM_REPLACE_SKIP_BUTTON.width,
+      HEIRLOOM_REPLACE_SKIP_BUTTON.height,
+      '暂不换',
+      null,
+      () => this.handleSkipReplaceHeirloom(),
+      false,
+      PALETTE.oldPaper.num,
+    );
+  }
+
+  private handleReplaceHeirloom(slotIndex: number): void {
+    if (this.state.phase !== 'replace_heirloom') {
+      return;
+    }
+    const offer = this.pendingHeirloomQueue.shift();
+    if (!offer) {
+      return;
+    }
+    audio.unlock();
+    audio.playSfx('receive_card');
+    const owned = this.save.chapter.heirlooms ?? [];
+    this.save.chapter.heirlooms = replaceHeirloomAtIndex(owned, slotIndex, offer.heirloom.id);
+    if (this.pendingHeirloomQueue.length > 0) {
+      this.renderCurrentPhase();
+      return;
+    }
+    saveGame(this.save);
+    if (this.state.pawnPrices) {
+      savePawnPrices(this.state.pawnPrices);
+    }
+    const cb = this.afterHeirloomReplaceCallback;
+    this.afterHeirloomReplaceCallback = null;
+    if (cb) {
+      cb();
+    }
+  }
+
+  private handleSkipReplaceHeirloom(): void {
+    if (this.state.phase !== 'replace_heirloom') {
+      return;
+    }
+    this.pendingHeirloomQueue.shift();
+    audio.unlock();
+    audio.playSfx('button_click');
+    if (this.pendingHeirloomQueue.length > 0) {
+      this.renderCurrentPhase();
+      return;
+    }
+    saveGame(this.save);
+    if (this.state.pawnPrices) {
+      savePawnPrices(this.state.pawnPrices);
+    }
+    const cb = this.afterHeirloomReplaceCallback;
+    this.afterHeirloomReplaceCallback = null;
+    if (cb) {
+      cb();
     }
   }
 
@@ -2619,6 +3047,7 @@ export class PawnshopScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.clearToast(false);
       this.clearGlossaryTip();
+      this.clearHeirloomTooltip();
       this.dismissShopkeeperBanner();
       if (this.handleWindowResize) {
         window.removeEventListener('resize', this.handleWindowResize);

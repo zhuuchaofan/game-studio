@@ -262,6 +262,19 @@ function isValidChapterSaveState(raw: unknown): raw is ChapterSaveState {
   ) {
     return false;
   }
+  if (
+    ch.heirlooms !== undefined &&
+    (!Array.isArray(ch.heirlooms) || !ch.heirlooms.every((id) => typeof id === 'string'))
+  ) {
+    return false;
+  }
+  if (
+    ch.heirloomMilestonesClaimed !== undefined &&
+    (!Array.isArray(ch.heirloomMilestonesClaimed) ||
+      !ch.heirloomMilestonesClaimed.every((m) => typeof m === 'number' && Number.isFinite(m)))
+  ) {
+    return false;
+  }
   return true;
 }
 

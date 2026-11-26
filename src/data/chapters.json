@@ -39,6 +39,13 @@
           "benefit": "口碑+1",
           "cost": "无额外代价",
           "immediateReputation": 1
+        },
+        {
+          "id": "street_favor",
+          "name": "老街人情",
+          "benefit": "立得 1 件老物件",
+          "cost": "无额外代价",
+          "immediateHeirloom": true
         }
       ],
       "day6SideQuest": {

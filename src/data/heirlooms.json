@@ -1,0 +1,65 @@
+[
+  {
+    "id": "old_abacus",
+    "name": "老算盘",
+    "shortLabel": "算",
+    "hook": "cardPlayed",
+    "value": 1,
+    "effectText": "每夜第一张人情牌，多算 1 点人情",
+    "story": "老掌柜的算盘，算了三十年账"
+  },
+  {
+    "id": "gold_signboard",
+    "name": "金招牌",
+    "shortLabel": "招",
+    "hook": "cardPlayed",
+    "value": 1,
+    "effectText": "每打出一张旧物牌，得 1 点护盾",
+    "story": "铺子门口的招牌，是老掌柜描的"
+  },
+  {
+    "id": "old_scale",
+    "name": "老秤",
+    "shortLabel": "秤",
+    "hook": "cardPlayed",
+    "value": 1,
+    "effectText": "每夜第一张旧物牌，多抽 1 张牌",
+    "story": "收当用的老秤，分量从来不差"
+  },
+  {
+    "id": "quilt",
+    "name": "棉被",
+    "shortLabel": "被",
+    "hook": "battleStart",
+    "value": 3,
+    "effectText": "每夜开始，恢复 3 点生命",
+    "story": "奶奶做的棉被，睡了不冷"
+  },
+  {
+    "id": "copper_tray",
+    "name": "铜盘",
+    "shortLabel": "盘",
+    "hook": "turnEnd",
+    "value": 3,
+    "effectText": "回合末，人情换护盾，每点 3 盾",
+    "story": "接钱的铜盘，听了一辈子铜钱响"
+  },
+  {
+    "id": "paper_lantern",
+    "name": "纸灯",
+    "shortLabel": "灯",
+    "hook": "cardPlayed",
+    "value": 1,
+    "effectText": "每回合第一张牌，多抽 1 张牌",
+    "story": "守夜的纸灯，亮了一整个秋天"
+  },
+  {
+    "id": "old_newspaper",
+    "name": "旧报纸",
+    "shortLabel": "报",
+    "hook": "onDiscard",
+    "value": 3,
+    "effectText": "每次弃牌，得 3 点护盾",
+    "story": "去年的报纸，放在柜子底下"
+  }
+]

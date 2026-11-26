@@ -647,3 +647,34 @@
 - **硬排除已拥有旧物**：`pickDailyItems` 将原先 D2「优先未拥有」的软偏好改为硬排除——只要牌库中仍持有某件旧物对应的卡牌，该旧物在本局剩余天数内不再作为当客出现；拒绝/跳过未收下的旧物不算拥有，后续仍可出现；D1 赎回冷却 2 天保持不变。
 - **池子不足不补凑**：当日可收旧物不足 3 件时直接出仅有的当客（`0..2` 位，若为 `0` 位则直接进入当日结算），不用已拥有或冷却中的旧物补数。
 - **sim 实测量化**（生命结转 1000 局）：开启收当不重复后 7 天通关率 `47.2%` vs 关闭（优先未拥有）`47.5%`（差值 `-0.3pp`）；可收旧物 `< 3` 件的天数占比 `0.41%`（`29 / 7000` 天）。
+
+### 25.4 阶段 C：传家宝表（老物件，7 件）
+
+> 设计术语称「传家宝」；因「宝」不在 774 字形像素字库内，游戏内显示一律用「老物件」（不进牌组、不进 `itemPool`、不进胜利奖励池与当客池，也不用像素图）。
+
+- **7 件传家宝数据（`src/data/heirlooms.json`，`src/game/heirlooms.ts`）**：
+
+| id | 名称 | 短标 | 钩子（`hooks.ts`） | 数值 | 效果文案（游戏内显示） | 故事 |
+|---|---|---|---|---|---|---|
+| `old_abacus` | 老算盘 | 算 | `cardPlayed` | `1` | 每夜第一张人情牌，多算 1 点人情 | 老掌柜的算盘，算了三十年账 |
+| `gold_signboard` | 金招牌 | 招 | `cardPlayed` | `1` | 每打出一张旧物牌，得 1 点护盾 | 铺子门口的招牌，是老掌柜描的 |
+| `old_scale` | 老秤 | 秤 | `cardPlayed` | `1` | 每夜第一张旧物牌，多抽 1 张牌 | 收当用的老秤，分量从来不差 |
+| `quilt` | 棉被 | 被 | `battleStart` | `3` | 每夜开始，恢复 3 点生命 | 奶奶做的棉被，睡了不冷 |
+| `copper_tray` | 铜盘 | 盘 | `turnEnd` | `3` | 回合末，人情换护盾，每点 3 盾 | 接钱的铜盘，听了一辈子铜钱响 |
+| `paper_lantern` | 纸灯 | 灯 | `cardPlayed` | `1` | 每回合第一张牌，多抽 1 张牌 | 守夜的纸灯，亮了一整个秋天 |
+| `old_newspaper` | 旧报纸 | 报 | `onDiscard` | `3` | 每次弃牌，得 3 点护盾 | 去年的报纸，放在柜子底下 |
+
+- **钩子激活与结算口径（`src/game/hooks.ts` / `src/game/battle.ts` / `src/game/heirlooms.ts`）**：
+  - 「人情牌」（`isRenqingCard`）指效果含 `renqing` / `renqing_next` / `discard_for_renqing` 的 5 张牌（算盘、余音、集邮、手电、当票）；「旧物牌」（`isItemSetCard`）指 `set: "旧物"` 的 12 张牌。
+  - **非递归与隔离**：`createHeirloomHookRegistry` 每场 `createBattle` 重建闭包计数器（不跨局串状态），所有 handler 不调用 `ctx.emit`（金招牌护盾不触发铜盘，纸灯抽牌不触发老秤）。`copper_tray` 回合末将剩余 `renqing` 清零并转为 `3 × renqing` 护盾；`quilt` 开局回血封顶 `30` 并经 `createBattleWithEvents` 透出 `HEAL_APPLIED` 触发飘字。
+- **获取途径与门槛（含 Q7 fallback 最终口径）**：
+  1. **口碑里程碑 `≥2 / ≥4`**（`HEIRLOOM_REP_MILESTONES = [2, 4]`）：原提案 `≥3 / ≥5` 在 B+C 生命结转 sim 实测达成率仅 `24.1%` / `2.0%`（均低于 `30%`），按任务书 §15 Q7 触发 fallback 降至 `≥2 / ≥4`。每次口碑首次达到对应档位时随机抽取 1 件未拥有老物件，每档在本章内仅触发一次。
+  2. **第 7 天 Boss 胜掉落**：击败第 7 夜大心魔后随机抽取 1 件未拥有老物件，在周日休市日记页与胜利奖励同屏显示。
+  3. **第 4 天契约第 4 选项「老街人情」（`street_favor`）**：`chapters.json` 的 `day4Pacts` 新增第 4 项，立得 1 件随机未拥有老物件且无额外代价（`PactId` / `VALID_PACT_IDS` / `PawnshopScene` 四选一排版同步放宽到 3–4 项）。
+- **持有上限与替换/跳过（`HEIRLOOM_CAP = 3`）**：
+  - 同时最多持有 3 件；白日 HUD 下方老物件栏展示短标并支持点击看说明（避开一次性口碑提示条）。
+  - 持有已满 3 件再获得时弹出替换面板（复用删牌槽位样式）：可点任一槽位替换为新物件，或点「暂不换」放弃本次获得。
+  - **防刷新丢奖励（延迟落盘）**：无论是白天（`PawnshopScene` 契约/收当/赎当里程碑）还是 Boss 胜利（`ResultScene` 日记页），触发满持有待替换时在玩家完成替换或跳过前不将已消耗触发/章节完成状态落盘，队列清空或跳过时一次性 `saveGame`，确保刷新后重做可恢复且不重复发放。
+- **存档字段（`SAVE_VERSION = 3` 不升版）**：
+  - `ChapterSaveState` 新增可选字段 `heirlooms?: string[]`、`heirloomMilestonesClaimed?: number[]`。
+  - 老存档缺省按空数组处理；`isValidSaveData` 严格校验类型（非 string/number 数组判损坏隔离）；`cloneChapterState` 显式深拷贝；`applyDayResult` 四分支原样透传不丢。
