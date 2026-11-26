@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { audio, installAudioDebugHook } from '../game/audio';
-import { BALANCE, PALETTE, SHOPKEEPER_OPENING_NOTE_LINES } from '../game/pawnshop';
+import { buildEndingLedger, formatTitleSettlementSummary } from '../game/bossComposition';
+import { BALANCE, ITEMS, PALETTE, SHOPKEEPER_OPENING_NOTE_LINES } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
 import {
   clearPawnPrices,
@@ -12,6 +13,8 @@ import {
 } from '../game/save';
 import {
   TITLE_CALENDAR_BUTTON,
+  TITLE_COMPLETED_CALENDAR_BUTTON,
+  TITLE_COMPLETED_START_BUTTON,
   TITLE_CONTINUE_BUTTON,
   TITLE_START_BUTTON,
   TITLE_TUTORIAL_BUTTON,
@@ -21,13 +24,15 @@ import { BASE_HEIGHT, BASE_WIDTH } from '../utils/scale';
 
 export {
   TITLE_CALENDAR_BUTTON,
+  TITLE_COMPLETED_CALENDAR_BUTTON,
+  TITLE_COMPLETED_START_BUTTON,
   TITLE_CONTINUE_BUTTON,
   TITLE_START_BUTTON,
   TITLE_TUTORIAL_BUTTON,
   TITLE_VOLUME_BUTTON,
 } from '../game/layout';
 
-export const GAME_VERSION = 'v0.4.2-PlaytestFix';
+export const GAME_VERSION = 'v0.4.3-ClearRunFix';
 
 export class TitleScene extends Phaser.Scene {
   private handleWindowResize?: () => void;
@@ -41,6 +46,18 @@ export class TitleScene extends Phaser.Scene {
     const centerY = Math.floor(BASE_HEIGHT / 2);
     const loadResult = loadSaveDetailed();
     const existingSave = loadResult.save;
+    const isCompletedShowcase =
+      !loadResult.quarantinedCorrupt &&
+      existingSave !== null &&
+      existingSave.chapter.chapter1Completed &&
+      existingSave.chapter.status === 'completed';
+    const titleEndingLedger = isCompletedShowcase
+      ? buildEndingLedger(existingSave.deck, existingSave.chapter, ITEMS)
+      : null;
+    const titleCompletedTeaser = isCompletedShowcase ? '第2章「站稳招牌」· 未完待续' : null;
+    const titleSettlementLine = isCompletedShowcase
+      ? formatTitleSettlementSummary(existingSave.money, existingSave.chapter)
+      : null;
 
     audio.stopBgm();
     installAudioDebugHook(audio);
@@ -66,6 +83,9 @@ export class TitleScene extends Phaser.Scene {
         currentStep: null,
         tutorialDone: loadTutorialDone(),
         version: GAME_VERSION,
+        titleCompletedTeaser,
+        titleSettlementLine,
+        titleEndingLedger,
       }),
     };
 
@@ -108,17 +128,17 @@ export class TitleScene extends Phaser.Scene {
       loadResult.quarantinedCorrupt ||
       existingSave?.chapter.status === 'failed' ||
       Boolean(existingSave?.chapter.chapter1Completed);
-    const noteCenterY = hasStatusLine ? 162 : 172;
-    const noteHeight = hasStatusLine ? 62 : 68;
+    const noteCenterY = isCompletedShowcase ? 160 : hasStatusLine ? 162 : 172;
+    const noteHeight = isCompletedShowcase ? 58 : hasStatusLine ? 62 : 68;
 
     this.add
       .rectangle(centerX, noteCenterY, BASE_WIDTH - 64, noteHeight, PALETTE.ink.num)
       .setStrokeStyle(2, PALETTE.brass.num);
-    addPixelText(this, centerX, noteCenterY - 14, SHOPKEEPER_OPENING_NOTE_LINES[0], {
+    addPixelText(this, centerX, noteCenterY - (isCompletedShowcase ? 13 : 14), SHOPKEEPER_OPENING_NOTE_LINES[0], {
       color: PALETTE.candle.hex,
       origin: 0.5,
     });
-    addPixelText(this, centerX, noteCenterY + 14, SHOPKEEPER_OPENING_NOTE_LINES[1], {
+    addPixelText(this, centerX, noteCenterY + (isCompletedShowcase ? 13 : 14), SHOPKEEPER_OPENING_NOTE_LINES[1], {
       color: PALETTE.lampYellow.hex,
       origin: 0.5,
     });
@@ -139,6 +159,24 @@ export class TitleScene extends Phaser.Scene {
         color: PALETTE.paperWhite.hex,
         origin: 0.5,
       });
+    } else if (isCompletedShowcase) {
+      this.add
+        .rectangle(centerX, 222, 368, 52, PALETTE.jade.num)
+        .setStrokeStyle(2, PALETTE.ink.num);
+      addPixelText(this, centerX, 210, '第1章·已完成', {
+        color: PALETTE.paperWhite.hex,
+        origin: 0.5,
+      });
+      addPixelText(this, centerX, 234, titleCompletedTeaser ?? '', {
+        color: PALETTE.candle.hex,
+        origin: 0.5,
+      });
+      if (titleSettlementLine) {
+        addPixelText(this, centerX, 315, titleSettlementLine, {
+          color: PALETTE.candle.hex,
+          origin: 0.5,
+        });
+      }
     } else if (existingSave?.chapter.chapter1Completed) {
       this.add
         .rectangle(centerX, 214, 220, 28, PALETTE.jade.num)
@@ -149,12 +187,17 @@ export class TitleScene extends Phaser.Scene {
       });
     }
 
+    const startBtnRect = isCompletedShowcase ? TITLE_COMPLETED_START_BUTTON : TITLE_START_BUTTON;
+    const calendarBtnRect = isCompletedShowcase
+      ? TITLE_COMPLETED_CALENDAR_BUTTON
+      : TITLE_CALENDAR_BUTTON;
+
     // “开始”按钮：烛光底 + 墨黑字 + 1 像素墨黑描边
     this.createMenuButton(
-      TITLE_START_BUTTON.x,
-      TITLE_START_BUTTON.y,
-      TITLE_START_BUTTON.width,
-      TITLE_START_BUTTON.height,
+      startBtnRect.x,
+      startBtnRect.y,
+      startBtnRect.width,
+      startBtnRect.height,
       '开始',
       () => {
         const fresh = createNewGame(undefined, existingSave?.chapter);
@@ -183,10 +226,10 @@ export class TitleScene extends Phaser.Scene {
 
     // 右侧常驻“台历”入口：打开独立全屏 7 天老街台历屏
     this.createMenuButton(
-      TITLE_CALENDAR_BUTTON.x,
-      TITLE_CALENDAR_BUTTON.y,
-      TITLE_CALENDAR_BUTTON.width,
-      TITLE_CALENDAR_BUTTON.height,
+      calendarBtnRect.x,
+      calendarBtnRect.y,
+      calendarBtnRect.width,
+      calendarBtnRect.height,
       '台历',
       () => {
         this.scene.start('CalendarMapScene', {

@@ -172,6 +172,16 @@ export interface PawnshopDebugSnapshot {
   sideQuestChoice?: SideQuestChoice | null;
   day3Rumor?: string | null;
   sideQuestItemId?: string | null;
+  version?: string;
+  titleCompletedTeaser?: string | null;
+  titleSettlementLine?: string | null;
+  titleEndingLedger?: {
+    returnedItems: string[];
+    retainedItems: string[];
+    bossFragmentItems: string[];
+    pawnedItems: string[];
+    lines: string[];
+  } | null;
 }
 
 /**

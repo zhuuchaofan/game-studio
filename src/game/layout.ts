@@ -10,9 +10,11 @@ export interface ButtonRect {
 
 // TitleScene
 export const TITLE_START_BUTTON = { x: 320, y: 256, width: 200, height: 40 } as const;
+export const TITLE_COMPLETED_START_BUTTON = { x: 320, y: 280, width: 200, height: 40 } as const;
 export const TITLE_CONTINUE_BUTTON = { x: 320, y: 312, width: 200, height: 40 } as const;
 export const TITLE_VOLUME_BUTTON = { x: 112, y: 312, width: 132, height: 38 } as const;
 export const TITLE_CALENDAR_BUTTON = { x: 528, y: 256, width: 132, height: 38 } as const;
+export const TITLE_COMPLETED_CALENDAR_BUTTON = { x: 528, y: 270, width: 132, height: 34 } as const;
 export const TITLE_TUTORIAL_BUTTON = { x: 528, y: 312, width: 132, height: 38 } as const;
 
 // PawnshopScene
@@ -69,26 +71,71 @@ export const BATTLE_DETAIL_TOGGLE_BUTTON = { x: 24, y: 177, width: 32, height: 2
 export const BATTLE_END_TURN_BUTTON = { x: 564, y: 186, width: 128, height: 44 } as const;
 export const BATTLE_EMPTY_RETURN_BUTTON = { x: 320, y: 236, width: 192, height: 48 } as const;
 export const DEMON_HP_BAR_RECT = { x: 212, y: 76, width: 316, height: 8 } as const;
-export const DEMON_INTRO_BANNER_RECT = { x: 46, y: 132, width: 444, height: 82 } as const;
+export const DEMON_INTRO_BANNER_RECT = { x: 46, y: 130, width: 444, height: 74 } as const;
+
+export const HAND_FAN_THRESHOLD = 7;
+export const HAND_FAN_MAX_ANGLE_DEG = 5;
+export const HAND_FAN_ARC_DROP = 8;
+
+export interface HandCardPose {
+  readonly x: number;
+  readonly y: number;
+  readonly rotation: number;
+  readonly compactText: boolean;
+}
+
+/**
+ * Computes fixed-slot fan pose (center X, arc Y, rotation radians, compact text mode)
+ * for a hand card in 640x360 logical coordinates.
+ * Counts <= 6 stay flat at natural 104px spacing; counts >= 7 use fixed 9/11-slot fan buckets
+ * so cards stay legible and never shift when played mid-turn.
+ */
+export function computeHandCardPose(index: number, count: number): HandCardPose {
+  if (count <= 0) {
+    return {
+      x: Math.floor(BASE_WIDTH / 2),
+      y: BATTLE_HAND_Y,
+      rotation: 0,
+      compactText: false,
+    };
+  }
+  if (count < HAND_FAN_THRESHOLD) {
+    const naturalStep = BATTLE_CARD_WIDTH + BATTLE_CARD_GAP;
+    const totalWidth = BATTLE_CARD_WIDTH + (count - 1) * naturalStep;
+    const startCenterX =
+      Math.floor((BASE_WIDTH - totalWidth) / 2) + Math.floor(BATTLE_CARD_WIDTH / 2);
+    return {
+      x: startCenterX + index * naturalStep,
+      y: BATTLE_HAND_Y,
+      rotation: 0,
+      compactText: false,
+    };
+  }
+
+  const slotCount = count <= 9 ? 9 : count <= 11 ? 11 : count;
+  const margin = slotCount <= 9 ? 8 : 6;
+  const availableWidth = BASE_WIDTH - margin * 2;
+  const step = Math.floor((availableWidth - BATTLE_CARD_WIDTH) / (slotCount - 1));
+  const totalWidth = BATTLE_CARD_WIDTH + (slotCount - 1) * step;
+  const startCenterX =
+    Math.floor((BASE_WIDTH - totalWidth) / 2) + Math.floor(BATTLE_CARD_WIDTH / 2);
+  const slotOffset = Math.floor((slotCount - count) / 2);
+  const fixedSlot = Math.max(0, Math.min(slotCount - 1, slotOffset + index));
+  const t = slotCount > 1 ? (fixedSlot / (slotCount - 1)) * 2 - 1 : 0;
+
+  return {
+    x: startCenterX + fixedSlot * step,
+    y: BATTLE_HAND_Y + Math.round(t * t * HAND_FAN_ARC_DROP) - Math.round(HAND_FAN_ARC_DROP / 2),
+    rotation: (t * HAND_FAN_MAX_ANGLE_DEG * Math.PI) / 180,
+    compactText: true,
+  };
+}
 
 /**
  * Computes the horizontal center X of a hand card in 640x360 logical coordinates.
  */
 export function computeHandCardX(index: number, count: number): number {
-  if (count <= 0) {
-    return Math.floor(BASE_WIDTH / 2);
-  }
-  const availableWidth = BASE_WIDTH - BATTLE_HAND_MARGIN_X * 2;
-  const naturalStep = BATTLE_CARD_WIDTH + BATTLE_CARD_GAP;
-  const maxWidth = BATTLE_CARD_WIDTH + (count - 1) * naturalStep;
-  const step =
-    maxWidth <= availableWidth || count === 1
-      ? naturalStep
-      : Math.floor((availableWidth - BATTLE_CARD_WIDTH) / (count - 1));
-  const totalWidth = BATTLE_CARD_WIDTH + (count - 1) * step;
-  const startCenterX =
-    Math.floor((BASE_WIDTH - totalWidth) / 2) + Math.floor(BATTLE_CARD_WIDTH / 2);
-  return startCenterX + index * step;
+  return computeHandCardPose(index, count).x;
 }
 
 // ResultScene

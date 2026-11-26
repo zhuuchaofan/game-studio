@@ -6,6 +6,7 @@ import {
   createBattle,
   endTurn,
   formatEffectDescription,
+  formatEffectShort,
   getIntent,
   playCard,
   resolveWinReward,
@@ -330,7 +331,8 @@ describe('Battle state machine & BattleEvent stream', () => {
 
   it('provides clear effect descriptions for every card including 倒转 (C1) and intro/victory lines for all demons (C5)', () => {
     const rewind = CARDS.find((c) => c.id === 'rewind')!;
-    expect(formatEffectDescription(rewind)).toBe('敌我双方回到上一回合开始时的状态');
+    expect(formatEffectDescription(rewind)).toBe('双方生命回到上一回合开始时');
+    expect(formatEffectShort(rewind)).toBe('血回上回');
 
     for (const card of CARDS) {
       const desc = formatEffectDescription(card);

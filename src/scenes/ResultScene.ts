@@ -103,6 +103,8 @@ export class ResultScene extends Phaser.Scene {
   private endingLedger: EndingLedgerSummary | null = null;
   private epilogueLines: string[] | null = null;
   private chapterFailHint: string | null = null;
+  private normalFailHint: string | null = null;
+  private normalFailContinueLine: string | null = null;
   private handleWindowResize?: () => void;
 
   constructor() {
@@ -115,6 +117,8 @@ export class ResultScene extends Phaser.Scene {
     this.endingLedger = null;
     this.epilogueLines = null;
     this.chapterFailHint = null;
+    this.normalFailHint = null;
+    this.normalFailContinueLine = null;
     const result = data?.result ?? 'lose_timeout';
     const deck = data?.deck ?? [];
     const demonId = data?.demonId ?? 'a';
@@ -229,6 +233,8 @@ export class ResultScene extends Phaser.Scene {
         reward,
         loseReason,
         chapterFailHint: this.chapterFailHint,
+        normalFailHint: this.normalFailHint,
+        normalFailContinueLine: this.normalFailContinueLine,
         day: currentSave.day,
         shopLevel: nextSave.shopLevel,
         savedData: nextSave,
@@ -637,16 +643,35 @@ export class ResultScene extends Phaser.Scene {
         );
       }
     } else {
+      const hintText =
+        result === 'lose_hp'
+          ? '提醒：先攒护盾牌，顶住前两回合'
+          : '提醒：伤害牌太少，试试多收带伤的旧物';
+      const continueLine = '输了这一夜没事，钱与牌都在，明天继续';
+      this.normalFailHint = hintText;
+      this.normalFailContinueLine = continueLine;
+
       this.contentLayer.add([
-        addPixelText(this, centerX, 84, `心魔「${demonName}」未能平息`, {
+        addPixelText(this, centerX, 66, `心魔「${demonName}」未能平息`, {
           color: PALETTE.silverBlue.hex,
           origin: 0.5,
         }),
         this.add
-          .rectangle(centerX, 128, 360, 34, PALETTE.vermilion.num)
+          .rectangle(centerX, 102, 360, 32, PALETTE.vermilion.num)
           .setStrokeStyle(2, PALETTE.ink.num),
-        addPixelText(this, centerX, 128, `失败原因：${loseReason ?? ''}`, {
+        addPixelText(this, centerX, 102, `失败原因：${loseReason ?? ''}`, {
           color: PALETTE.paperWhite.hex,
+          origin: 0.5,
+        }),
+        this.add
+          .rectangle(centerX, 140, 460, 28, PALETTE.nightBlack.num)
+          .setStrokeStyle(2, PALETTE.brass.num),
+        addPixelText(this, centerX, 140, hintText, {
+          color: PALETTE.lampYellow.hex,
+          origin: 0.5,
+        }),
+        addPixelText(this, centerX, 171, continueLine, {
+          color: PALETTE.silverBlue.hex,
           origin: 0.5,
         }),
       ]);

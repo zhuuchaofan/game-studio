@@ -76,6 +76,12 @@ export interface BattleDebugSnapshot {
   bossChargeInterrupted?: boolean;
   detailMode?: 'effect' | 'story';
   hand: string[];
+  handSlotXs?: number[];
+  handSlotYs?: number[];
+  handSlotRotations?: number[];
+  introBannerVisible?: boolean;
+  detailLayerVisible?: boolean;
+  lastFloatSpawns?: { label: string; lane: string; startY: number; endY: number }[];
   deckCount: number;
   discardCount: number;
   pendingChoice?: PendingChoice | null;
@@ -94,6 +100,9 @@ export interface BattleDebugSnapshot {
   queuedCount?: number;
   reward?: WinReward | null;
   loseReason?: string | null;
+  normalFailHint?: string | null;
+  normalFailContinueLine?: string | null;
+  chapterFailHint?: string | null;
   day?: number;
   shopLevel?: number;
   savedData?: {
@@ -745,7 +754,7 @@ export function formatEffectShort(card: CardDef): string {
       case 'renqing_next':
         return `下回+${e.value ?? 0}情`;
       case 'rewind':
-        return '回上回';
+        return '血回上回';
       case 'illuminate':
         return '照亮';
       case 'reflect':
@@ -780,7 +789,7 @@ export function formatEffectDescription(card: CardDef): string {
       case 'renqing_next':
         return `下回合人情+${e.value ?? 0}`;
       case 'rewind':
-        return '敌我双方回到上一回合开始时的状态';
+        return '双方生命回到上一回合开始时';
       case 'illuminate':
         return '下次抽牌必为攻击牌';
       case 'reflect':

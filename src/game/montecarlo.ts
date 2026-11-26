@@ -242,6 +242,26 @@ export interface NewPlayerFirstNightSimOptions {
   runs?: number;
 }
 
+export interface ThinDeckNightStats {
+  night: 1 | 2 | 3;
+  demonId: 'a' | 'b' | 'c';
+  demonName: string;
+  demonHp: number;
+  runs: number;
+  wins: number;
+  lossesHp: number;
+  lossesTimeout: number;
+  winRate: number;
+  avgTotalDamage: number;
+}
+
+export interface ThinDeckPathReport {
+  runs: number;
+  seed7Deck: readonly string[];
+  seed7Route: ThinDeckNightStats[];
+  singleAttackDistribution: ThinDeckNightStats[];
+}
+
 export interface BalanceSimulationReport {
   overrides: SimTuneOverrides;
   demons: MonteCarloStats[];
@@ -250,6 +270,7 @@ export interface BalanceSimulationReport {
   chapter1: ChapterOneSimStats;
   bossComposition: BossCompositionScanReport;
   newPlayerFirstNight: NewPlayerFirstNightStats;
+  thinDeckPath: ThinDeckPathReport;
 }
 
 export interface SimGuardrailCheckResult {
@@ -1609,6 +1630,173 @@ export function simulateNewPlayerFirstNight(
   };
 }
 
+function simulateBattleTrackingDamage(
+  cards: readonly CardDef[],
+  demons: readonly DemonDef[],
+  balance: BattleBalanceConfig,
+  deck: readonly string[],
+  demonId: string,
+  seed: number,
+): { state: BattleState; totalDamageDealt: number } {
+  const rng = mulberry32(seed);
+  let state = createBattle(deck, demonId, rng, cards, demons, balance);
+  let totalDamageDealt = 0;
+
+  let safetyRounds = 0;
+  while (state.result === 'ongoing' && safetyRounds < 20) {
+    safetyRounds += 1;
+    let playsThisRound = 0;
+    while (state.phase === 'play' && state.result === 'ongoing' && playsThisRound < MAX_PLAYS_PER_ROUND) {
+      if (state.pendingChoice && state.hand.length > 0) {
+        const res = resolvePendingChoice(state, 0);
+        state = res.state;
+        for (const ev of res.events) {
+          if (ev.type === 'DAMAGE_DEALT' && ev.target === 'demon') {
+            totalDamageDealt += ev.hpDamage ?? ev.amount;
+          }
+        }
+        continue;
+      }
+
+      const choice = pickGreedyCardIndex(state);
+      if (choice === null) {
+        break;
+      }
+      const res = playCard(state, choice);
+      state = res.state;
+      for (const ev of res.events) {
+        if (ev.type === 'DAMAGE_DEALT' && ev.target === 'demon') {
+          totalDamageDealt += ev.hpDamage ?? ev.amount;
+        }
+      }
+      playsThisRound += 1;
+    }
+
+    if (state.result === 'ongoing' && state.pendingChoice) {
+      const res =
+        state.hand.length > 0
+          ? resolvePendingChoice(state, 0)
+          : cancelPendingChoice(state);
+      state = res.state;
+      for (const ev of res.events) {
+        if (ev.type === 'DAMAGE_DEALT' && ev.target === 'demon') {
+          totalDamageDealt += ev.hpDamage ?? ev.amount;
+        }
+      }
+    }
+
+    if (state.result === 'ongoing') {
+      const res = endTurn(state);
+      state = res.state;
+      for (const ev of res.events) {
+        if (ev.type === 'DAMAGE_DEALT' && ev.target === 'demon') {
+          totalDamageDealt += ev.hpDamage ?? ev.amount;
+        }
+      }
+    }
+  }
+
+  return { state, totalDamageDealt };
+}
+
+/**
+ * Task 17 §9: Measurement-only thin-deck path simulation (Day 1 single-attack decks vs Nights 1-3).
+ * Does not enter pass/fail guardrails.
+ */
+export function simulateThinDeckPath(
+  opts: NewPlayerFirstNightSimOptions = {},
+): ThinDeckPathReport {
+  const cards = opts.cards ?? (cardsJson as CardDef[]);
+  const demons = opts.demons ?? (demonsJson as DemonDef[]);
+  const battleBalance: BattleBalanceConfig = opts.battleBalance ?? {
+    startingHp: balanceJson.startingHp,
+    startingRenqing: balanceJson.startingRenqing,
+    maxRenqing: balanceJson.maxRenqing,
+    drawFirst: balanceJson.drawFirst,
+    drawPerRound: balanceJson.drawPerRound,
+    winRewardMoney: balanceJson.winRewardMoney,
+  };
+  const items = opts.items ?? ITEMS;
+  const runs = opts.runs ?? 1000;
+
+  const cardByName = new Map<string, CardDef>();
+  for (const card of cards) {
+    cardByName.set(card.name, card);
+  }
+
+  const singleAttackDecks: string[][] = [];
+  for (let daySeed = 1; singleAttackDecks.length < runs && daySeed <= runs * 20; daySeed += 1) {
+    const dayRng = mulberry32(deriveDaySeed(daySeed, 1));
+    const dailyItems = pickDailyItems(items, 1, dayRng, DAILY_CUSTOMER_COUNT);
+    const deck = dailyItems.map((item) => item.cardName);
+    const attackCount = deck.filter((name) => isAttackCard(cardByName.get(name))).length;
+    if (attackCount === 1) {
+      singleAttackDecks.push(deck);
+    }
+  }
+
+  const seed7Deck: readonly string[] = ['余音', '倒转', '旧书'];
+  const nights: readonly { night: 1 | 2 | 3; demonId: 'a' | 'b' | 'c' }[] = [
+    { night: 1, demonId: 'a' },
+    { night: 2, demonId: 'b' },
+    { night: 3, demonId: 'c' },
+  ];
+
+  const runCohort = (
+    decks: readonly (readonly string[])[],
+    seedBase: number,
+  ): ThinDeckNightStats[] =>
+    nights.map(({ night, demonId }) => {
+      const demonDef = demons.find((d) => d.id === demonId) ?? demons[0];
+      let wins = 0;
+      let lossesHp = 0;
+      let lossesTimeout = 0;
+      let sumDamage = 0;
+
+      for (let i = 0; i < decks.length; i += 1) {
+        const battleSeed = (i + 1) * seedBase + night * 41;
+        const { state, totalDamageDealt } = simulateBattleTrackingDamage(
+          cards,
+          demons,
+          battleBalance,
+          decks[i],
+          demonId,
+          battleSeed,
+        );
+        sumDamage += totalDamageDealt;
+        if (state.result === 'win') {
+          wins += 1;
+        } else if (state.result === 'lose_hp') {
+          lossesHp += 1;
+        } else {
+          lossesTimeout += 1;
+        }
+      }
+
+      const totalRuns = decks.length;
+      return {
+        night,
+        demonId,
+        demonName: demonDef?.name ?? demonId,
+        demonHp: demonDef?.hp ?? 0,
+        runs: totalRuns,
+        wins,
+        lossesHp,
+        lossesTimeout,
+        winRate: totalRuns > 0 ? wins / totalRuns : 0,
+        avgTotalDamage: totalRuns > 0 ? sumDamage / totalRuns : 0,
+      };
+    });
+
+  const seed7Decks = Array.from({ length: runs }, () => seed7Deck);
+  return {
+    runs,
+    seed7Deck,
+    seed7Route: runCohort(seed7Decks, 1013),
+    singleAttackDistribution: runCohort(singleAttackDecks, 1019),
+  };
+}
+
 const ALLOWED_SIM_TUNE_KEYS = new Set<keyof SimTuneOverrides>([
   'demonAHp',
   'demonBHp',
@@ -1761,6 +1949,15 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     runs,
   });
 
+  // Task 17 §9 Thin-deck path measurement (only output metrics, no guardrails)
+  const thinDeckPath = simulateThinDeckPath({
+    cards,
+    demons,
+    battleBalance,
+    items: ITEMS,
+    runs,
+  });
+
   return {
     overrides,
     demons: demonStats,
@@ -1769,6 +1966,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     chapter1,
     bossComposition,
     newPlayerFirstNight,
+    thinDeckPath,
   };
 }
 
@@ -1996,6 +2194,21 @@ export function formatSimReport(report: BalanceSimulationReport): string {
   lines.push(
     `  只有1张攻击牌胜率: ${(np.singleAttackWinRate * 100).toFixed(1)}% (${np.singleAttackWins}/${np.singleAttackRuns}) | 2张攻击牌胜率: ${(np.doubleAttackWinRate * 100).toFixed(1)}% (${np.doubleAttackWins}/${np.doubleAttackRuns})`,
   );
+
+  const td = report.thinDeckPath;
+  lines.push(`\n[单伤害牌路径模拟 (第1天仅1张伤害牌, ${td.runs} 局, 第1-3夜药费/车票/房租, 仅测量)]`);
+  lines.push(`  实测路线 [${td.seed7Deck.join('/')}]:`);
+  for (const n of td.seed7Route) {
+    lines.push(
+      `    第${n.night}夜 ${n.demonName}(${n.demonHp}血): 胜率 ${(n.winRate * 100).toFixed(1)}% (${n.wins}/${n.runs}) | 期望总伤 ${n.avgTotalDamage.toFixed(1)} | 血归零 ${n.lossesHp} / 超时 ${n.lossesTimeout}`,
+    );
+  }
+  lines.push(`  第1天仅1张伤害牌分布 (pickDailyItems, ${td.runs} 局):`);
+  for (const n of td.singleAttackDistribution) {
+    lines.push(
+      `    第${n.night}夜 ${n.demonName}(${n.demonHp}血): 胜率 ${(n.winRate * 100).toFixed(1)}% (${n.wins}/${n.runs}) | 期望总伤 ${n.avgTotalDamage.toFixed(1)} | 血归零 ${n.lossesHp} / 超时 ${n.lossesTimeout}`,
+    );
+  }
 
   const eco = report.economy;
   const lastIdx = eco.days - 1;
