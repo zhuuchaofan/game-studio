@@ -32,6 +32,7 @@ import { pixelRowsToTexture } from '../game/pixelart';
 import { addPixelText } from '../game/pixelFont';
 import { loadTutorialDone, maxRenqingForLevel, saveTutorialDone, type SaveData } from '../game/save';
 import { cloneChapterState } from '../game/chapters';
+import { consumeFirstGlossaryTip, type GlossaryTermId } from '../game/glossary';
 import {
   advanceTutorialStep,
   cloneTutorialState,
@@ -153,7 +154,8 @@ export class CardBattleScene extends Phaser.Scene {
   private handSlots: HandSlotView[] = [];
   private playQueue: number[] = [];
   private inFlightSlotIndex: number | null = null;
-  private queuedEndTurn = false;
+  private pendingIntroBanner = false;
+  private activeFloatSlots: { lane: string; y: number; expiresAt: number }[] = [];
 
   private hudLayer!: Phaser.GameObjects.Container;
   private demonLayer!: Phaser.GameObjects.Container;
@@ -162,6 +164,9 @@ export class CardBattleScene extends Phaser.Scene {
   private fxLayer!: Phaser.GameObjects.Container;
   private introBanner?: Phaser.GameObjects.Container;
   private introBannerTimer?: Phaser.Time.TimerEvent;
+  private glossaryBanner?: Phaser.GameObjects.Container;
+  private glossaryTimer?: Phaser.Time.TimerEvent;
+  private lastGlossaryTip: string | null = null;
   private tutorialBubble?: Phaser.GameObjects.Container;
   private feedbackText!: Phaser.GameObjects.BitmapText;
   private endTurnBg!: Phaser.GameObjects.Rectangle;
@@ -183,9 +188,13 @@ export class CardBattleScene extends Phaser.Scene {
     this.handSlots = [];
     this.playQueue = [];
     this.inFlightSlotIndex = null;
-    this.queuedEndTurn = false;
+    this.pendingIntroBanner = false;
+    this.activeFloatSlots = [];
     this.introBanner = undefined;
     this.introBannerTimer = undefined;
+    this.glossaryBanner = undefined;
+    this.glossaryTimer = undefined;
+    this.lastGlossaryTip = null;
     this.tutorialBubble = undefined;
     this.save = data?.save
       ? {
@@ -283,8 +292,15 @@ export class CardBattleScene extends Phaser.Scene {
       getState: () => ({
         ...toBattleDebugSnapshot(this.state, this.isAnimating || this.playQueue.length > 0),
         demonIntroBannerText: this.buildDemonIntroBannerText(),
+        introBannerVisible: Boolean(this.introBanner),
+        handSlotXs: this.state.hand.map(
+          (_, idx) =>
+            this.handSlots.find((s) => !s.consumed && s.currentHandIndex === idx)?.x ??
+            computeHandCardX(idx, this.state.hand.length),
+        ),
         detailMode: this.detailMode,
         queuedCount: this.playQueue.length,
+        lastGlossaryTip: this.lastGlossaryTip,
         day: this.save?.day ?? 1,
         shopLevel: this.save?.shopLevel ?? 1,
         bossComponentCount: this.composedBoss?.componentCount,
@@ -308,8 +324,12 @@ export class CardBattleScene extends Phaser.Scene {
 
     this.createActionStrip();
     this.renderBattle();
-    this.showDemonIntroBanner();
     this.renderTutorialBubble();
+    if (this.tutorial.active && this.tutorial.currentStep !== null) {
+      this.pendingIntroBanner = true;
+    } else {
+      this.showDemonIntroBanner();
+    }
     this.syncInputBounds();
   }
 
@@ -351,9 +371,10 @@ export class CardBattleScene extends Phaser.Scene {
   private showDemonIntroBanner(): void {
     this.dismissIntroBanner();
     if (!this.composedBoss && !this.state.demonIntroLine && !this.state.demonCustomerLink) {
+      this.maybeShowGlossaryTip('renqing');
       return;
     }
-    // 五区制中部带（常规 y=132..214，Boss 2 行 y=131..215，Boss 3 行 y=126..222），
+    // 五区制中部带（常规 y=132..214，Boss 2 行 y=131..215，Boss 3 行 y=119..223），
     // 全程非阻塞、不遮挡上方心魔血条（y=72..80）、下方手牌（y=224..352）、左侧[故]钮与右侧结束回合按钮
     const isBoss3Line = Boolean(
       this.composedBoss && !this.composedBoss.isBare && this.composedBoss.fragmentNames.length > 2,
@@ -377,10 +398,16 @@ export class CardBattleScene extends Phaser.Scene {
       const lines = this.formatBossBannerLines(this.composedBoss);
       const children: Phaser.GameObjects.GameObject[] = [
         bg,
-        addPixelText(this, cx, isBoss2Line ? topY + 16 : topY + 15, `${this.state.demonName} 现身`, {
-          color: PALETTE.lampYellow.hex,
-          origin: 0.5,
-        }),
+        addPixelText(
+          this,
+          cx,
+          isBoss3Line ? topY + 13 : isBoss2Line ? topY + 16 : topY + 15,
+          `${this.state.demonName} 现身`,
+          {
+            color: PALETTE.lampYellow.hex,
+            origin: 0.5,
+          },
+        ),
       ];
       if (this.composedBoss.isBare) {
         children.push(
@@ -402,15 +429,15 @@ export class CardBattleScene extends Phaser.Scene {
         );
       } else {
         children.push(
-          addPixelText(this, cx, topY + 37, lines[0], {
+          addPixelText(this, cx, topY + 39, lines[0], {
             color: PALETTE.oldPaper.hex,
             origin: 0.5,
           }),
-          addPixelText(this, cx, topY + 59, lines[1], {
+          addPixelText(this, cx, topY + 65, lines[1], {
             color: PALETTE.oldPaper.hex,
             origin: 0.5,
           }),
-          addPixelText(this, cx, topY + 83, lines[2], {
+          addPixelText(this, cx, topY + 91, lines[2], {
             color: PALETTE.paperWhite.hex,
             origin: 0.5,
           }),
@@ -418,7 +445,10 @@ export class CardBattleScene extends Phaser.Scene {
       }
       banner.add(children);
       this.introBanner = banner;
-      this.introBannerTimer = this.time.delayedCall(INTRO_BANNER_MS, () => this.dismissIntroBanner());
+      this.introBannerTimer = this.time.delayedCall(INTRO_BANNER_MS, () => {
+        this.dismissIntroBanner();
+        this.maybeShowGlossaryTip('renqing');
+      });
       return;
     }
 
@@ -453,20 +483,74 @@ export class CardBattleScene extends Phaser.Scene {
     }
     banner.add(children);
     this.introBanner = banner;
-    this.introBannerTimer = this.time.delayedCall(INTRO_BANNER_MS, () => this.dismissIntroBanner());
+    this.introBannerTimer = this.time.delayedCall(INTRO_BANNER_MS, () => {
+      this.dismissIntroBanner();
+      this.maybeShowGlossaryTip('renqing');
+    });
   }
 
   private dismissIntroBanner(): void {
+    const hadBanner = Boolean(this.introBanner);
     this.introBannerTimer?.remove(false);
     this.introBannerTimer = undefined;
     this.introBanner?.destroy();
     this.introBanner = undefined;
+    if (
+      hadBanner &&
+      this.scene.isActive() &&
+      this.state.phase === 'play' &&
+      this.state.result === 'ongoing' &&
+      (!this.tutorial.active || this.tutorial.currentStep === null)
+    ) {
+      this.maybeShowGlossaryTip('renqing');
+    }
+  }
+
+  private maybeShowGlossaryTip(termId: GlossaryTermId): void {
+    const tip = consumeFirstGlossaryTip(termId);
+    if (!tip) {
+      return;
+    }
+    this.dismissGlossaryTip();
+    this.lastGlossaryTip = tip;
+
+    const cx = 270;
+    const tipY = 144;
+    let textPx = 0;
+    for (const ch of tip) {
+      textPx += ch.charCodeAt(0) < 0x80 ? 12 : 24;
+    }
+    const width = Math.min(BASE_WIDTH - 24, Math.max(200, textPx + 24));
+    const banner = this.add.container(0, 0).setDepth(95);
+    const bg = this.add
+      .rectangle(cx, tipY, width, 28, PALETTE.nightBlack.num)
+      .setStrokeStyle(2, PALETTE.lampYellow.num)
+      .setInteractive({ useHandCursor: true });
+    const txt = addPixelText(this, cx, tipY, tip, {
+      color: PALETTE.candle.hex,
+      origin: 0.5,
+    });
+    bg.on('pointerdown', () => this.dismissGlossaryTip());
+    banner.add([bg, txt]);
+    this.glossaryBanner = banner;
+    this.glossaryTimer = this.time.delayedCall(3400, () => this.dismissGlossaryTip());
+  }
+
+  private dismissGlossaryTip(): void {
+    this.glossaryTimer?.remove(false);
+    this.glossaryTimer = undefined;
+    this.glossaryBanner?.destroy();
+    this.glossaryBanner = undefined;
   }
 
   private renderTutorialBubble(): void {
     this.tutorialBubble?.destroy();
     this.tutorialBubble = undefined;
     if (!this.tutorial.active || !this.tutorial.currentStep) {
+      if (this.pendingIntroBanner) {
+        this.pendingIntroBanner = false;
+        this.showDemonIntroBanner();
+      }
       return;
     }
     this.tutorialBubble = createTutorialBubble(this, this.tutorial.currentStep, {
@@ -554,12 +638,22 @@ export class CardBattleScene extends Phaser.Scene {
       origin: 0.5,
     });
     this.endTurnBg.on('pointerover', () => {
-      if (!this.isAnimating && this.state.phase === 'play') {
+      if (!this.isAnimating && this.playQueue.length === 0 && this.state.phase === 'play') {
         this.endTurnBg.setFillStyle(PALETTE.nightBlue.num);
       }
     });
-    this.endTurnBg.on('pointerout', () => this.endTurnBg.setFillStyle(PALETTE.nightBlack.num));
+    this.endTurnBg.on('pointerout', () => {
+      const canAct =
+        !this.isAnimating &&
+        this.playQueue.length === 0 &&
+        this.state.phase === 'play' &&
+        this.state.result === 'ongoing';
+      this.endTurnBg.setFillStyle(canAct ? PALETTE.nightBlack.num : PALETTE.deepBlue.num);
+    });
     this.endTurnBg.on('pointerdown', () => {
+      if (this.isAnimating || this.playQueue.length > 0) {
+        return;
+      }
       if (this.state.pendingChoice) {
         this.handleCancelChoice();
       } else {
@@ -568,13 +662,13 @@ export class CardBattleScene extends Phaser.Scene {
     });
   }
 
-  private renderBattle(): void {
+  private renderBattle(options?: { keepHandPositions?: boolean }): void {
     if (this.isEmptyDeck) {
       return;
     }
     this.renderHud();
     this.renderDemonArea();
-    this.renderHand();
+    this.renderHand(options?.keepHandPositions ?? false);
     this.renderCardDetailPanel();
 
     const choice = this.state.pendingChoice;
@@ -588,7 +682,7 @@ export class CardBattleScene extends Phaser.Scene {
       this.state.result === 'ongoing';
     this.endTurnLabel.setText(choice ? '取消选牌' : '结束回合');
     this.endTurnBg.setFillStyle(canAct ? PALETTE.nightBlack.num : PALETTE.deepBlue.num);
-    this.endTurnLabel.setTint(canAct ? PALETTE.paperWhite.num : PALETTE.mistBlue.num);
+    this.endTurnLabel.setTint(canAct ? PALETTE.paperWhite.num : PALETTE.candle.num);
   }
 
   private renderHud(): void {
@@ -616,7 +710,7 @@ export class CardBattleScene extends Phaser.Scene {
         this,
         BASE_WIDTH - 12,
         hudY,
-        `抽${this.state.drawPile.length} 弃${this.state.discardPile.length}`,
+        `牌库 ${this.state.drawPile.length} 弃 ${this.state.discardPile.length}`,
         { color: PALETTE.silverBlue.hex, origin: [1, 0.5] },
       ),
     ]);
@@ -894,102 +988,148 @@ export class CardBattleScene extends Phaser.Scene {
     this.detailLayer.add([toggleBtn, toggleLabel]);
   }
 
-  private renderHand(): void {
+  private createHandSlotView(
+    card: CardDef,
+    slotIndex: number,
+    handIndex: number,
+    x: number,
+    y: number,
+    isChoiceMode: boolean,
+  ): HandSlotView {
+    const selectable = isChoiceMode || canPlayCard(this.state, handIndex);
+    const stripColor = card.color ? parseHexColor(card.color) : PALETTE.brass.num;
+
+    const cardContainer = this.add.container(x, y);
+    // P10 子项 2：不可出牌改银蓝底+夜黑字（CR 7.24 vs 原雾蓝 3.60），费用徽章与效果字均为最高对比度
+    const bgColor = isChoiceMode
+      ? PALETTE.candle.num
+      : selectable
+        ? PALETTE.paperWhite.num
+        : PALETTE.silverBlue.num;
+    const borderColor = isChoiceMode
+      ? PALETTE.lampYellow.num
+      : selectable
+        ? PALETTE.ink.num
+        : PALETTE.nightBlack.num;
+
+    const frame = this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, bgColor).setStrokeStyle(2, borderColor);
+    const strip = this.add.rectangle(0, -60, CARD_WIDTH - 4, 4, stripColor);
+    const artKey = pixelRowsToTexture(this, `card-art-${card.id}`, CARD_PIXEL_ART[card.id] ?? CARD_PIXEL_ART.old_book);
+    const artImage = this.add.image(0, -22, artKey).setOrigin(0.5);
+    if (!selectable) {
+      artImage.setTint(PALETTE.silverBlue.num);
+    }
+
+    const costBg = this.add
+      .rectangle(-34, -48, 24, 24, card.cost === 0 ? PALETTE.jade.num : PALETTE.lampYellow.num)
+      .setStrokeStyle(2, PALETTE.ink.num);
+    const textHex = selectable ? PALETTE.ink.hex : PALETTE.nightBlack.hex;
+    const costTextHex = card.cost === 0 ? PALETTE.paperWhite.hex : textHex;
+    const costText = addPixelText(this, -34, -48, `${card.cost}`, { color: costTextHex, origin: 0.5 });
+    const nameText = addPixelText(this, 0, 24, card.name, { color: textHex, origin: 0.5 });
+    const effectText = addPixelText(this, 0, 48, formatEffectShort(card), {
+      color: textHex,
+      origin: 0.5,
+    });
+
+    cardContainer.add([frame, strip, artImage, costBg, costText, nameText, effectText]);
+
+    const slotView: HandSlotView = {
+      slotIndex,
+      currentHandIndex: handIndex,
+      card,
+      x,
+      y,
+      container: cardContainer,
+      frame,
+      artImage,
+      costText,
+      nameText,
+      effectText,
+      consumed: false,
+      queued: false,
+    };
+
+    frame.setInteractive({ useHandCursor: selectable });
+    frame.on('pointerover', () => {
+      if (slotView.consumed) return;
+      this.inspectedCardName = card.name;
+      this.renderCardDetailPanel();
+      if (this.state.pendingChoice) {
+        cardContainer.y = HAND_Y - 12;
+        frame.setStrokeStyle(2, PALETTE.vermilion.num);
+      } else if (!slotView.queued && this.canQueueOrPlaySlot(slotView)) {
+        cardContainer.y = HAND_Y - 8;
+        frame.setStrokeStyle(2, PALETTE.lampYellow.num);
+      }
+    });
+    frame.on('pointerout', () => {
+      if (slotView.consumed || slotView.queued) return;
+      if (this.state.pendingChoice) {
+        cardContainer.y = HAND_Y - 6;
+        frame.setStrokeStyle(2, PALETTE.lampYellow.num);
+        return;
+      }
+      cardContainer.y = HAND_Y;
+      frame.setStrokeStyle(2, this.canQueueOrPlaySlot(slotView) ? PALETTE.ink.num : PALETTE.nightBlack.num);
+    });
+    frame.on('pointerdown', () => this.handleSlotClick(slotView.slotIndex));
+
+    return slotView;
+  }
+
+  private renderHand(keepPositions = false): void {
+    const isChoiceMode = this.state.pendingChoice !== null;
+
+    if (keepPositions && !isChoiceMode && this.handSlots.length > 0 && this.state.hand.length <= this.handSlots.length) {
+      const assignedIndices = new Set<number>();
+      for (const slot of this.handSlots) {
+        if (!slot.consumed && slot.currentHandIndex >= 0 && slot.currentHandIndex < this.state.hand.length) {
+          assignedIndices.add(slot.currentHandIndex);
+        }
+      }
+      const unmountedIndices: number[] = [];
+      for (let i = 0; i < this.state.hand.length; i += 1) {
+        if (!assignedIndices.has(i)) {
+          unmountedIndices.push(i);
+        }
+      }
+      const freeSlotIndices = this.handSlots
+        .map((s, idx) => (s.consumed ? idx : -1))
+        .filter((idx) => idx >= 0);
+
+      if (unmountedIndices.length <= freeSlotIndices.length) {
+        unmountedIndices.forEach((handIndex, i) => {
+          const slotIdx = freeSlotIndices[i];
+          const oldSlot = this.handSlots[slotIdx];
+          const card = this.state.cardsByName.get(this.state.hand[handIndex]);
+          if (!oldSlot || !card) {
+            return;
+          }
+          oldSlot.container.destroy();
+          const newSlot = this.createHandSlotView(card, slotIdx, handIndex, oldSlot.x, HAND_Y, false);
+          this.handLayer.add(newSlot.container);
+          this.handSlots[slotIdx] = newSlot;
+        });
+        this.refreshHandSlotsInPlace();
+        return;
+      }
+    }
+
     this.handLayer.removeAll(true);
     this.handSlots = [];
 
     const count = this.state.hand.length;
-    const isChoiceMode = this.state.pendingChoice !== null;
-
     this.state.hand.forEach((cardName, index) => {
       const card = this.state.cardsByName.get(cardName);
       if (!card) {
         return;
       }
-
       const x = computeHandCardX(index, count);
       const y = isChoiceMode ? HAND_Y - 6 : HAND_Y;
-      const selectable = isChoiceMode || canPlayCard(this.state, index);
-      const stripColor = card.color ? parseHexColor(card.color) : PALETTE.brass.num;
-
-      const cardContainer = this.add.container(x, y);
-      // P10 子项 2：不可出牌改银蓝底+夜黑字（CR 7.24 vs 原雾蓝 3.60），费用徽章与效果字均为最高对比度
-      const bgColor = isChoiceMode
-        ? PALETTE.candle.num
-        : selectable
-          ? PALETTE.paperWhite.num
-          : PALETTE.silverBlue.num;
-      const borderColor = isChoiceMode
-        ? PALETTE.lampYellow.num
-        : selectable
-          ? PALETTE.ink.num
-          : PALETTE.nightBlack.num;
-
-      const frame = this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, bgColor).setStrokeStyle(2, borderColor);
-      const strip = this.add.rectangle(0, -60, CARD_WIDTH - 4, 4, stripColor);
-      const artKey = pixelRowsToTexture(this, `card-art-${card.id}`, CARD_PIXEL_ART[card.id] ?? CARD_PIXEL_ART.old_book);
-      const artImage = this.add.image(0, -22, artKey).setOrigin(0.5);
-      if (!selectable) {
-        artImage.setTint(PALETTE.silverBlue.num);
-      }
-
-      const costBg = this.add
-        .rectangle(-34, -48, 24, 24, card.cost === 0 ? PALETTE.jade.num : PALETTE.lampYellow.num)
-        .setStrokeStyle(2, PALETTE.ink.num);
-      const textHex = selectable ? PALETTE.ink.hex : PALETTE.nightBlack.hex;
-      const costTextHex = card.cost === 0 ? PALETTE.paperWhite.hex : textHex;
-      const costText = addPixelText(this, -34, -48, `${card.cost}`, { color: costTextHex, origin: 0.5 });
-      const nameText = addPixelText(this, 0, 24, card.name, { color: textHex, origin: 0.5 });
-      const effectText = addPixelText(this, 0, 48, formatEffectShort(card), {
-        color: textHex,
-        origin: 0.5,
-      });
-
-      cardContainer.add([frame, strip, artImage, costBg, costText, nameText, effectText]);
-
-      const slotView: HandSlotView = {
-        slotIndex: index,
-        currentHandIndex: index,
-        card,
-        x,
-        y,
-        container: cardContainer,
-        frame,
-        artImage,
-        costText,
-        nameText,
-        effectText,
-        consumed: false,
-        queued: false,
-      };
+      const slotView = this.createHandSlotView(card, index, index, x, y, isChoiceMode);
       this.handSlots.push(slotView);
-
-      frame.setInteractive({ useHandCursor: selectable });
-      frame.on('pointerover', () => {
-        if (slotView.consumed) return;
-        this.inspectedCardName = card.name;
-        this.renderCardDetailPanel();
-        if (this.state.pendingChoice) {
-          cardContainer.y = HAND_Y - 12;
-          frame.setStrokeStyle(2, PALETTE.vermilion.num);
-        } else if (!slotView.queued && this.canQueueOrPlaySlot(slotView)) {
-          cardContainer.y = HAND_Y - 8;
-          frame.setStrokeStyle(2, PALETTE.lampYellow.num);
-        }
-      });
-      frame.on('pointerout', () => {
-        if (slotView.consumed || slotView.queued) return;
-        if (this.state.pendingChoice) {
-          cardContainer.y = HAND_Y - 6;
-          frame.setStrokeStyle(2, PALETTE.lampYellow.num);
-          return;
-        }
-        cardContainer.y = HAND_Y;
-        frame.setStrokeStyle(2, this.canQueueOrPlaySlot(slotView) ? PALETTE.ink.num : PALETTE.nightBlack.num);
-      });
-      frame.on('pointerdown', () => this.handleSlotClick(slotView.slotIndex));
-
-      this.handLayer.add(cardContainer);
+      this.handLayer.add(slotView.container);
     });
   }
 
@@ -1130,7 +1270,7 @@ export class CardBattleScene extends Phaser.Scene {
 
     this.refreshHandSlotsInPlace();
     this.endTurnBg.setFillStyle(PALETTE.deepBlue.num);
-    this.endTurnLabel.setTint(PALETTE.mistBlue.num);
+    this.endTurnLabel.setTint(PALETTE.candle.num);
 
     const afterimage = this.add
       .rectangle(fromX, fromY, CARD_WIDTH, CARD_HEIGHT, PALETTE.oldPaper.num)
@@ -1174,7 +1314,6 @@ export class CardBattleScene extends Phaser.Scene {
         // 若进入 PendingChoice，立即暂停队列等待玩家点选要弃的手牌
         if (this.state.pendingChoice) {
           this.playQueue = [];
-          this.queuedEndTurn = false;
           this.isAnimating = false;
           this.renderBattle();
           return;
@@ -1182,7 +1321,6 @@ export class CardBattleScene extends Phaser.Scene {
 
         if (events.some((e) => e.type === 'BATTLE_ENDED' && e.result === 'win')) {
           this.playQueue = [];
-          this.queuedEndTurn = false;
           this.renderHud();
           this.renderHand();
           this.feedbackText.setText(`击败心魔「${this.state.demonName}」！`);
@@ -1206,63 +1344,89 @@ export class CardBattleScene extends Phaser.Scene {
           if (ev.target === 'demon' && ev.amount > 0) {
             audio.playSfx('hit_demon');
             this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.vermilion.num, 110);
-            this.spawnFloatText(DEMON_X, DEMON_Y - 24, `-${ev.amount}`, PALETTE.vermilion.hex);
+            const absorbed = ev.shieldAbsorbed ?? 0;
+            const hpDmg = ev.hpDamage ?? ev.amount;
+            let dmgLabel: string;
+            let dmgColor: string;
+            if (absorbed > 0 && hpDmg === 0) {
+              dmgLabel = `盾挡 ${absorbed}`;
+              dmgColor = PALETTE.silverBlue.hex;
+            } else if (absorbed > 0 && hpDmg > 0) {
+              dmgLabel = `-${hpDmg}（盾挡 ${absorbed}）`;
+              dmgColor = PALETTE.vermilion.hex;
+            } else {
+              dmgLabel = `-${hpDmg}`;
+              dmgColor = PALETTE.vermilion.hex;
+            }
+            this.spawnFloatText(DEMON_X, 86, dmgLabel, dmgColor, 'demon');
             this.cameras.main.shake(90, 0.008);
           }
           break;
         case 'SHIELD_GAINED':
           if (ev.amount > 0) {
             audio.playSfx('shield_block');
-            this.spawnFloatText(112, 52, `+${ev.amount}盾`, PALETTE.silverBlue.hex);
+            this.spawnFloatText(112, 86, `+${ev.amount}盾`, PALETTE.silverBlue.hex, 'player');
+          }
+          break;
+        case 'HEAL_APPLIED':
+          if (ev.amount > 0) {
+            this.spawnFloatText(112, 86, `回血+${ev.amount}`, PALETTE.jade.hex, 'player');
           }
           break;
         case 'REFLECT_TRIGGERED':
           audio.playSfx('hit_demon');
           this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.jade.num, 150);
-          this.spawnFloatText(DEMON_X, DEMON_Y - 24, `反伤-${ev.damage}`, PALETTE.jade.hex);
+          this.spawnFloatText(DEMON_X, 86, `反伤-${ev.damage}`, PALETTE.jade.hex, 'demon');
           this.feedbackMessage = `铜镜反弹 ${ev.damage} 点伤害！`;
           break;
         case 'REWIND_APPLIED':
           this.flashRect(Math.floor(BASE_WIDTH / 2), 88, 480, 88, PALETTE.silverBlue.num, 130);
-          this.spawnFloatText(DEMON_X, DEMON_Y - 28, '倒转', PALETTE.lampYellow.hex);
+          this.spawnFloatText(DEMON_X, 86, '倒转', PALETTE.lampYellow.hex, 'demon');
           break;
         case 'CARD_DISCARDED':
-          this.spawnFloatText(anchorX, anchorY - 28, `弃:${ev.cardName}`, PALETTE.oldPaper.hex);
+          this.spawnFloatText(anchorX, Math.max(86, anchorY - 28), `弃:${ev.cardName}`, PALETTE.oldPaper.hex, 'discard');
           this.feedbackMessage = `弃置 ${ev.cardName}`;
           break;
         case 'RENQING_GAINED':
           if (ev.amount > 0) {
-            this.spawnFloatText(240, 52, `人情+${ev.amount}`, PALETTE.lampYellow.hex);
+            this.spawnFloatText(260, 86, `人情+${ev.amount}`, PALETTE.lampYellow.hex, 'renqing');
           }
           break;
         case 'BOSS_CHARGE_STARTED':
           audio.playSfx('shield_block');
           this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.brass.num, 150);
-          this.spawnFloatText(DEMON_X, DEMON_Y - 24, `蓄力+${ev.shieldGained}盾`, PALETTE.lampYellow.hex);
+          this.spawnFloatText(DEMON_X, 86, `蓄力+${ev.shieldGained}盾`, PALETTE.lampYellow.hex, 'demon');
           this.feedbackMessage = `蓄力「${ev.skill}」获${ev.shieldGained}盾！累伤${ev.threshold}打断`;
+          this.maybeShowGlossaryTip('charge_threshold');
           break;
         case 'BOSS_CHARGE_INTERRUPTED':
           audio.playSfx('demon_defeated');
           this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.lampYellow.num, 180);
           this.cameras.main.shake(120, 0.012);
-          this.spawnFloatText(DEMON_X, DEMON_Y - 8, `打断${ev.skill}!`, PALETTE.lampYellow.hex);
-          this.spawnFloatText(284, 72, `人情+${ev.refundRenqing}`, PALETTE.jade.hex);
+          this.spawnFloatText(DEMON_X, 86, `打断${ev.skill}!`, PALETTE.lampYellow.hex, 'demon');
+          this.spawnFloatText(300, 86, `人情+${ev.refundRenqing}`, PALETTE.jade.hex, 'renqing');
           this.feedbackMessage = `打断「${ev.skill}」！返还+${ev.refundRenqing}人情，下回仅${ev.reducedNextDamage}伤`;
           break;
         case 'DEMON_ACT':
           if (ev.reflected) {
             break;
           }
-          if (ev.hpDamage > 0) {
+          if (ev.hpDamage > 0 && ev.absorbed > 0) {
             audio.playSfx('player_hurt');
             this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.vermilion.num, DEMON_ACT_MS);
-            this.spawnFloatText(96, 56, `-${ev.hpDamage}`, PALETTE.vermilion.hex);
+            this.spawnFloatText(112, 86, `-${ev.hpDamage}（盾挡 ${ev.absorbed}）`, PALETTE.vermilion.hex, 'player');
+            this.cameras.main.shake(110, 0.01);
+            this.feedbackMessage = `心魔攻击，盾挡 ${ev.absorbed} 伤、受 ${ev.hpDamage} 点伤害`;
+          } else if (ev.hpDamage > 0) {
+            audio.playSfx('player_hurt');
+            this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.vermilion.num, DEMON_ACT_MS);
+            this.spawnFloatText(112, 86, `-${ev.hpDamage}`, PALETTE.vermilion.hex, 'player');
             this.cameras.main.shake(110, 0.01);
             this.feedbackMessage = `心魔攻击，受到 ${ev.hpDamage} 点伤害`;
           } else if (ev.absorbed > 0) {
             audio.playSfx('shield_block');
             this.flashRect(DEMON_X, DEMON_Y, 80, 80, PALETTE.silverBlue.num, DEMON_ACT_MS);
-            this.spawnFloatText(96, 56, '格挡', PALETTE.silverBlue.hex);
+            this.spawnFloatText(112, 86, `盾挡 ${ev.absorbed}`, PALETTE.silverBlue.hex, 'player');
             this.feedbackMessage = '护盾挡住了心魔攻击';
           }
           break;
@@ -1278,15 +1442,42 @@ export class CardBattleScene extends Phaser.Scene {
     this.time.delayedCall(durationMs, () => rect.destroy());
   }
 
-  private spawnFloatText(x: number, y: number, label: string, colorHex: string): void {
-    const txt = addPixelText(this, x, y, label, { color: colorHex, origin: 0.5 });
-    this.fxLayer.add(txt);
+  private spawnFloatText(
+    x: number,
+    baseY: number,
+    label: string,
+    colorHex: string,
+    lane = 'default',
+  ): void {
+    const now = this.time.now;
+    this.activeFloatSlots = this.activeFloatSlots.filter((entry) => entry.expiresAt > now);
+    const sameLaneCount = this.activeFloatSlots.filter((entry) => entry.lane === lane).length;
+    const clampedBaseY = Math.max(76, baseY);
+    const startY = Math.min(200, clampedBaseY + sameLaneCount * 28);
+    const endY = Math.max(52, startY - 24);
+    this.activeFloatSlots.push({ lane, y: startY, expiresAt: now + 360 });
+
+    const txt = addPixelText(this, 0, 0, label, { color: colorHex, origin: 0.5 });
+    let textPx = 0;
+    for (const ch of label) {
+      textPx += ch.charCodeAt(0) < 0x80 ? 12 : 24;
+    }
+    const bgW = Math.max(40, textPx + 12);
+    const bg = this.add
+      .rectangle(0, 0, bgW, 26, PALETTE.nightBlack.num)
+      .setStrokeStyle(2, PALETTE.nightBlue.num);
+    const clampedX = Math.max(
+      Math.floor(bgW / 2) + 4,
+      Math.min(BASE_WIDTH - Math.floor(bgW / 2) - 4, x),
+    );
+    const container = this.add.container(clampedX, startY, [bg, txt]);
+    this.fxLayer.add(container);
     this.tweens.add({
-      targets: txt,
-      y: y - 28,
+      targets: container,
+      y: endY,
       duration: 360,
       ease: 'Linear',
-      onComplete: () => txt.destroy(),
+      onComplete: () => container.destroy(),
     });
   }
 
@@ -1304,30 +1495,28 @@ export class CardBattleScene extends Phaser.Scene {
     }
 
     this.isAnimating = false;
-    if (this.queuedEndTurn && this.state.phase === 'play' && this.state.result === 'ongoing') {
-      this.queuedEndTurn = false;
-      this.renderBattle();
-      this.handleEndTurn();
-      return;
-    }
-
-    this.renderBattle();
+    this.renderBattle({ keepHandPositions: true });
   }
 
   private handleEndTurn(): void {
-    if (this.state.phase !== 'play' || this.state.result !== 'ongoing' || this.state.pendingChoice) {
+    if (
+      this.isAnimating ||
+      this.playQueue.length > 0 ||
+      this.state.phase !== 'play' ||
+      this.state.result !== 'ongoing' ||
+      this.state.pendingChoice
+    ) {
       return;
     }
 
     this.dismissIntroBanner();
-    if (this.isAnimating) {
-      this.queuedEndTurn = true;
-      return;
-    }
+    this.dismissGlossaryTip();
 
     audio.unlock();
     audio.playSfx('button_click');
     this.isAnimating = true;
+    this.endTurnBg.setFillStyle(PALETTE.deepBlue.num);
+    this.endTurnLabel.setTint(PALETTE.candle.num);
 
     const { state: nextState, events } = endTurn(this.state);
     this.presentBattleEvents(events, DEMON_X, DEMON_Y);
@@ -1423,6 +1612,7 @@ export class CardBattleScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.dismissIntroBanner();
+      this.dismissGlossaryTip();
       if (this.handleWindowResize) {
         window.removeEventListener('resize', this.handleWindowResize);
         this.handleWindowResize = undefined;

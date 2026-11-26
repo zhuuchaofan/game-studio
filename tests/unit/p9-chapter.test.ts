@@ -144,25 +144,25 @@ describe('P9 Day 7 Boss "老债主·催账单" charge & interrupt logic', () => 
     expect(state.demonShield).toBe(0);
     expect(state.bossCharging).toBe(false);
 
-    // End R1 -> Boss deals 3 dmg (30 -> 27), R2 starts charging with 4 shield
+    // End R1 -> Boss deals 3 dmg (30 -> 27), R2 starts charging with 2 shield
     const r1End = endTurn(state);
     state = r1End.state;
     expect(state.round).toBe(2);
     expect(state.playerHp).toBe(27);
-    expect(state.demonShield).toBe(4);
+    expect(state.demonShield).toBe(2);
     expect(state.bossCharging).toBe(true);
     expect(state.bossChargeThreshold).toBe(10);
-    expect(r1End.events.some((e) => e.type === 'BOSS_CHARGE_STARTED' && e.shieldGained === 4)).toBe(
+    expect(r1End.events.some((e) => e.type === 'BOSS_CHARGE_STARTED' && e.shieldGained === 2)).toBe(
       true,
     );
 
     const renqingStartR2 = state.renqing; // 5
 
-    // First 秤砣 (5 dmg): 4 absorbed by shield + 1 HP dmg (38 -> 37), bossChargeDamage = 5 < 10
+    // First 秤砣 (5 dmg): 2 absorbed by shield + 3 HP dmg (38 -> 35), bossChargeDamage = 5 < 10
     const play1 = playCard(state, 0);
     state = play1.state;
     expect(state.demonShield).toBe(0);
-    expect(state.demonHp).toBe(37);
+    expect(state.demonHp).toBe(35);
     expect(state.bossChargeDamage).toBe(5);
     expect(state.bossChargeInterrupted).toBe(false);
     expect(state.renqing).toBe(renqingStartR2 - 1);
@@ -171,7 +171,7 @@ describe('P9 Day 7 Boss "老债主·催账单" charge & interrupt logic', () => 
     // Second 秤砣 (5 dmg): cumulative 10 >= 10 -> INTERRUPT! +1 renqing refunded (net 0 cost on 2nd card)
     const play2 = playCard(state, 0);
     state = play2.state;
-    expect(state.demonHp).toBe(32);
+    expect(state.demonHp).toBe(30);
     expect(state.bossChargeDamage).toBe(10);
     expect(state.bossChargeInterrupted).toBe(true);
     expect(state.bossCharging).toBe(false);
@@ -208,11 +208,11 @@ describe('P9 Day 7 Boss "老债主·催账单" charge & interrupt logic', () => 
     const deck = ['钢笔', '守诺', '守诺', '守诺', '守诺', '守诺', '守诺'];
     let state = createBattle(deck, 'boss_ch1', mulberry32(2), CARDS, DEMONS, BATTLE_BALANCE);
 
-    // Advance R1 -> R2 (Boss deals 3 dmg: 30 -> 27, gains 4 shield)
+    // Advance R1 -> R2 (Boss deals 3 dmg: 30 -> 27, gains 2 shield)
     state = endTurn(state).state;
     expect(state.round).toBe(2);
     expect(state.playerHp).toBe(27);
-    expect(state.demonShield).toBe(4);
+    expect(state.demonShield).toBe(2);
 
     // Play 钢笔 if in hand (4 dmg absorbed by 4 shield, still < 10)
     const penIdx = state.hand.indexOf('钢笔');

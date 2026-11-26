@@ -34,6 +34,8 @@ interface BattleDebugState {
   renqing: number;
   demonHp: number;
   hand: string[];
+  handSlotXs?: number[];
+  introBannerVisible?: boolean;
   deckCount: number;
   discardCount: number;
   result: 'ongoing' | 'win' | 'lose_hp' | 'lose_timeout' | 'empty_deck';
@@ -229,7 +231,7 @@ async function playGreedyUntilResult(page: Page, canvas: Locator): Promise<Battl
       const prevRenqing = state.renqing;
       const prevHandLen = state.hand.length;
       const prevDiscard = state.discardCount;
-      const x = computeHandCardX(chosenIdx, state.hand.length);
+      const x = state.handSlotXs?.[chosenIdx] ?? computeHandCardX(chosenIdx, state.hand.length);
       await clickLogical(page, canvas, { x, y: HAND_Y });
 
       await expect
@@ -585,6 +587,72 @@ test('A4: rapid consecutive clicks on two playable cards in the same turn execut
   const afterBoth = await getBattleState(page);
   expect(afterBoth.discardCount).toBe(2);
   expect(afterBoth.renqing).toBe(1);
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('Q1=A: remaining hand cards keep their X positions after play until End Turn, and End Turn is disabled during flight animation', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+
+  await page.goto('/?seed=4&demon=a&deck=test');
+  const canvas = page.locator('#game-container canvas');
+  await expect(canvas).toBeVisible();
+
+  const startState = await navigateThroughDayToBattleLow(page, canvas);
+  expect(startState.hand.length).toBe(5);
+  const initialXs = startState.handSlotXs!;
+  expect(initialXs).toHaveLength(5);
+
+  // Pick a non-draw, non-choice 1-cost card so hand.length transitions cleanly 5 -> 4
+  const idx = startState.hand.findIndex(
+    (name) => CARD_COSTS[name] === 1 && name !== '算盘' && name !== '旧书',
+  );
+  expect(idx).toBeGreaterThanOrEqual(0);
+
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const toClient = (pt: { x: number; y: number }) => ({
+    x: box!.x + (pt.x / LOGICAL_WIDTH) * box!.width,
+    y: box!.y + (pt.y / LOGICAL_HEIGHT) * box!.height,
+  });
+  const pCard = toClient({ x: initialXs[idx], y: HAND_Y });
+  const pEndTurn = toClient(BUTTONS.endTurn);
+
+  await page.evaluate(
+    () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+  );
+  await page.mouse.click(pCard.x, pCard.y);
+  // Click End Turn 40ms later (well inside 240ms flight animation) -> must be ignored!
+  await page.waitForTimeout(40);
+  await page.mouse.click(pEndTurn.x, pEndTurn.y);
+
+  await expect
+    .poll(async () => {
+      const s = await getBattleState(page);
+      return !s.isAnimating && s.hand.length === 4;
+    })
+    .toBe(true);
+
+  const afterPlay = await getBattleState(page);
+  expect(afterPlay.round).toBe(1);
+  // Remaining 4 cards keep their original X slots instead of shifting!
+  expect(afterPlay.handSlotXs).toEqual([...initialXs.slice(0, idx), ...initialXs.slice(idx + 1)]);
+
+  // End Turn now works when idle and re-centers the next round's hand
+  await clickLogical(page, canvas, BUTTONS.endTurn);
+  await expect
+    .poll(async () => {
+      const s = await getBattleState(page);
+      return !s.isAnimating && s.round === 2;
+    })
+    .toBe(true);
+
+  const r2 = await getBattleState(page);
+  const expectedCentered = r2.hand.map((_, idx) => computeHandCardX(idx, r2.hand.length));
+  expect(r2.handSlotXs).toEqual(expectedCentered);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);

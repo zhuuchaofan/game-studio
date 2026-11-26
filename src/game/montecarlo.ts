@@ -1940,19 +1940,26 @@ export function formatSimReport(report: BalanceSimulationReport): string {
   lines.push(`\n[P11 组合 Boss 扫描 (真实第7天牌组分布, ${bc.runsPerBucket} 局/档)]`);
   lines.push('  -- 赊账 OFF (n = 0..6) --');
   for (const tier of bc.tiersNoCredit) {
-    const sampleHp = tier.subsets[0]?.bossHp ?? 32;
+    const sampleHp = tier.subsets[0]?.bossHp ?? bc.bareStats.bossHp;
     const { avgRound, avgRemainHp } = avgTierMetrics(tier);
     lines.push(
       `    n=${tier.componentCount} (${sampleHp}血): 均胜率 ${(tier.avgWinRate * 100).toFixed(1)}% | 均打断率 ${(tier.avgInterruptRate * 100).toFixed(1)}% | 均回合 ${avgRound.toFixed(2)} | 胜场残血 ${avgRemainHp.toFixed(1)}`,
     );
+    if (tier.componentCount >= 2 && tier.componentCount <= 5) {
+      for (const sub of tier.subsets) {
+        lines.push(
+          `      子集 [${sub.itemIds.join(',')}]: 胜率 ${(sub.winRate * 100).toFixed(1)}% | 打断率 ${(sub.interruptRate * 100).toFixed(1)}% | 均回合 ${sub.avgEndRound.toFixed(2)}`,
+        );
+      }
+    }
   }
-  lines.push('  -- 赊账 ON (+6血, 绝对上限48) --');
+  lines.push(`  -- 赊账 ON (+6血, 绝对上限${bc.fullWithCreditStats.bossHp}) --`);
   for (const tier of bc.tiersWithCredit) {
     const sample = tier.subsets[0];
     const capTag = sample?.hpCapped ? ' [已到顶]' : '';
     const { avgRound, avgRemainHp } = avgTierMetrics(tier);
     lines.push(
-      `    n=${tier.componentCount} (${sample?.bossHp ?? 38}血${capTag}): 均胜率 ${(tier.avgWinRate * 100).toFixed(1)}% | 均打断率 ${(tier.avgInterruptRate * 100).toFixed(1)}% | 均回合 ${avgRound.toFixed(2)} | 胜场残血 ${avgRemainHp.toFixed(1)}`,
+      `    n=${tier.componentCount} (${sample?.bossHp ?? bc.tiersWithCredit[0]?.subsets[0]?.bossHp ?? 36}血${capTag}): 均胜率 ${(tier.avgWinRate * 100).toFixed(1)}% | 均打断率 ${(tier.avgInterruptRate * 100).toFixed(1)}% | 均回合 ${avgRound.toFixed(2)} | 胜场残血 ${avgRemainHp.toFixed(1)}`,
     );
   }
   lines.push('  -- 单件敏感性 (n = 1) --');

@@ -216,6 +216,28 @@ function isValidChapterSaveState(raw: unknown): raw is ChapterSaveState {
       }
     }
   }
+  if (ch.rejectedRedemptionDayByItem !== undefined) {
+    if (
+      typeof ch.rejectedRedemptionDayByItem !== 'object' ||
+      ch.rejectedRedemptionDayByItem === null ||
+      Array.isArray(ch.rejectedRedemptionDayByItem)
+    ) {
+      return false;
+    }
+    for (const [key, val] of Object.entries(
+      ch.rejectedRedemptionDayByItem as Record<string, unknown>,
+    )) {
+      if (
+        typeof key !== 'string' ||
+        key.length === 0 ||
+        typeof val !== 'number' ||
+        !Number.isInteger(val) ||
+        val < 1
+      ) {
+        return false;
+      }
+    }
+  }
   if (
     ch.pawnedItemIds !== undefined &&
     (!Array.isArray(ch.pawnedItemIds) || !ch.pawnedItemIds.every((id) => typeof id === 'string'))

@@ -67,6 +67,8 @@ interface BattleDebugState {
   victoryLine?: string | null;
   aftermathLine?: string | null;
   hand: string[];
+  handSlotXs?: number[];
+  introBannerVisible?: boolean;
   discardCount: number;
   result: string;
   loseReason?: string | null;
@@ -208,7 +210,7 @@ async function playGreedyUntilResult(page: Page, canvas: Locator): Promise<Battl
       const prevRenqing = state.renqing;
       const prevDiscard = state.discardCount;
       await clickLogical(page, canvas, {
-        x: computeHandCardX(chosenIdx, state.hand.length),
+        x: state.handSlotXs?.[chosenIdx] ?? computeHandCardX(chosenIdx, state.hand.length),
         y: HAND_Y,
       });
       await expect
@@ -294,13 +296,16 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
   expect(summary.money).toBe(35);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
 
-  // Dismiss Night 1 tutorial bubbles (4/6 & 5/6)
+  // Dismiss Night 1 tutorial bubbles (4/6 & 5/6) — Q4: intro banner waits until bubbles finish
   const nightStart = await waitForBattleReady(page, 'play');
   expect(nightStart.currentStep).toBe('night_play');
+  expect(nightStart.introBannerVisible).toBe(false);
   await clickLogical(page, canvas, getTutorialBubbleLayout('night_play').continueClickPoint);
   await expect.poll(async () => (await getBattleState(page)).currentStep).toBe('renqing');
+  expect((await getBattleState(page)).introBannerVisible).toBe(false);
   await clickLogical(page, canvas, getTutorialBubbleLayout('renqing').continueClickPoint);
   await expect.poll(async () => (await getBattleState(page)).currentStep).toBeNull();
+  expect((await getBattleState(page)).introBannerVisible).toBe(true);
 
   // Lose Night 1 by timeout -> settlement bubble MUST use defeat copy (no "过关"!)
   const loseResult = await loseNightByEndingThreeTurns(page, canvas);

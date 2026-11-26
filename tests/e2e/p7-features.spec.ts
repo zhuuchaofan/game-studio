@@ -44,6 +44,7 @@ interface BattleDebugState {
   renqing: number;
   demonHp: number;
   hand: string[];
+  handSlotXs?: number[];
   discardCount: number;
   pendingChoice?: { kind: string; sourceCardName: string; prompt: string } | null;
   isAnimating?: boolean;
@@ -317,7 +318,7 @@ test('P7 Sub-item 2 & 4 & 5: temperament badges, 1987 dialogue, all 6 ZzFX SFX t
   const afterPen = await waitForBattleReady(page, 'play');
   const shieldIdx = afterPen.hand.indexOf('守诺');
   await clickLogical(page, canvas, {
-    x: computeHandCardX(shieldIdx, afterPen.hand.length),
+    x: afterPen.handSlotXs?.[shieldIdx] ?? computeHandCardX(shieldIdx, afterPen.hand.length),
     y: HAND_Y,
   });
   await expect

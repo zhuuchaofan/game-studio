@@ -79,101 +79,101 @@ describe('P11 Sub-item 1: Boss composition & redemption weakening', () => {
   it('composes 0 / 1 / 3 / 6 components, handles duplicate items & non-item rewards, and caps at 48 HP', () => {
     const baseBoss = getBossDemonDef(DEMONS);
 
-    // 0 components (素体 fallback): 32 HP, bare introLine, no bonuses
+    // 0 components (素体 fallback): 30 HP, bare introLine, no bonuses
     const bare = composeBoss(['钢笔', '算盘', '铜镜'], null, baseBoss);
     expect(bare.componentCount).toBe(0);
     expect(bare.isBare).toBe(true);
-    expect(bare.finalHp).toBe(32);
+    expect(bare.finalHp).toBe(30);
     expect(bare.hpCapped).toBe(false);
     expect(bare.r1Shield).toBe(0);
     expect(bare.chargeThreshold).toBe(10);
     expect(bare.introSummary).toBe(DEFAULT_BARE_BOSS_INTRO);
-    expect(bare.bossDef.hp).toBe(32);
+    expect(bare.bossDef.hp).toBe(30);
     expect(bare.bossDef.introLine).toBe('柜子空了，债主只身前来');
     expect(bare.fragmentNames).toEqual([]);
     expect(formatCalendarBossPreviewText(bare)).toContain('0件');
-    expect(formatCalendarBossPreviewText(bare)).toContain('32血');
+    expect(formatCalendarBossPreviewText(bare)).toContain('30血');
 
     // Bare Boss is playable end-to-end in battle engine
     const bareBattle = createBattle(['钢笔', '钢笔', '算盘'], 'boss_ch1', mulberry32(1), CARDS, DEMONS, BATTLE_BALANCE, undefined, {
       demonOverride: bare.bossDef,
     });
-    expect(bareBattle.demonHp).toBe(32);
-    expect(bareBattle.demonMaxHp).toBe(32);
+    expect(bareBattle.demonHp).toBe(30);
+    expect(bareBattle.demonMaxHp).toBe(30);
     expect(bareBattle.demonShield).toBe(0);
 
-    // 1 component each: verify all 6 items match proposal §1.4 table
+    // 1 component each: verify all 6 items match C7 sweep parameters
     const watchComp = composeBoss(['倒转'], null, baseBoss);
     expect(watchComp.componentCount).toBe(1);
-    expect(watchComp.finalHp).toBe(34);
+    expect(watchComp.finalHp).toBe(31);
     expect(watchComp.bossDef.actions.find((a) => a.round === 4)?.damage).toBe(8);
 
     const ringComp = composeBoss(['守诺'], null, baseBoss);
-    expect(ringComp.finalHp).toBe(34);
-    expect(ringComp.r1Shield).toBe(5);
+    expect(ringComp.finalHp).toBe(31);
+    expect(ringComp.r1Shield).toBe(2);
     const ringBattle = createBattle(['守诺', '钢笔'], 'boss_ch1', mulberry32(1), CARDS, DEMONS, BATTLE_BALANCE, undefined, {
       demonOverride: ringComp.bossDef,
     });
-    expect(ringBattle.demonShield).toBe(5);
+    expect(ringBattle.demonShield).toBe(2);
 
     const bookComp = composeBoss(['旧书'], null, baseBoss);
-    expect(bookComp.finalHp).toBe(34);
+    expect(bookComp.finalHp).toBe(31);
     expect(bookComp.bossDef.actions.find((a) => a.round === 1)?.damage).toBe(4);
     expect(bookComp.bossDef.actions.find((a) => a.round === 2)?.damage).toBe(1);
     expect(bookComp.bossDef.actions.find((a) => a.round === 3)?.damage).toBe(12);
 
     const bikeComp = composeBoss(['飞驰'], null, baseBoss);
-    expect(bikeComp.finalHp).toBe(34);
+    expect(bikeComp.finalHp).toBe(31);
     expect(bikeComp.bossDef.actions.find((a) => a.round === 4)?.damage).toBe(9);
 
     const erhuComp = composeBoss(['余音'], null, baseBoss);
-    expect(erhuComp.finalHp).toBe(34);
+    expect(erhuComp.finalHp).toBe(31);
     expect(erhuComp.bossDef.actions.find((a) => a.round === 3)?.damage).toBe(13);
 
     const stampComp = composeBoss(['集邮'], null, baseBoss);
-    expect(stampComp.finalHp).toBe(34);
-    expect(stampComp.chargeThreshold).toBe(14);
-    expect(stampComp.bossDef.actions.find((a) => a.round === 2)?.charge?.threshold).toBe(14);
+    expect(stampComp.finalHp).toBe(31);
+    expect(stampComp.chargeThreshold).toBe(12);
+    expect(stampComp.bossDef.actions.find((a) => a.round === 2)?.charge?.threshold).toBe(12);
 
-    // 3 components (matches TEST_DECK's 3 pawnshop items): 32 + 6 = 38 HP
+    // 3 components (matches TEST_DECK's 3 pawnshop items): 30 + 3 = 33 HP
     const three = composeBoss(['倒转', '守诺', '旧书', '钢笔', '算盘'], null, baseBoss);
     expect(three.componentCount).toBe(3);
-    expect(three.finalHp).toBe(38);
+    expect(three.finalHp).toBe(33);
     expect(three.introSummary).toBe(DEFAULT_COMPOSED_BOSS_INTRO);
     expect(three.fragmentNames).toEqual(['手表的执念', '婚戒的执念', '旧书的执念']);
 
     // Duplicate purchase deduplication: buying 倒转 twice counts only 1 component
     const dup = composeBoss(['倒转', '倒转', '飞驰', '飞驰', '钢笔'], null, baseBoss);
     expect(dup.componentCount).toBe(2);
-    expect(dup.finalHp).toBe(36);
+    expect(dup.finalHp).toBe(32);
 
-    // 6 components (full composition): 32 + 12 = 44 HP, un-interrupted 4-round total dmg = 4 + 1 + 14 + 11 = 30
+    // 6 components (full composition): 30 + 6 = 36 HP, un-interrupted 4-round total dmg = 4 + 1 + 14 + 11 = 30
     const allSix = ['倒转', '守诺', '旧书', '飞驰', '余音', '集邮'];
     const full = composeBoss(allSix, null, baseBoss);
     expect(full.componentCount).toBe(6);
-    expect(full.finalHp).toBe(44);
+    expect(full.finalHp).toBe(36);
     expect(full.hpCapped).toBe(false);
-    expect(full.r1Shield).toBe(5);
-    expect(full.chargeThreshold).toBe(14);
+    expect(full.r1Shield).toBe(2);
+    expect(full.chargeThreshold).toBe(12);
     const totalUninterruptedDmg = full.bossDef.actions.reduce((sum, a) => sum + a.damage, 0);
     expect(totalUninterruptedDmg).toBe(30);
 
-    // Credit stock (+6) stacking + cap truncation: 44 + 6 = 50 -> capped at 48 with hpCapped=true
+    // Credit stock (+6) stacking + cap truncation: 36 + 6 = 42 -> capped at 40 with hpCapped=true
     const fullCredit = composeBoss(allSix, 'credit_stock', baseBoss);
     expect(fullCredit.pactHpBonus).toBe(6);
-    expect(fullCredit.rawTotalHp).toBe(50);
-    expect(fullCredit.finalHp).toBe(48);
+    expect(fullCredit.rawTotalHp).toBe(42);
+    expect(fullCredit.finalHp).toBe(40);
     expect(fullCredit.hpCapped).toBe(true);
     expect(formatBossPreviewHpLine(fullCredit)).toContain('已到顶');
     expect(formatCalendarBossPreviewText(fullCredit)).toContain('已到顶');
 
-    // Non-max credit stock: 3 components (38) + 6 = 44 (not capped)
+    // Non-max credit stock: 3 components (33) + 6 = 39 (not capped)
     const threeCredit = composeBoss(['倒转', '守诺', '旧书'], 'credit_stock', baseBoss);
-    expect(threeCredit.finalHp).toBe(44);
+    expect(threeCredit.finalHp).toBe(39);
     expect(threeCredit.hpCapped).toBe(false);
   });
 
-  it('preserves R2 charge interrupt rule (+1 renqing, R3 reduced damage) with stamp_album threshold 14', () => {
+  it('preserves R2 charge interrupt rule (+1 renqing, R3 reduced damage) with stamp_album threshold 12', () => {
     const baseBoss = getBossDemonDef(DEMONS);
     const composed = composeBoss(['集邮'], null, baseBoss);
     let state = createBattle(
@@ -187,13 +187,13 @@ describe('P11 Sub-item 1: Boss composition & redemption weakening', () => {
       { demonOverride: composed.bossDef },
     );
 
-    // End R1 -> R2 starts charging with threshold 14
+    // End R1 -> R2 starts charging with threshold 12
     state = endTurn(state).state;
     expect(state.round).toBe(2);
     expect(state.bossCharging).toBe(true);
-    expect(state.bossChargeThreshold).toBe(14);
+    expect(state.bossChargeThreshold).toBe(12);
 
-    // Play two 秤砣 (10 dmg) -> NOT interrupted yet because threshold is 14
+    // Play two 秤砣 (10 dmg) -> NOT interrupted yet because threshold is 12
     for (let i = 0; i < 2; i += 1) {
       const idx = state.hand.indexOf('秤砣');
       state = playCard(state, idx).state;
@@ -201,7 +201,7 @@ describe('P11 Sub-item 1: Boss composition & redemption weakening', () => {
     expect(state.bossChargeDamage).toBe(10);
     expect(state.bossChargeInterrupted).toBe(false);
 
-    // Play third 秤砣 (15 >= 14) -> interrupted! Refunds +1 renqing
+    // Play third 秤砣 (15 >= 12) -> interrupted! Refunds +1 renqing
     const renqingBefore = state.renqing;
     const idx3 = state.hand.indexOf('秤砣');
     const res3 = playCard(state, idx3);
@@ -214,11 +214,11 @@ describe('P11 Sub-item 1: Boss composition & redemption weakening', () => {
   it('weakens Boss monotonically on random redemption and Day 2 Bride scripted redemption', () => {
     const baseBoss = getBossDemonDef(DEMONS);
 
-    // Random redemption: redeeming 飞驰 removes 飞驰的执念 (-2 HP, R4 -3 dmg)
+    // Random redemption: redeeming 飞驰 removes 飞驰的执念 (-1 HP, R4 -3 dmg)
     const initialDeck = ['飞驰', '倒转', '旧书'];
     const before = composeBoss(initialDeck, null, baseBoss);
     expect(before.componentCount).toBe(3);
-    expect(before.finalHp).toBe(38);
+    expect(before.finalHp).toBe(33);
 
     const offer = createRedemptionOffer(initialDeck, 1, { 飞驰: [80] }, mulberry32(1), REAL_ITEMS);
     expect(offer).not.toBeNull();
@@ -234,10 +234,10 @@ describe('P11 Sub-item 1: Boss composition & redemption weakening', () => {
     const afterRedeem = resolveRedemption(state, true);
     const composedAfter = composeBoss(afterRedeem.deck, null, baseBoss);
     expect(composedAfter.componentCount).toBe(2);
-    expect(composedAfter.finalHp).toBe(36);
+    expect(composedAfter.finalHp).toBe(32);
     expect(composedAfter.activeComponents.some((c) => c.itemId === offer!.item.id)).toBe(false);
 
-    // Bride scripted redemption on Day 2: accept removes 守诺 -> Boss loses 婚戒的执念 (R1 shield 5 -> 0)
+    // Bride scripted redemption on Day 2: accept removes 守诺 -> Boss loses 婚戒的执念 (R1 shield 2 -> 0)
     const brideOffer = createBrideRedemptionOffer(
       2,
       ['守诺', '余音'],
@@ -270,7 +270,7 @@ describe('P11 Sub-item 1: Boss composition & redemption weakening', () => {
     expect(rejectedBride.deck).toEqual(['守诺', '余音']);
     expect(rejectedBride.reputation).toBe(0);
     const bossAfterBrideReject = composeBoss(rejectedBride.deck, null, baseBoss);
-    expect(bossAfterBrideReject.r1Shield).toBe(5);
+    expect(bossAfterBrideReject.r1Shield).toBe(2);
     expect(bossAfterBrideReject.fragmentNames).toEqual(['婚戒的执念', '二胡的执念']);
   });
 });

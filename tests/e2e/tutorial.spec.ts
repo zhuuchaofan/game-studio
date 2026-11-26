@@ -39,6 +39,8 @@ interface BattleDebugState {
   renqing: number;
   demonHp: number;
   hand: string[];
+  handSlotXs?: number[];
+  introBannerVisible?: boolean;
   discardCount: number;
   result: 'ongoing' | 'win' | 'lose_hp' | 'lose_timeout' | 'empty_deck';
   isAnimating?: boolean;
@@ -193,7 +195,7 @@ async function playGreedyUntilResult(page: Page, canvas: Locator): Promise<Battl
       const prevRenqing = state.renqing;
       const prevHandLen = state.hand.length;
       const prevDiscard = state.discardCount;
-      const x = computeHandCardX(chosenIdx, state.hand.length);
+      const x = state.handSlotXs?.[chosenIdx] ?? computeHandCardX(chosenIdx, state.hand.length);
       await clickLogical(page, canvas, { x, y: HAND_Y });
 
       await expect
@@ -307,11 +309,12 @@ test('first play walks all 6 Day 1 guide bubbles in order, persists completion, 
   expect(summary.currentStep).toBeNull();
   expect(summary.tutorialActive).toBe(true);
 
-  // Enter Night 1 battle -> Step 4: 夜里出牌 (night_play)
+  // Enter Night 1 battle -> Step 4: 夜里出牌 (night_play), Q4 banner waits until tutorial finishes
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   const step4 = await waitForBattleReady(page, 'play');
   expect(step4.tutorialActive).toBe(true);
   expect(step4.currentStep).toBe('night_play');
+  expect(step4.introBannerVisible).toBe(false);
   expect(step4.tutorialCopy).toContain('手牌');
   await page.screenshot({ path: 'test-results/tutorial-step4-night-play.png' });
 
@@ -322,14 +325,16 @@ test('first play walks all 6 Day 1 guide bubbles in order, persists completion, 
     .toBe('renqing');
   const step5 = await getBattleState(page);
   expect(step5.tutorialActive).toBe(true);
+  expect(step5.introBannerVisible).toBe(false);
   expect(step5.tutorialCopy).toContain('人情');
   await page.screenshot({ path: 'test-results/tutorial-step5-renqing.png' });
 
-  // Click bubble once -> hides bubble so player plays out the battle
+  // Click bubble once -> hides bubble so player plays out the battle, Q4 delayed banner appears now
   await clickLogical(page, canvas, getTutorialBubbleLayout('renqing').continueClickPoint);
   await expect
     .poll(async () => (await getBattleState(page)).currentStep)
     .toBeNull();
+  expect((await getBattleState(page)).introBannerVisible).toBe(true);
 
   // Win Night 1 -> ResultScene shows Step 6: 结算 (settlement)
   const step6 = await playGreedyUntilResult(page, canvas);

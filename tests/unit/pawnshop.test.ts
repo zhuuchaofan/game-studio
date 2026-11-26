@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clearSeenGlossaryTerms,
+  consumeFirstGlossaryTip,
+  GLOSSARY_TIPS,
+  hasSeenGlossaryTerm,
+} from '../../src/game/glossary';
+import {
   advanceCustomer,
   BALANCE,
   canAffordTier,
@@ -735,5 +741,66 @@ describe('P10: Day 2 loss recovery, Bride scripted redemption, and Day 3 rumor w
     for (const line of lines) {
       expect(line.length * 12).toBeLessThanOrEqual(264); // 276px banner with 6px padding each side
     }
+  });
+});
+
+describe('Playtest fix round: redemption rejection tracking (Semantic A) & first-encounter glossary', () => {
+  it('skips item rejected today (Semantic A) while allowing it again the next day or allowing other items today', () => {
+    // Deck has only 余音 (erhu, sentimental). Rejected on Day 5 -> skipped on Day 5, offered again on Day 6.
+    const rejectedToday = { erhu: 5 };
+    expect(
+      createRedemptionOffer(['余音'], 1, { 余音: [50] }, () => 0, ITEMS, 1.2, {
+        rejectedDayByItem: rejectedToday,
+        day: 5,
+      }),
+    ).toBeNull();
+
+    // Another item in deck is still offered on Day 5
+    const fallbackOffer = createRedemptionOffer(
+      ['余音', '倒转'],
+      1,
+      { 余音: [50], 倒转: [60] },
+      () => 0,
+      ITEMS,
+      1.2,
+      { rejectedDayByItem: rejectedToday, day: 5 },
+    );
+    expect(fallbackOffer?.item.id).toBe('watch');
+
+    // Day 6 -> erhu can be offered again (Semantic A: only suppresses the item on the same day)
+    const nextDayOffer = createRedemptionOffer(
+      ['余音'],
+      1,
+      { 余音: [50] },
+      () => 0,
+      ITEMS,
+      1.2,
+      { rejectedDayByItem: rejectedToday, day: 6 },
+    );
+    expect(nextDayOffer?.item.id).toBe('erhu');
+  });
+
+  it('shows each glossary term plain-language tip only once on first encounter', () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    };
+
+    clearSeenGlossaryTerms(storage);
+    expect(hasSeenGlossaryTerm('reputation', storage)).toBe(false);
+    expect(consumeFirstGlossaryTip('reputation', storage)).toBe(GLOSSARY_TIPS.reputation);
+    expect(hasSeenGlossaryTerm('reputation', storage)).toBe(true);
+    expect(consumeFirstGlossaryTip('reputation', storage)).toBeNull();
+
+    expect(consumeFirstGlossaryTip('renqing', storage)).toBe(GLOSSARY_TIPS.renqing);
+    expect(consumeFirstGlossaryTip('obsession', storage)).toBe(GLOSSARY_TIPS.obsession);
+    expect(consumeFirstGlossaryTip('charge_threshold', storage)).toBe(GLOSSARY_TIPS.charge_threshold);
+    expect(consumeFirstGlossaryTip('charge_threshold', storage)).toBeNull();
   });
 });

@@ -8,19 +8,8 @@ import {
   formatBossPreviewHpLine,
   type ComposedBossResult,
 } from '../game/bossComposition';
-import {
-  cloneChapterState,
-  deriveSideQuestSeed,
-  getChapterConfig,
-  getNightDemonHpBonus,
-  getRedemptionMultiplier,
-  getSkipCustomerReputationDelta,
-  isBossDay,
-  pickSideQuestItem,
-  removeCardAtIndex,
-  selectDemonForChapterDay,
-  type PactId,
-} from '../game/chapters';
+import { cloneChapterState, deriveSideQuestSeed, getChapterConfig, getNightDemonHpBonus, getRedemptionMultiplier, getSkipCustomerReputationDelta, isBossDay, pickSideQuestItem, removeCardAtIndex, selectDemonForChapterDay, type PactId } from '../game/chapters';
+import { consumeFirstGlossaryTip, hasSeenGlossaryTerm, type GlossaryTermId } from '../game/glossary';
 import {
   advanceCustomer,
   BALANCE,
@@ -150,6 +139,10 @@ export class PawnshopScene extends Phaser.Scene {
   private toastContainer?: Phaser.GameObjects.Container;
   private toastTimer?: Phaser.Time.TimerEvent;
   private lastToast: string | null = null;
+  private glossaryBanner?: Phaser.GameObjects.Container;
+  private glossaryTimer?: Phaser.Time.TimerEvent;
+  private glossaryDelayTimer?: Phaser.Time.TimerEvent;
+  private lastGlossaryTip: string | null = null;
   private hudMoneyText!: Phaser.GameObjects.BitmapText;
   private hudRepText!: Phaser.GameObjects.BitmapText;
   private hudDeckText!: Phaser.GameObjects.BitmapText;
@@ -248,6 +241,10 @@ export class PawnshopScene extends Phaser.Scene {
             redeemRng,
             ITEMS,
             redeemMultiplier,
+            {
+              rejectedDayByItem: this.save.chapter.rejectedRedemptionDayByItem,
+              day: this.save.day,
+            },
           ));
 
     this.state = createInitialState({
@@ -273,6 +270,10 @@ export class PawnshopScene extends Phaser.Scene {
     this.toastContainer = undefined;
     this.toastTimer = undefined;
     this.lastToast = null;
+    this.glossaryBanner = undefined;
+    this.glossaryTimer = undefined;
+    this.glossaryDelayTimer = undefined;
+    this.lastGlossaryTip = null;
     this.tutorial = createTutorialState({
       day: this.state.day,
       tutorialDone: loadTutorialDone(),
@@ -370,6 +371,7 @@ export class PawnshopScene extends Phaser.Scene {
           lastMessage: this.state.lastOutcome?.message ?? null,
           canSkip: isNegotiating,
           lastToast: this.lastToast,
+          lastGlossaryTip: this.lastGlossaryTip,
           redemptionOffer: activeRedemption,
           bossPreview,
           shopkeeperNote:
@@ -548,6 +550,7 @@ export class PawnshopScene extends Phaser.Scene {
     this.tutorial = syncTutorialForPawnshop(this.tutorial, this.state.phase);
     this.renderTutorialBubble();
     this.maybeShowShopkeeperOpeningBanner();
+    this.maybeShowReputationGlossaryIfReady();
   }
 
   private maybeShowShopkeeperOpeningBanner(): void {
@@ -595,6 +598,7 @@ export class PawnshopScene extends Phaser.Scene {
       this.shopkeeperBanner.destroy();
       this.shopkeeperBanner = undefined;
     }
+    this.maybeShowReputationGlossaryIfReady();
   }
 
   private renderTutorialBubble(): void {
@@ -604,6 +608,7 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     if (!this.tutorial.active || !this.tutorial.currentStep) {
+      this.maybeShowReputationGlossaryIfReady();
       return;
     }
 
@@ -650,6 +655,10 @@ export class PawnshopScene extends Phaser.Scene {
         redeemRng,
         ITEMS,
         redeemMultiplier,
+        {
+          rejectedDayByItem: this.save.chapter.rejectedRedemptionDayByItem,
+          day: this.save.day,
+        },
       );
 
     this.state = {
@@ -760,17 +769,105 @@ export class PawnshopScene extends Phaser.Scene {
       PALETTE.candle.num,
       PALETTE.lampYellow.num,
     );
+
+    if (!hasSeenGlossaryTerm('obsession')) {
+      this.maybeShowGlossaryTip('obsession', 268);
+      if (!hasSeenGlossaryTerm('charge_threshold')) {
+        this.glossaryDelayTimer = this.time.delayedCall(2600, () => {
+          if (this.scene.isActive() && this.state.phase === 'boss_preview') {
+            this.maybeShowGlossaryTip('charge_threshold', 268);
+          }
+        });
+      }
+    } else if (!hasSeenGlossaryTerm('charge_threshold')) {
+      this.maybeShowGlossaryTip('charge_threshold', 268);
+    }
   }
 
-  private showToast(message: string): void {
+  private maybeShowReputationGlossaryIfReady(): void {
+    if (
+      this.state.phase !== 'negotiating' ||
+      this.shopkeeperBanner ||
+      (this.tutorial.active && this.tutorial.currentStep !== null)
+    ) {
+      return;
+    }
+    this.maybeShowGlossaryTip('reputation', 198);
+  }
+
+  private maybeShowGlossaryTip(termId: GlossaryTermId, y: number): void {
+    const tip = consumeFirstGlossaryTip(termId);
+    if (!tip) {
+      return;
+    }
+    this.clearGlossaryTip(false);
+    this.lastGlossaryTip = tip;
+
+    let textPx = 0;
+    for (const ch of tip) {
+      textPx += ch.charCodeAt(0) < 0x80 ? 12 : 24;
+    }
+    const width = Math.min(BASE_WIDTH - 24, Math.max(200, textPx + 24));
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const banner = this.add.container(0, 0).setDepth(115);
+    const bg = this.add
+      .rectangle(centerX, y, width, 30, PALETTE.nightBlack.num)
+      .setStrokeStyle(2, PALETTE.lampYellow.num)
+      .setInteractive({ useHandCursor: true });
+    const txt = addPixelText(this, centerX, y, tip, {
+      color: PALETTE.candle.hex,
+      origin: 0.5,
+    });
+    bg.on('pointerdown', () => this.clearGlossaryTip(false));
+    banner.add([bg, txt]);
+    this.glossaryBanner = banner;
+    this.glossaryTimer = this.time.delayedCall(3400, () => this.clearGlossaryTip(false));
+  }
+
+  private clearGlossaryTip(cancelDelay = true): void {
+    if (cancelDelay && this.glossaryDelayTimer) {
+      this.glossaryDelayTimer.remove(false);
+      this.glossaryDelayTimer = undefined;
+    }
+    if (this.glossaryTimer) {
+      this.glossaryTimer.remove(false);
+      this.glossaryTimer = undefined;
+    }
+    if (this.glossaryBanner) {
+      this.glossaryBanner.destroy();
+      this.glossaryBanner = undefined;
+    }
+  }
+
+  private notifyDay7BossHpChange(prevHp: number): void {
+    if (this.save.chapter.dayInChapter !== 7) {
+      return;
+    }
+    const nextHp = this.getComposedBossPreview().finalHp;
+    if (nextHp < prevHp) {
+      this.showToast(`Boss已变弱 ${prevHp}->${nextHp}`, 2600);
+    } else if (nextHp > prevHp) {
+      this.showToast(`Boss已涨血 ${prevHp}->${nextHp}`, 2600);
+    }
+  }
+
+  private showToast(message: string, durationMs = TOAST_DURATION_MS): void {
     this.clearToast(false);
+    this.clearGlossaryTip();
     this.lastToast = message;
 
-    // 轻提示置于右侧空档（x=498..626, y=182..214），位于跳过当客钮上方、远离 1/6 与 2/6 教程气泡
-    const toastY = 198;
-    const width = Math.max(128, message.length * 24 + 28);
-    const height = 32;
-    const toastX = BASE_WIDTH - 14 - Math.floor(width / 2);
+    // 轻提示置于空档（正常 negotiating/feedback y=198，赎当页置于面板与按钮间 y=262）
+    const toastY = this.state.phase === 'redemption' ? 262 : 198;
+    let textPx = 0;
+    for (const ch of message) {
+      textPx += ch.charCodeAt(0) < 0x80 ? 12 : 24;
+    }
+    const width = Math.min(BASE_WIDTH - 28, Math.max(128, textPx + 28));
+    const height = this.state.phase === 'redemption' ? 28 : 32;
+    const toastX =
+      this.state.phase === 'redemption'
+        ? Math.floor(BASE_WIDTH / 2)
+        : Math.max(14 + Math.floor(width / 2), BASE_WIDTH - 14 - Math.floor(width / 2));
 
     const container = this.add.container(0, 0).setDepth(120);
     const bg = this.add
@@ -783,7 +880,7 @@ export class PawnshopScene extends Phaser.Scene {
     container.add([bg, text]);
     this.toastContainer = container;
 
-    this.toastTimer = this.time.delayedCall(TOAST_DURATION_MS, () => {
+    this.toastTimer = this.time.delayedCall(durationMs, () => {
       this.clearToast(false);
     });
   }
@@ -816,6 +913,10 @@ export class PawnshopScene extends Phaser.Scene {
       redeemRng,
       ITEMS,
       redeemMultiplier,
+      {
+        rejectedDayByItem: this.save.chapter.rejectedRedemptionDayByItem,
+        day: this.save.day,
+      },
     );
 
     this.state = {
@@ -1477,6 +1578,8 @@ export class PawnshopScene extends Phaser.Scene {
     const wasBride = Boolean(currentOffer?.isBrideScripted);
     const wasFather = Boolean(currentOffer?.isFatherOverdueScripted);
     const redeemedItemId = currentOffer?.item.id;
+    const prevBossHp =
+      this.save.chapter.dayInChapter === 7 ? this.getComposedBossPreview().finalHp : null;
     audio.unlock();
     audio.playSfx(accept ? 'redeem_deal' : 'button_click');
     this.state = resolveRedemption(this.state, accept);
@@ -1491,6 +1594,11 @@ export class PawnshopScene extends Phaser.Scene {
     if (accept && redeemedItemId) {
       nextChapter.redeemedDayByItem = {
         ...(nextChapter.redeemedDayByItem ?? {}),
+        [redeemedItemId]: this.state.day,
+      };
+    } else if (!accept && !wasBride && !wasFather && redeemedItemId) {
+      nextChapter.rejectedRedemptionDayByItem = {
+        ...(nextChapter.rejectedRedemptionDayByItem ?? {}),
         [redeemedItemId]: this.state.day,
       };
     }
@@ -1552,6 +1660,10 @@ export class PawnshopScene extends Phaser.Scene {
         redeemRng,
         ITEMS,
         redeemMultiplier,
+        {
+          rejectedDayByItem: this.save.chapter.rejectedRedemptionDayByItem,
+          day: this.save.day,
+        },
       );
       if (randomOffer) {
         this.state = {
@@ -1563,6 +1675,9 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     this.renderCurrentPhase();
+    if (accept && prevBossHp !== null) {
+      this.notifyDay7BossHpChange(prevBossHp);
+    }
   }
 
   private renderNegotiating(): void {
@@ -2154,6 +2269,9 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
+    const prevBossHp =
+      this.save.chapter.dayInChapter === 7 ? this.getComposedBossPreview().finalHp : null;
+
     audio.unlock();
     // C3 + P7：口碑与性格共同修正低价与平价接受率，高价 100% 不变
     const rate = getEffectiveAcceptRate(tier, this.state.reputation, BALANCE, item.temperament);
@@ -2181,6 +2299,9 @@ export class PawnshopScene extends Phaser.Scene {
       audio.playSfx('offer_rejected');
     }
     this.renderCurrentPhase();
+    if (accepted && prevBossHp !== null) {
+      this.notifyDay7BossHpChange(prevBossHp);
+    }
   }
 
   private syncInputBounds(): void {
@@ -2197,6 +2318,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.clearToast(false);
+      this.clearGlossaryTip();
       this.dismissShopkeeperBanner();
       if (this.handleWindowResize) {
         window.removeEventListener('resize', this.handleWindowResize);

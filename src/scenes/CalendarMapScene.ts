@@ -17,6 +17,7 @@ import {
   type ChapterSaveState,
 } from '../game/chapters';
 import type { DemonDef } from '../game/effects';
+import { consumeFirstGlossaryTip, type GlossaryTermId } from '../game/glossary';
 import { ITEMS, PALETTE, parseHexColor } from '../game/pawnshop';
 import { addPixelText } from '../game/pixelFont';
 import { loadSave, type SaveData } from '../game/save';
@@ -52,6 +53,7 @@ export interface CalendarDebugSnapshot {
   bossHpCapped: boolean;
   bossChargeThreshold: number;
   bossPreviewText: string;
+  lastGlossaryTip?: string | null;
   chapter1Completed: boolean;
   chapter1FailedCount: number;
   status: ChapterSaveState['status'];
@@ -115,6 +117,9 @@ export class CalendarMapScene extends Phaser.Scene {
   private selectedDay = 1;
   private isOpen = false;
   private contentLayer!: Phaser.GameObjects.Container;
+  private glossaryBanner?: Phaser.GameObjects.Container;
+  private glossaryTimer?: Phaser.Time.TimerEvent;
+  private lastGlossaryTip: string | null = null;
   private handleWindowResize?: () => void;
 
   constructor() {
@@ -122,6 +127,9 @@ export class CalendarMapScene extends Phaser.Scene {
   }
 
   create(data?: CalendarMapSceneData): void {
+    this.glossaryBanner = undefined;
+    this.glossaryTimer = undefined;
+    this.lastGlossaryTip = null;
     this.returnTo = data?.returnTo ?? 'TitleScene';
     const loadedSave = data?.save ?? loadSave();
     this.chapterState = loadedSave?.chapter
@@ -174,6 +182,7 @@ export class CalendarMapScene extends Phaser.Scene {
         bossHpCapped: composed.hpCapped,
         bossChargeThreshold: composed.chargeThreshold,
         bossPreviewText,
+        lastGlossaryTip: this.lastGlossaryTip,
         chapter1Completed: this.chapterState.chapter1Completed,
         chapter1FailedCount: this.chapterState.chapter1FailedCount,
         status: this.chapterState.status,
@@ -225,6 +234,7 @@ export class CalendarMapScene extends Phaser.Scene {
 
     this.contentLayer = this.add.container(0, 0);
     this.renderCalendarGrid(composed.bossDef.name, bossHp);
+    this.maybeShowGlossaryTip('obsession');
 
     // 底部返回按钮
     const retBtn = this.add
@@ -288,6 +298,9 @@ export class CalendarMapScene extends Phaser.Scene {
         audio.playSfx('button_click');
         this.selectedDay = entry.day;
         this.renderCalendarGrid(bossName, bossHp);
+        if (entry.isBossDay) {
+          this.maybeShowGlossaryTip('charge_threshold');
+        }
       });
 
       const headerFill = entry.isBossDay
@@ -465,7 +478,8 @@ export class CalendarMapScene extends Phaser.Scene {
     } else if (selected.day === 6) {
       line2 = '收当后可选「偏巷暗当」:多收1件/心魔+4血';
     } else if (selected.isBossDay) {
-      line2 = `4回战:R2封门4盾,累伤${composed.chargeThreshold}打断返+1情`;
+      const r2Shield = composed.bossDef.actions.find((a) => a.round === 2)?.shield ?? 0;
+      line2 = `${composed.bossDef.actions.length}回战:R2封门${r2Shield}盾,累伤${composed.chargeThreshold}打断返+1情`;
     } else if (this.chapterState.pactChoice) {
       const pactDef = getPactDef(this.chapterState.pactChoice);
       if (pactDef) {
@@ -488,7 +502,45 @@ export class CalendarMapScene extends Phaser.Scene {
     );
   }
 
+  private maybeShowGlossaryTip(termId: GlossaryTermId): void {
+    const tip = consumeFirstGlossaryTip(termId);
+    if (!tip) {
+      return;
+    }
+    this.dismissGlossaryTip();
+    this.lastGlossaryTip = tip;
+
+    const centerX = Math.floor(BASE_WIDTH / 2);
+    const tipY = 168;
+    let textPx = 0;
+    for (const ch of tip) {
+      textPx += ch.charCodeAt(0) < 0x80 ? 12 : 24;
+    }
+    const width = Math.min(BASE_WIDTH - 24, Math.max(240, textPx + 24));
+    const banner = this.add.container(0, 0).setDepth(95);
+    const bg = this.add
+      .rectangle(centerX, tipY, width, 28, PALETTE.nightBlack.num)
+      .setStrokeStyle(2, PALETTE.lampYellow.num)
+      .setInteractive({ useHandCursor: true });
+    const txt = addPixelText(this, centerX, tipY, tip, {
+      color: PALETTE.candle.hex,
+      origin: 0.5,
+    });
+    bg.on('pointerdown', () => this.dismissGlossaryTip());
+    banner.add([bg, txt]);
+    this.glossaryBanner = banner;
+    this.glossaryTimer = this.time.delayedCall(3400, () => this.dismissGlossaryTip());
+  }
+
+  private dismissGlossaryTip(): void {
+    this.glossaryTimer?.remove(false);
+    this.glossaryTimer = undefined;
+    this.glossaryBanner?.destroy();
+    this.glossaryBanner = undefined;
+  }
+
   private handleReturn(): void {
+    this.dismissGlossaryTip();
     this.isOpen = false;
     if (this.returnTo === 'PawnshopScene') {
       this.scene.stop('CalendarMapScene');
@@ -511,6 +563,7 @@ export class CalendarMapScene extends Phaser.Scene {
     window.addEventListener('resize', refresh);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.dismissGlossaryTip();
       this.isOpen = false;
       if (this.handleWindowResize) {
         window.removeEventListener('resize', this.handleWindowResize);

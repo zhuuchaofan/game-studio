@@ -63,7 +63,7 @@ function applyIntegerCanvasScale(): void {
   const { width, height } = calculateScaledDimensions(window.innerWidth, window.innerHeight);
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
-  if (!isPortraitViewport(window.innerWidth, window.innerHeight)) {
+  if (width > 0 && height > 0) {
     game.scale?.refresh();
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import balanceJson from '../../src/data/balance.json';
-import { createInitialChapterState } from '../../src/game/chapters';
+import { cloneChapterState, createInitialChapterState } from '../../src/game/chapters';
 import {
   createInitialState,
   DAILY_CUSTOMER_COUNT,
@@ -392,5 +392,31 @@ describe('Renqing scaling, demon rotation & day customer shuffle', () => {
     expect(state.deck).toEqual(['倒转', '钢笔']);
     expect(state.phase).toBe('negotiating');
     expect(state.customerIndex).toBe(0);
+  });
+
+  it('persists, deep-clones, and validates optional rejectedRedemptionDayByItem without bumping v3', () => {
+    const storage = createMemoryStorage();
+    const save = createNewGame();
+    save.chapter.rejectedRedemptionDayByItem = { erhu: 5 };
+
+    const cloned = cloneChapterState(save.chapter);
+    expect(cloned.rejectedRedemptionDayByItem).toEqual({ erhu: 5 });
+    expect(cloned.rejectedRedemptionDayByItem).not.toBe(save.chapter.rejectedRedemptionDayByItem);
+
+    saveGame(save, storage);
+    const loaded = loadSaveDetailed(storage);
+    expect(loaded.quarantinedCorrupt).toBe(false);
+    expect(loaded.save?.version).toBe(SAVE_VERSION);
+    expect(loaded.save?.chapter.rejectedRedemptionDayByItem).toEqual({ erhu: 5 });
+
+    // Invalid value (day <= 0 or non-integer) must quarantine as corrupt
+    const corrupt = {
+      ...save,
+      chapter: { ...save.chapter, rejectedRedemptionDayByItem: { erhu: 0 } },
+    };
+    storage.setItem(SAVE_STORAGE_KEY, JSON.stringify(corrupt));
+    const bad = loadSaveDetailed(storage);
+    expect(bad.save).toBeNull();
+    expect(bad.quarantinedCorrupt).toBe(true);
   });
 });

@@ -32,6 +32,21 @@ export function calculateScaledDimensions(
   baseWidth: number = BASE_WIDTH,
   baseHeight: number = BASE_HEIGHT,
 ): ScaledDimensions {
+  if (baseWidth <= 0 || baseHeight <= 0) {
+    throw new RangeError('Base dimensions must be positive numbers.');
+  }
+
+  if (isPortraitViewport(viewportWidth, viewportHeight)) {
+    const safeWidth = Math.max(0, viewportWidth);
+    const safeHeight = Math.max(0, viewportHeight);
+    const scale = Math.min(safeWidth / baseWidth, safeHeight / baseHeight);
+    return {
+      scale,
+      width: Math.min(safeWidth, Math.floor(baseWidth * scale + 1e-9)),
+      height: Math.min(safeHeight, Math.floor(baseHeight * scale + 1e-9)),
+    };
+  }
+
   const scale = calculateIntegerScale(viewportWidth, viewportHeight, baseWidth, baseHeight);
   return {
     scale,
