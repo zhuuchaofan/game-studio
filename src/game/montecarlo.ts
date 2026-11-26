@@ -45,6 +45,7 @@ import {
 } from './chapters';
 import {
   BALANCE,
+  countEligibleDailyItems,
   createRedemptionOffer,
   DAILY_CUSTOMER_COUNT,
   deriveDaySeed,
@@ -189,6 +190,9 @@ export interface ChapterOneSimStats {
   avgFinalDeckSize: number;
   avgBossRenqing: number;
   avgBossComponents: number;
+  shortPoolDays: number;
+  totalSimulatedDays: number;
+  shortPoolDayRate: number;
   day7Samples: Day7EndgameSample[];
   persistentHpMetrics?: PersistentHpSimMetrics;
 }
@@ -351,6 +355,7 @@ export interface BalanceSimulationReport {
   boss: MonteCarloStats;
   chapter1: ChapterOneSimStats;
   chapter1PersistentHp: ChapterOneSimStats;
+  chapter1PersistentHpSoftControl: ChapterOneSimStats;
   bossComposition: BossCompositionScanReport;
   newPlayerFirstNight: NewPlayerFirstNightStats;
   thinDeckPath: ThinDeckPathReport;
@@ -756,6 +761,8 @@ export interface ChapterOneSimOptions {
   runs?: number;
   /** 任务书 19 §9：开启跨夜生命结转 + 早上三选一 + 欠条 + 口碑-1。缺省关闭（满血基线）。 */
   persistentHp?: PersistentHpOptions;
+  /** P12 跟进 1：收当不重复硬排除（默认 true；false 仅用于 sim 开关对照）。 */
+  excludeOwnedHard?: boolean;
 }
 
 function getCardBaseDamage(card: CardDef | undefined): number {
@@ -1040,6 +1047,9 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
   const day7Samples: Day7EndgameSample[] = [];
   const baseBoss = getBossDemonDef(demons, chapter.bossId);
   const persistentHp = opts.persistentHp;
+  const excludeOwnedHard = opts.excludeOwnedHard ?? true;
+  let shortPoolDays = 0;
+  let totalSimulatedDays = 0;
   const bossEntryHps: number[] = [];
   let preBossKoRuns = 0;
   let firstLowHpCount = 0;
@@ -1142,12 +1152,23 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         }
       }
 
-      // Daytime pawnshop (3 customers, or 2 when rested; Day 1 damage guarantee + P11 D1 cooldown & D2 prefer unowned)
+      // Daytime pawnshop (3 customers, or 2 when rested; Day 1 damage guarantee + P11 D1 cooldown + P12 hard exclude owned)
+      totalSimulatedDays += 1;
+      const eligibleCount = countEligibleDailyItems(items, day, {
+        deck,
+        redeemedDayByItem,
+        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
+        excludeOwnedHard,
+      });
+      if (eligibleCount < DAILY_CUSTOMER_COUNT) {
+        shortPoolDays += 1;
+      }
       const dayRng = mulberry32(deriveDaySeed(seed, day));
       const dailyCustomers = pickDailyItems(items, day, dayRng, dailyCustomerCount, {
         deck,
         redeemedDayByItem,
         cooldownDays: REDEMPTION_COOLDOWN_DAYS,
+        excludeOwnedHard,
       });
 
       // Day 6 optional side quest: accept when deck still wants another damage/draw item and money >= 40
@@ -1357,6 +1378,9 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     avgFinalDeckSize: runs > 0 ? totalFinalDeckSize / runs : 0,
     avgBossRenqing: bossReached > 0 ? totalBossRenqing / bossReached : 0,
     avgBossComponents: bossReached > 0 ? totalBossComponents / bossReached : 0,
+    shortPoolDays,
+    totalSimulatedDays,
+    shortPoolDayRate: totalSimulatedDays > 0 ? shortPoolDays / totalSimulatedDays : 0,
     day7Samples,
     ...(persistentHp
       ? {
@@ -2498,6 +2522,19 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     persistentHp: DEFAULT_PERSISTENT_HP_OPTIONS,
   });
 
+  // Follow-up 1 control: old soft D2 rule (excludeOwnedHard: false) under persistent HP
+  const chapter1PersistentHpSoftControl = simulateChapterOne({
+    cards,
+    demons,
+    battleBalance,
+    pawnBalance,
+    items: ITEMS,
+    chapters: CHAPTERS,
+    runs,
+    persistentHp: DEFAULT_PERSISTENT_HP_OPTIONS,
+    excludeOwnedHard: false,
+  });
+
   // P11 Composed Boss sweep (n = 0..12, credit_stock on/off, single-item sensitivity, redemption path, stamp interrupt study)
   const bossComposition = simulateBossCompositionScan({
     cards,
@@ -2544,6 +2581,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     boss: bossStats,
     chapter1,
     chapter1PersistentHp,
+    chapter1PersistentHpSoftControl,
     bossComposition,
     newPlayerFirstNight,
     thinDeckPath,
@@ -2760,6 +2798,17 @@ export function formatSimReport(report: BalanceSimulationReport): string {
       `  早上三选一(均/局): 休息 ${phm.avgRestsPerRun.toFixed(2)} 买补药 ${phm.avgMedicinesPerRun.toFixed(2)} (买率 ${(phm.medicineTriggerRate * 100).toFixed(2)}%) 打理 ${phm.avgWorksPerRun.toFixed(2)} | 欠条加(均/局): ${phm.avgDebtNotesAddedPerRun.toFixed(2)}`,
     );
   }
+
+  const soft = report.chapter1PersistentHpSoftControl;
+  const diffPp = (ph.clearRate - soft.clearRate) * 100;
+  const diffStr = `${diffPp >= 0 ? '+' : ''}${diffPp.toFixed(1)}`;
+  lines.push(`\n[收当不重复对照 (仅测量, 生命结转 ${ph.runs} 局)]`);
+  lines.push(
+    `  不重复开(现行): 7 天通关率 ${(ph.clearRate * 100).toFixed(1)}% (${ph.clears}/${ph.runs}) | 可收旧物<3件天数占 ${(ph.shortPoolDayRate * 100).toFixed(2)}% (${ph.shortPoolDays}/${ph.totalSimulatedDays})`,
+  );
+  lines.push(
+    `  不重复关(优先未拥有): 7 天通关率 ${(soft.clearRate * 100).toFixed(1)}% (${soft.clears}/${soft.runs}) | 差值 ${diffStr}pp`,
+  );
 
   const bc = report.bossComposition;
   const avgTierMetrics = (tier: BossTierSummary): { avgRound: number; avgRemainHp: number } => {

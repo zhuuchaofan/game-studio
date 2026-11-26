@@ -435,3 +435,7 @@
   - **§3.1 执念提前**：`demons.json` 将 `linkedItemId` 改为集合 `linkedItemIds`（A `[watch, medicine_box]` 无执念；B `[ring, harmonica, gold_watch]` 远行 8→10；C `[old_book, tin_trunk, ledger]` 血量 26→28；D `[bicycle, cloth_ticket]` 开学 10→12）；`bossComposition.ts` 新增 `resolveDemonObsession` / `getItemObsessionHint`（第 1 天豁免、第 2 天起取开战瞬间牌库、只触发一次不叠加、赎回即消）；三处预告落地（当客屏提示行、台历红框+执念徽章、夜里开场横幅执念行）。
   - **§3.2 心魔各有打法**：A 催费 R3 3→5（`第三回合伤害 5`）；B 打包 R1/R2 各 +1 盾（`两回合都得 1 盾`）；C 涨租 3/5/7（`伤害每回合涨，3/5/7`）；D 攒钱 R1/R2 各 +2 盾（`两回合都得 2 盾`）。`battle.ts` 回合推进同步赋予非蓄力回合 `action.shield > 0` 护盾；`validate.ts` 补充 `action.shield`/`mechanicLine`/`linkedItemIds`/`obsession` 校验；台历与开场横幅展示机制行。
   - **§3.3 牌组合**：`cards.json` 12 张旧物牌加 `set: "旧物"`（`validate.ts` 校验），`effects.ts` 新增 `countItemCardsInHand` 并供 `hasItemCardInHand` 复用；三流派方向（硬茬/守家/精打细算）写入 GDD §25；`montecarlo.ts` 补全条件牌评估、执念开/关双档（Lv.1/Lv.2）对照及三路线牌组测量。
+
+## 2026-11-26 — P12 阶段 B 跟进 1：收当不重复硬排除规则（feature/p12-phase-b）
+- **规则落地**：`pickDailyItems`（`src/game/pawnshop.ts`）将 D2「优先未拥有」改为硬排除——牌库已拥有对应牌的旧物不再作为当客出现；拒绝/跳过的旧物不算拥有可再出现；D1 赎回 2 天冷却保持不变；池子 `< 3` 件时当天少出当客（`0` 件直接进结算，不补已拥有/冷却中旧物）。`PawnshopScene.ts` 同步支持当日 `0` 位当客直接进结算。
+- **sim 实测与测试**：`montecarlo.ts` 镜像同一硬排除逻辑并补充 `[收当不重复对照]`：开启后生命结转 7 天通关率 `47.2%` vs 关闭 `47.5%`（差值 `-0.3pp`），可收旧物 `< 3` 件天数占 `0.41%`（`29/7000` 天）。单测覆盖硬排除/拒绝再出现/少于 3 位当客；E2E 覆盖买旧物后本章内不再重来。

@@ -644,6 +644,35 @@ export interface PickDailyItemsOptions {
   redeemedDayByItem?: Readonly<Record<string, number>>;
   /** P11 子项 4 D1 方案 B：赎回后冷却天数（默认 REDEMPTION_COOLDOWN_DAYS = 2）。 */
   cooldownDays?: number;
+  /** P12 跟进 1：收当不重复硬排除（默认 true；false 仅用于 sim 旧软版对照）。 */
+  excludeOwnedHard?: boolean;
+}
+
+/**
+ * Counts how many items are eligible for selection on `day` under D1 cooldown and D2 hard exclusion.
+ */
+export function countEligibleDailyItems(
+  items: readonly PawnItem[],
+  day: number,
+  options?: PickDailyItemsOptions,
+): number {
+  const cooldownDays = options?.cooldownDays ?? REDEMPTION_COOLDOWN_DAYS;
+  const redeemedDayByItem = options?.redeemedDayByItem;
+  const excludeOwnedHard = options?.excludeOwnedHard ?? true;
+  const ownedCards =
+    excludeOwnedHard && options?.deck && options.deck.length > 0 ? new Set(options.deck) : null;
+
+  let count = 0;
+  for (const item of items) {
+    if (isItemOnRedemptionCooldown(item.id, day, redeemedDayByItem, cooldownDays)) {
+      continue;
+    }
+    if (ownedCards && ownedCards.has(item.cardName)) {
+      continue;
+    }
+    count += 1;
+  }
+  return count;
 }
 
 /**
@@ -700,9 +729,14 @@ export function pickDailyItems(
     onCooldown.sort((a, b) => (redeemedDayByItem[a.id] ?? 0) - (redeemedDayByItem[b.id] ?? 0));
   }
 
+  const excludeOwnedHard = options?.excludeOwnedHard ?? true;
   const ownedCards = options?.deck && options.deck.length > 0 ? new Set(options.deck) : null;
   let orderedPool: PawnItem[];
-  if (ownedCards) {
+  if (excludeOwnedHard) {
+    orderedPool = ownedCards
+      ? eligible.filter((item) => !ownedCards.has(item.cardName))
+      : [...eligible];
+  } else if (ownedCards) {
     const eligibleUnowned = eligible.filter((item) => !ownedCards.has(item.cardName));
     const eligibleOwned = eligible.filter((item) => ownedCards.has(item.cardName));
     orderedPool = [...eligibleUnowned, ...eligibleOwned, ...onCooldown];
@@ -947,7 +981,7 @@ export function createInitialState(
 
   return {
     day: opts.day ?? 1,
-    phase: redemptionOffer ? 'redemption' : 'negotiating',
+    phase: redemptionOffer ? 'redemption' : items.length === 0 ? 'summary' : 'negotiating',
     customerIndex: 0,
     money: opts.money ?? balance.startingMoney,
     reputation: opts.reputation ?? balance.startingReputation,
@@ -980,12 +1014,14 @@ export function resolveRedemption(state: PawnshopState, accept: boolean): Pawnsh
   const currentTickets = state.redeemTickets ?? 0;
   const currentPrices = clonePawnPrices(state.pawnPrices);
 
+  const nextPhase: PawnshopPhase = state.items.length === 0 ? 'summary' : 'negotiating';
+
   if (offer.isBrideScripted || offer.isFatherOverdueScripted) {
     const logPrefix = offer.isFatherOverdueScripted ? '父亲过赎期赎当' : '新娘赎当';
     if (!accept) {
       return {
         ...state,
-        phase: 'negotiating',
+        phase: nextPhase,
         reputation: state.reputation - 1,
         deck: [...state.deck],
         log: [...state.log, `${logPrefix}:${offer.item.name}->拒绝(口碑-1)`],
@@ -1015,7 +1051,7 @@ export function resolveRedemption(state: PawnshopState, accept: boolean): Pawnsh
 
     return {
       ...state,
-      phase: 'negotiating',
+      phase: nextPhase,
       money: state.money + offer.payout,
       reputation: state.reputation + 1,
       deck: nextDeck,
@@ -1031,7 +1067,7 @@ export function resolveRedemption(state: PawnshopState, accept: boolean): Pawnsh
   if (!accept || currentTickets < 1) {
     return {
       ...state,
-      phase: 'negotiating',
+      phase: nextPhase,
       deck: [...state.deck],
       log: [...state.log, `赎当:${offer.item.name}->拒绝`],
       items: state.items.map((item) => ({ ...item })),
@@ -1060,7 +1096,7 @@ export function resolveRedemption(state: PawnshopState, accept: boolean): Pawnsh
 
   return {
     ...state,
-    phase: 'negotiating',
+    phase: nextPhase,
     money: state.money + offer.payout,
     reputation: state.reputation + 1,
     deck: nextDeck,

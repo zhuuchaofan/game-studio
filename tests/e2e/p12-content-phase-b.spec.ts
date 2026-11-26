@@ -561,3 +561,60 @@ test('P12 Phase B §3.2: All four demon mechanics (A 3/3/5, B R1/R2 1 shield, C 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+test('P12 Follow-up 1: owned items never reappear in customer pool and short pool (<3) shows fewer customers without padding', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+  const canvas = page.locator('#game-container canvas');
+
+  // 1) Buy watch on Day 1 (seed=24), then on Day 2 with only 2 other unowned items left (10 owned in deck),
+  //    watch does NOT appear and Day 2 only presents the 2 unowned items (tin_trunk, gold_watch).
+  const tenOwnedExceptLastTwo = [
+    '倒转',
+    '守诺',
+    '旧书',
+    '飞驰',
+    '余音',
+    '集邮',
+    '布票',
+    '口琴',
+    '药箱',
+    '账本',
+  ];
+  await seedAndStartSavedDay(
+    page,
+    canvas,
+    '/?seed=5',
+    buildSeededSave({
+      day: 3,
+      deck: tenOwnedExceptLastTwo,
+      pawnedItemIds: [
+        'watch',
+        'ring',
+        'old_book',
+        'bicycle',
+        'erhu',
+        'stamp_album',
+        'cloth_ticket',
+        'harmonica',
+        'medicine_box',
+        'ledger',
+      ],
+    }),
+  );
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+  const neg = await waitForPawnshopPhase(page, 'negotiating');
+  expect(neg.itemsOrder).toHaveLength(2);
+  expect(new Set(neg.itemsOrder)).toEqual(new Set(['tin_trunk', 'gold_watch']));
+  expect(neg.itemsOrder).not.toContain('watch');
+
+  // Skip the 2 customers -> enters summary cleanly without padding a 3rd owned customer
+  await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  await waitForPawnshopPhase(page, 'negotiating');
+  await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  await waitForPawnshopPhase(page, 'summary');
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});

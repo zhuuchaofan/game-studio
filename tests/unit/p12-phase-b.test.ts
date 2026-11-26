@@ -21,7 +21,16 @@ import {
   resolveDemonObsession,
 } from '../../src/game/bossComposition';
 import { type ChaptersDataFile } from '../../src/game/chapters';
-import type { PawnItem } from '../../src/game/pawnshop';
+import {
+  countEligibleDailyItems,
+  createInitialState,
+  createRedemptionOffer,
+  pickDailyItems,
+  resolveRedemption,
+  settle,
+  skipCustomer,
+  type PawnItem,
+} from '../../src/game/pawnshop';
 import { validateAllGameData, validateCards, validateDemons } from '../../src/game/validate';
 import { mulberry32 } from '../../src/utils/rng';
 
@@ -192,5 +201,72 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
     stD = endTurn(stD).state;
     expect(stD.round).toBe(3);
     expect(stD.demonShield).toBe(0);
+  });
+
+  it('跟进 1 收当不重复：已拥有硬排除、拒绝/跳过可再出现、D1 冷却不变、池不足少出不补、全拥有直入 summary', () => {
+    // 1. Owned item never appears across 50 seeds
+    const deckWithWatch = ['倒转'];
+    for (let s = 1; s <= 50; s += 1) {
+      const picked = pickDailyItems(ITEMS, 3, mulberry32(s), 3, { deck: deckWithWatch });
+      expect(picked.some((i) => i.id === 'watch')).toBe(false);
+    }
+
+    // 2. Rejected or skipped item (not in deck) can still appear on a later day
+    const state = createInitialState({ day: 1, items: [ITEMS[0]], money: 200 });
+    const rejected = settle(state, 'low', false);
+    expect(rejected.deck).toEqual([]);
+    const skipped = skipCustomer(state);
+    expect(skipped.deck).toEqual([]);
+    let watchReturned = false;
+    for (let s = 1; s <= 50; s += 1) {
+      const picked = pickDailyItems(ITEMS, 2, mulberry32(s), 3, { deck: rejected.deck });
+      if (picked.some((i) => i.id === 'watch')) {
+        watchReturned = true;
+        break;
+      }
+    }
+    expect(watchReturned).toBe(true);
+
+    // 3. D1 2-day cooldown still excludes redeemed items even when not in deck
+    for (let s = 1; s <= 30; s += 1) {
+      const picked = pickDailyItems(ITEMS, 3, mulberry32(s), 3, {
+        deck: [],
+        redeemedDayByItem: { ring: 2 },
+      });
+      expect(picked.some((i) => i.id === 'ring')).toBe(false);
+    }
+
+    // 4. Pool < 3 returns exact remaining count (no padding with owned or cooldown items)
+    const deck10 = ITEMS.slice(0, 10).map((i) => i.cardName);
+    expect(countEligibleDailyItems(ITEMS, 5, { deck: deck10 })).toBe(2);
+    const picked2 = pickDailyItems(ITEMS, 5, mulberry32(7), 3, { deck: deck10 });
+    expect(picked2).toHaveLength(2);
+    expect(picked2.map((i) => i.id).sort()).toEqual(['gold_watch', 'tin_trunk']);
+
+    // If 1 of the remaining 2 is on D1 cooldown, only 1 customer appears
+    const picked1 = pickDailyItems(ITEMS, 5, mulberry32(7), 3, {
+      deck: deck10,
+      redeemedDayByItem: { gold_watch: 4 },
+    });
+    expect(picked1.map((i) => i.id)).toEqual(['tin_trunk']);
+
+    // 5. All 12 owned -> 0 customers -> createInitialState & resolveRedemption transition cleanly to summary
+    const all12Deck = ITEMS.map((i) => i.cardName);
+    const emptyPicked = pickDailyItems(ITEMS, 6, mulberry32(9), 3, { deck: all12Deck });
+    expect(emptyPicked).toEqual([]);
+    const emptyState = createInitialState({ day: 6, deck: all12Deck, items: emptyPicked });
+    expect(emptyState.phase).toBe('summary');
+
+    const offer = createRedemptionOffer(all12Deck, 1, {}, mulberry32(1), ITEMS)!;
+    const redeemState = createInitialState({
+      day: 6,
+      deck: all12Deck,
+      items: emptyPicked,
+      redeemTickets: 1,
+      redemptionOffer: offer,
+    });
+    expect(redeemState.phase).toBe('redemption');
+    const afterRedeem = resolveRedemption(redeemState, false);
+    expect(afterRedeem.phase).toBe('summary');
   });
 });

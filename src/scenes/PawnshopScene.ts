@@ -340,6 +340,8 @@ export class PawnshopScene extends Phaser.Scene {
       this.state = { ...this.state, phase: 'pact' };
     } else if (needsDay4Trim) {
       this.state = { ...this.state, phase: 'trim_deck' };
+    } else if (this.state.phase === 'summary') {
+      this.maybeTriggerDay6SideQuestOrSummary();
     }
 
     if (renderAfter) {
@@ -745,7 +747,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.state = {
       ...this.state,
-      phase: randomOffer ? 'redemption' : 'negotiating',
+      phase: randomOffer ? 'redemption' : this.state.items.length === 0 ? 'summary' : 'negotiating',
       redemptionOffer: randomOffer,
     };
     this.renderCurrentPhase();
@@ -1187,7 +1189,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.state = {
       ...this.state,
-      phase: redemptionOffer ? 'redemption' : 'negotiating',
+      phase: redemptionOffer ? 'redemption' : this.state.items.length === 0 ? 'summary' : 'negotiating',
       redemptionOffer,
     };
     this.renderCurrentPhase();
@@ -1942,6 +1944,9 @@ export class PawnshopScene extends Phaser.Scene {
       }
     }
 
+    if (this.state.phase === 'summary') {
+      this.maybeTriggerDay6SideQuestOrSummary();
+    }
     this.renderCurrentPhase();
     if (accept && prevBossHp !== null) {
       this.notifyDay7BossHpChange(prevBossHp);
