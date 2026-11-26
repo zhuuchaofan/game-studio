@@ -650,6 +650,13 @@ export function pickDailyItems(
   return picked;
 }
 
+export interface CreateRedemptionOfferOptions {
+  /** 某天拒绝某件赎当的记录（itemId -> 绝对天 save.day），仅当天跳过该件（语义 A）。 */
+  rejectedDayByItem?: Readonly<Record<string, number>>;
+  /** 当前绝对天（save.day）。 */
+  day?: number;
+}
+
 /**
  * Creates a redemption offer at the start of a day (P6 C4 + P7 sentimental priority):
  * - player holds >= 1 redeemTicket, AND
@@ -664,6 +671,7 @@ export function createRedemptionOffer(
   rng: RngFn,
   items: readonly PawnItem[] = ITEMS,
   priceMultiplier: number = REDEMPTION_PRICE_MULTIPLIER,
+  options?: CreateRedemptionOfferOptions,
 ): RedemptionOffer | null {
   if (redeemTickets < 1 || deck.length === 0) {
     return null;
@@ -674,11 +682,17 @@ export function createRedemptionOffer(
     itemByCard.set(item.cardName, item);
   }
 
+  const rejectedDayByItem = options?.rejectedDayByItem;
+  const currentDay = options?.day;
+
   const candidates: { deckIndex: number; cardName: string; item: PawnItem }[] = [];
   for (let i = 0; i < deck.length; i += 1) {
     const cardName = deck[i];
     const matched = itemByCard.get(cardName);
     if (matched) {
+      if (currentDay !== undefined && rejectedDayByItem?.[matched.id] === currentDay) {
+        continue;
+      }
       candidates.push({ deckIndex: i, cardName, item: matched });
     }
   }

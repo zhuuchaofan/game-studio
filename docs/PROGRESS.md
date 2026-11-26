@@ -366,3 +366,18 @@
   - `npm run sim:check`：PASSED（A 91.3% / B 82.1% / C 55.9% / D 91.3%，素体 n=0 68.8%、n=2–5 60.1%/56.0%/51.6%/41.4%、n=6 32.5%、n=6+赊账 48 血 27.7%、7 天通关率 46.2%、邮票册打断率 25.3%、常赢第 7 天中位现金 57.0、新玩家首夜 28.5% / 单攻击牌 8.8% / 双攻击牌 100.0%）；
   - **本地截图目视核查（`/tmp/canvas-screenshots/`，27 张，临时 spec 已删）**：覆盖标题（默认/续关+状态条）、白天收当（1/6、2/6+钱不够 Toast、掌柜横幅、3/6 成交反馈、第 3 天结算+风声、第 4 天契约/删牌、第 2 天新娘、第 6 天暗当、第 7 天封门预告/父亲）、台历（第 7 天 6 组件 48 血）、夜里牌局（开场+4/6、[故] 故事、`当票` 选牌、6 组件 Boss 开场）、日记页、第 1/3 章结局账本、第 3 章月末尾声、章节失败、普通胜负结算及 390×844 / 844×390 / 800×500 三视口（全部零溢出、零遮挡、零截断、零缺字；目视微调了第 3 天结算多行牌组间距、契约代价下边距、台历 28×28 执念徽章框与牌局 `[故]`/`[效]` 详情框左边界）。
 
+## 2026-11-26 — 试玩反馈修整轮（feature/playtest-fix-round）
+- **范围**：按 `proto-tasks/16-playtest-fix-round.md` 与 §12.0 全部拍板决定（Q1=A / Q2=B / Q3=(i) / Q4=延迟出现 / Q5=A / Q6=A / Q7=`v0.4.2-PlaytestFix` / Q8 双分支提示）完成试玩反馈修整轮，严格遵守 §8 排除项（未碰 P12 扩容、未改常规心魔 A–D 与 `balance.json` / `battle.ts` / `effects.ts`、未改存档 v3、未改 `pixel-font.json` 与 `.github/workflows/`）：
+  - **Boss 组合扫参定稿（C 方案 C7）**：完成 16 组配置（BASE + C1–C15）扫参并补充制作人精确子集 `[ring, old_book, bicycle, erhu, stamp_album]` 与子集明细输出，选定 **C7** 写入 `src/data/demons.json`（4 回合、`baseHp=30`、`hpBonus=1`、`maxCompositionHp=36`、`absoluteMaxHp=40`、婚戒盾 `2`、R2 封门盾 `2`、邮票册 `+2`→阈值 `12`；R1/R3/R4 伤害与打断返 +1 情不变）。实测 n=5 档胜率 **64.0%**（制作人子集 **62.0%**）、第 1 章通关率 **63.1%**、单场 Boss **61.1%**、素体 `n=0` **74.9%**、满配+赊账 40 血 **51.8%**、邮票册打断率 **36.4%**，冷冻回归（A–D 91.3%/82.1%/55.9%/91.3%、首夜 28.5%/8.8%/100.0%、现金流 57.0）全部 0 漂移。
+  - **Boss 血量变化提示（Q2=B）与赎当拒绝留痕（语义 A）**：`PawnshopScene.ts` 覆盖第 7 天预告后全部 4 条改牌库路径，血量变动时弹出 `Boss已变弱 X->Y` / `Boss已涨血 X->Y`（选用 `pixel-font.json` 774 字形集内字符）；`chapters.ts` / `save.ts` / `pawnshop.ts` / `PawnshopScene.ts` 新增可选 `rejectedRedemptionDayByItem`（按绝对天 `save.day` 记随机赎当拒绝，4 处 `createRedemptionOffer` 全覆盖，次日自动恢复）。
+  - **战斗体验与可玩性修整**：`CardBattleScene.ts` 实现 Q1=A 手牌原位保留 + 飞行/队列期间禁用「结束回合」且禁用态改用烛光 `#F2E3C6`；同批飘字按 `lane` 纵向错行、加夜黑暗底框且钳位在 HUD 下方，并拆分 `盾挡 N` / `-N（盾挡 M）` / `-N`；HUD 简化为 `牌库 N 弃 M`（Q6=A）；有未完成教程气泡时延后 `showDemonIntroBanner()`（Q4）。
+  - **新手引导、失败提示、版本号与护栏**：新增 `src/game/glossary.ts` 在「口碑 / 人情 / 执念 / 封门阈值」首次出现时展示 1 句白话解释（Q5=A，无常驻 HUD）；`ResultScene.ts` 章节失败页新增 `提醒：试试多攒伤害牌来打断封门` / `提醒：先攒护盾牌，顶住前两回合`（Q8）；`TitleScene.ts` 底栏新增 `v0.4.2-PlaytestFix` 且 `package.json` 同步升至 `0.4.2`（Q7）；新增 `tests/unit/fontCoverage.test.ts` 字库完整性护栏与 `tests/e2e/scaling.spec.ts`（覆盖 1920×1024/1920×1080/1366×768/1600×900 及独立视口公式真实鼠标点击核查，确认无缩放偏移 Bug）。
+  - **文档同步**：更新 `docs/GAME_DESIGN.md`（§21）、`docs/ART_STYLE.md`、本文件、`proto-tasks/16-playtest-fix-round.md`（已实施，待合并）及 `p0-research/13-development-roadmap.md`。
+- **验证证据**：
+  - `npx tsc --noEmit`：0 错误；
+  - `npm run build`：退出码 0（`dist/index.html` 2.19 kB、`rolldown-runtime-*.js` 0.59 kB、`index-*.js` 372.28 kB、`phaser-*.js` 1,194.42 kB）；
+  - `npx vitest run`：16/16 文件、139/139 单测全过（含 `fontCoverage.test.ts`）；
+  - `npm run sim:check`：PASSED all balance guardrails；
+  - `npm run test:e2e`（Playwright，localhost）：49/49 全过（含 `scaling.spec.ts`、`portrait.spec.ts`、`subpath.spec.ts`）；
+  - **局部截图目视核查（`/tmp/playtest-fix-screenshots/`，20 张，临时 `zz-playtest-verify.spec.ts` 已删）**：逐屏确认标题版本号、第 7 天预告、父亲/交易 Boss 血量 Toast、赎当拒绝重进、出牌手牌保持原位与飞行期禁用结束回合、Boss R2 打断与护盾拆分、连续飘字与 HUD 同框、延后心魔横幅、章节失败分支提示、第 3 天结算与 390×844 竖屏遮罩全部零重叠、零缺字、零溢出。
+

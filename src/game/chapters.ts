@@ -91,6 +91,8 @@ export interface ChapterSaveState {
   day7FatherRedemptionDone?: boolean;
   /** P11 子项 4 D1：旧物最近一次被赎回的天数映射（itemId -> day），供冷却与结局翻账本复用。 */
   redeemedDayByItem?: Record<string, number>;
+  /** 试玩修整轮：当天拒绝随机赎当的旧物记录（itemId -> 绝对天 save.day，语义 A 仅当天屏蔽）。 */
+  rejectedRedemptionDayByItem?: Record<string, number>;
   /** P11 子项 3 & 2③：本章已成交收下的旧物 ID 列表（供横幅条件文案与结局翻账本使用）。 */
   pawnedItemIds?: string[];
   /** P11 子项 2③：第 7 夜开战时实际构成 Boss 的旧物 ID 快照（供结局翻账本点名）。 */
@@ -207,6 +209,9 @@ export function createInitialChapterState(
     ...(overrides.redeemedDayByItem !== undefined
       ? { redeemedDayByItem: { ...overrides.redeemedDayByItem } }
       : {}),
+    ...(overrides.rejectedRedemptionDayByItem !== undefined
+      ? { rejectedRedemptionDayByItem: { ...overrides.rejectedRedemptionDayByItem } }
+      : {}),
     ...(overrides.pawnedItemIds !== undefined
       ? { pawnedItemIds: [...overrides.pawnedItemIds] }
       : {}),
@@ -223,6 +228,9 @@ export function cloneChapterState(chapter: ChapterSaveState): ChapterSaveState {
     daysVisited: [...chapter.daysVisited],
     ...(chapter.redeemedDayByItem !== undefined
       ? { redeemedDayByItem: { ...chapter.redeemedDayByItem } }
+      : {}),
+    ...(chapter.rejectedRedemptionDayByItem !== undefined
+      ? { rejectedRedemptionDayByItem: { ...chapter.rejectedRedemptionDayByItem } }
       : {}),
     ...(chapter.pawnedItemIds !== undefined
       ? { pawnedItemIds: [...chapter.pawnedItemIds] }

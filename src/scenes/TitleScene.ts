@@ -27,6 +27,8 @@ export {
   TITLE_VOLUME_BUTTON,
 } from '../game/layout';
 
+export const GAME_VERSION = 'v0.4.2-PlaytestFix';
+
 export class TitleScene extends Phaser.Scene {
   private handleWindowResize?: () => void;
 
@@ -63,6 +65,7 @@ export class TitleScene extends Phaser.Scene {
         tutorialActive: false,
         currentStep: null,
         tutorialDone: loadTutorialDone(),
+        version: GAME_VERSION,
       }),
     };
 
@@ -208,6 +211,12 @@ export class TitleScene extends Phaser.Scene {
       },
       PALETTE.oldPaper.num,
     );
+
+    addPixelText(this, centerX, 338, GAME_VERSION, {
+      size: 12,
+      color: PALETTE.silverBlue.hex,
+      origin: 0.5,
+    });
 
     this.syncInputBounds();
   }

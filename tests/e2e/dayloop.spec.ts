@@ -58,6 +58,7 @@ interface BattleDebugState {
   maxRenqing?: number;
   demonHp: number;
   hand: string[];
+  handSlotXs?: number[];
   deckCount: number;
   discardCount: number;
   result: 'ongoing' | 'win' | 'lose_hp' | 'lose_timeout' | 'empty_deck';
@@ -241,7 +242,7 @@ async function playGreedyUntilResult(page: Page, canvas: Locator): Promise<Battl
       const prevRenqing = state.renqing;
       const prevHandLen = state.hand.length;
       const prevDiscard = state.discardCount;
-      const x = computeHandCardX(chosenIdx, state.hand.length);
+      const x = state.handSlotXs?.[chosenIdx] ?? computeHandCardX(chosenIdx, state.hand.length);
       await clickLogical(page, canvas, { x, y: HAND_Y });
 
       await expect

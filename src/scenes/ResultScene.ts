@@ -102,6 +102,7 @@ export class ResultScene extends Phaser.Scene {
   private bossContributionLines: string[] = [];
   private endingLedger: EndingLedgerSummary | null = null;
   private epilogueLines: string[] | null = null;
+  private chapterFailHint: string | null = null;
   private handleWindowResize?: () => void;
 
   constructor() {
@@ -113,6 +114,7 @@ export class ResultScene extends Phaser.Scene {
     this.bossContributionLines = data?.bossContributionLines ? [...data.bossContributionLines] : [];
     this.endingLedger = null;
     this.epilogueLines = null;
+    this.chapterFailHint = null;
     const result = data?.result ?? 'lose_timeout';
     const deck = data?.deck ?? [];
     const demonId = data?.demonId ?? 'a';
@@ -226,6 +228,7 @@ export class ResultScene extends Phaser.Scene {
         isAnimating: false,
         reward,
         loseReason,
+        chapterFailHint: this.chapterFailHint,
         day: currentSave.day,
         shopLevel: nextSave.shopLevel,
         savedData: nextSave,
@@ -244,7 +247,7 @@ export class ResultScene extends Phaser.Scene {
     if (this.resultView === 'diary') {
       this.renderDiaryPage(nextSave);
     } else if (this.resultView === 'chapter_failed') {
-      this.renderChapterFailed(demonName, loseReason ?? '');
+      this.renderChapterFailed(demonName, loseReason ?? '', result);
     } else {
       this.renderNormalResult(
         result,
@@ -476,10 +479,19 @@ export class ResultScene extends Phaser.Scene {
     );
   }
 
-  private renderChapterFailed(demonName: string, loseReason: string): void {
+  private renderChapterFailed(
+    demonName: string,
+    loseReason: string,
+    result: 'win' | 'lose_hp' | 'lose_timeout',
+  ): void {
     this.contentLayer.removeAll(true);
     const centerX = Math.floor(BASE_WIDTH / 2);
     const centerY = Math.floor(BASE_HEIGHT / 2);
+    const hintText =
+      result === 'lose_hp'
+        ? '提醒：先攒护盾牌，顶住前两回合'
+        : '提醒：试试多攒伤害牌来打断封门';
+    this.chapterFailHint = hintText;
 
     this.contentLayer.add([
       this.add.rectangle(centerX, centerY, BASE_WIDTH, BASE_HEIGHT, PALETTE.nightBlack.num),
@@ -491,18 +503,25 @@ export class ResultScene extends Phaser.Scene {
         color: PALETTE.paperWhite.hex,
         origin: 0.5,
       }),
-      addPixelText(this, centerX, 108, `大心魔「${demonName}」未能击退`, {
+      addPixelText(this, centerX, 92, `大心魔「${demonName}」未能击退`, {
         color: PALETTE.paperWhite.hex,
         origin: 0.5,
       }),
       this.add
-        .rectangle(centerX, 156, 400, 34, PALETTE.vermilion.num)
+        .rectangle(centerX, 138, 400, 34, PALETTE.vermilion.num)
         .setStrokeStyle(2, PALETTE.ink.num),
-      addPixelText(this, centerX, 156, `失败原因：${loseReason}`, {
+      addPixelText(this, centerX, 138, `失败原因：${loseReason}`, {
         color: PALETTE.paperWhite.hex,
         origin: 0.5,
       }),
-      addPixelText(this, centerX, 212, '钱与牌组未扣除，可回标题重开第1章', {
+      this.add
+        .rectangle(centerX, 192, 520, 36, PALETTE.nightBlack.num)
+        .setStrokeStyle(2, PALETTE.brass.num),
+      addPixelText(this, centerX, 192, hintText, {
+        color: PALETTE.lampYellow.hex,
+        origin: 0.5,
+      }),
+      addPixelText(this, centerX, 242, '钱与牌组未扣除，可回标题重开第1章', {
         color: PALETTE.silverBlue.hex,
         origin: 0.5,
       }),

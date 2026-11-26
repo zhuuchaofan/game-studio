@@ -207,6 +207,15 @@ test('C4 redemption reject: preserves card, money, reputation, and redeemTickets
   expect(negotiating.deck).toEqual(['守诺']);
   expect(negotiating.redemptionOffer).toBeNull();
 
+  // Reload and Continue on the same day -> rejected item must NOT pop up again (Semantic A), tickets remain 2
+  await page.reload();
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, BUTTONS.titleContinue);
+  const afterReload = await waitForPawnshopPhase(page, 'negotiating');
+  expect(afterReload.day).toBe(2);
+  expect(afterReload.redeemTickets).toBe(2);
+  expect(afterReload.redemptionOffer).toBeNull();
+
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });

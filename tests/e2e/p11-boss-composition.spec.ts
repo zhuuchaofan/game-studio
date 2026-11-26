@@ -44,6 +44,8 @@ interface PawnshopDebugState {
   redeemTickets?: number;
   itemsOrder?: string[];
   shopkeeperNote?: string | null;
+  lastToast?: string | null;
+  version?: string;
   redemptionOffer?: {
     itemId: string;
     itemName: string;
@@ -118,9 +120,11 @@ interface BattleDebugState {
   } | null;
   epilogueLines?: string[] | null;
   hand: string[];
+  handSlotXs?: number[];
   discardCount: number;
   result: string;
   resultView?: 'normal' | 'diary' | 'ending' | 'epilogue' | 'chapter_failed';
+  chapterFailHint?: string | null;
   isAnimating?: boolean;
 }
 
@@ -250,7 +254,7 @@ async function playGreedyUntilResult(page: Page, canvas: Locator): Promise<Battl
       const prevRenqing = state.renqing;
       const prevDiscard = state.discardCount;
       await clickLogical(page, canvas, {
-        x: computeHandCardX(chosenIdx, state.hand.length),
+        x: state.handSlotXs?.[chosenIdx] ?? computeHandCardX(chosenIdx, state.hand.length),
         y: HAND_Y,
       });
       await expect
@@ -302,8 +306,9 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
   const canvas = page.locator('#game-container canvas');
   await expect(canvas).toBeVisible();
 
-  // Title screen shows shopkeeper opening note
+  // Title screen shows shopkeeper opening note & version
   const titleState = await waitForPawnshopPhase(page, 'title');
+  expect(titleState.version).toBe('v0.4.2-PlaytestFix');
   expect(titleState.shopkeeperNote).toContain('有人回来赎东西，先找当票，别让人白跑。');
   await clickLogical(page, canvas, BUTTONS.titleStart);
 
@@ -311,14 +316,14 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
   const day1Start = await waitForPawnshopPhase(page, 'negotiating');
   expect(day1Start.shopkeeperNote).toContain('有人回来赎东西，先找当票，别让人白跑。');
 
-  // Open Calendar before any pawn -> 0 components, 32 HP
+  // Open Calendar before any pawn -> 0 components, 30 HP
   await clickLogical(page, canvas, BUTTONS.pawnshopCalendar);
   await expect.poll(async () => (await getCalendarState(page))?.active).toBe(true);
   const cal0 = (await getCalendarState(page))!;
   expect(cal0.bossComponentCount).toBe(0);
-  expect(cal0.bossHp).toBe(32);
+  expect(cal0.bossHp).toBe(30);
   expect(cal0.bossPreviewText).toContain('0件');
-  expect(cal0.bossPreviewText).toContain('32血');
+  expect(cal0.bossPreviewText).toContain('30血');
   await clickLogical(page, canvas, BUTTONS.calendarReturn);
   await expect.poll(async () => (await getCalendarState(page))?.active).toBe(false);
 
@@ -336,13 +341,13 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
   await clickLogical(page, canvas, BUTTONS.nextOrSummary);
   await waitForPawnshopPhase(page, 'summary');
 
-  // Open Calendar -> 2 components (watch + ring), 36 HP
+  // Open Calendar -> 2 components (watch + ring), 32 HP
   await clickLogical(page, canvas, BUTTONS.pawnshopCalendar);
   await expect.poll(async () => (await getCalendarState(page))?.active).toBe(true);
   const cal2 = (await getCalendarState(page))!;
   expect(cal2.bossComponentCount).toBe(2);
   expect(cal2.bossActiveItemIds).toEqual(['watch', 'ring']);
-  expect(cal2.bossHp).toBe(36);
+  expect(cal2.bossHp).toBe(32);
   await page.screenshot({ path: 'test-results/p11-calendar-badges.png' });
   await clickLogical(page, canvas, BUTTONS.calendarReturn);
   await expect.poll(async () => (await getCalendarState(page))?.active).toBe(false);
@@ -359,7 +364,7 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
   await waitForBattleReady(page, 'result_scene');
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
 
-  // Day 2 Bride scripted redemption -> accept -> immediately drops to 1 component (watch), 34 HP!
+  // Day 2 Bride scripted redemption -> accept -> immediately drops to 1 component (watch), 31 HP!
   const bride = await waitForPawnshopPhase(page, 'redemption');
   expect(bride.redemptionOffer?.isBrideScripted).toBe(true);
   await clickLogical(page, canvas, BUTTONS.redeemAccept);
@@ -370,7 +375,7 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
   const cal1 = (await getCalendarState(page))!;
   expect(cal1.bossComponentCount).toBe(1);
   expect(cal1.bossActiveItemIds).toEqual(['watch']);
-  expect(cal1.bossHp).toBe(34);
+  expect(cal1.bossHp).toBe(31);
   await clickLogical(page, canvas, BUTTONS.calendarReturn);
   await expect.poll(async () => (await getCalendarState(page))?.active).toBe(false);
 
@@ -448,13 +453,13 @@ test('P11 E2E 2: Day 7 Boss pre-opening preview (including 48 HP cap) matches ac
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
 
-  // Day 7 Boss preview must explicitly state 48 HP capped ("已到顶") and threshold 14
+  // Day 7 Boss preview must explicitly state 40 HP capped ("已到顶") and threshold 12
   const preview = await waitForPawnshopPhase(page, 'boss_preview');
   expect(preview.bossPreview).not.toBeNull();
   expect(preview.bossPreview?.componentCount).toBe(6);
-  expect(preview.bossPreview?.finalHp).toBe(48);
+  expect(preview.bossPreview?.finalHp).toBe(40);
   expect(preview.bossPreview?.hpCapped).toBe(true);
-  expect(preview.bossPreview?.chargeThreshold).toBe(14);
+  expect(preview.bossPreview?.chargeThreshold).toBe(12);
   expect(preview.bossPreview?.hpLine).toContain('已到顶');
   await page.screenshot({ path: 'test-results/p11-boss-preview.png' });
 
@@ -471,15 +476,15 @@ test('P11 E2E 2: Day 7 Boss pre-opening preview (including 48 HP cap) matches ac
   expect(bossStart.isBoss).toBe(true);
   expect(bossStart.demonMaxHp).toBe(preview.bossPreview?.finalHp);
   expect(bossStart.bossComponentCount).toBe(6);
-  expect(bossStart.bossComposedChargeThreshold).toBe(14);
-  expect(bossStart.demonShield).toBe(5);
+  expect(bossStart.bossComposedChargeThreshold).toBe(12);
+  expect(bossStart.demonShield).toBe(2);
   expect(bossStart.bossFragmentNames).toEqual(preview.bossPreview?.fragmentNames);
   expect(bossStart.demonIntroBannerText).toContain('手表的执念');
   expect(bossStart.demonIntroBannerText).toContain('邮票册的执念');
   expect(bossStart.demonIntroBannerText).toContain('柜子里的事，今夜一起上门了');
   await page.screenshot({ path: 'test-results/p11-boss-banner.png' });
 
-  // End R1 -> verify active R2 charge threshold is actually 14 in combat state
+  // End R1 -> verify active R2 charge threshold is actually 12 in combat state
   await clickLogical(page, canvas, BUTTONS.endTurn);
   await expect
     .poll(async () => {
@@ -488,7 +493,7 @@ test('P11 E2E 2: Day 7 Boss pre-opening preview (including 48 HP cap) matches ac
     })
     .toBe(true);
   const r2 = await getBattleState(page);
-  expect(r2.bossChargeThreshold).toBe(14);
+  expect(r2.bossChargeThreshold).toBe(12);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -579,7 +584,7 @@ test('P11 E2E 3: Bride redemption removes 婚戒组件 from Night 7 Boss (shield
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   const boss = await waitForBattleReady(page, 'play');
   expect(boss.demonShield).toBe(0);
-  expect(boss.demonMaxHp).toBe(34);
+  expect(boss.demonMaxHp).toBe(31);
   expect(boss.bossFragmentNames).toEqual(['自行车的执念']);
 
   expect(failedRequests).toEqual([]);
@@ -702,6 +707,7 @@ test('P11 E2E 4: Day 7 Father overdue watch redemption (Accept vs Reject) & Endi
   expect(afterAccept.deck).not.toContain('倒转');
   expect(afterAccept.money).toBe(152); // 80 + 72
   expect(afterAccept.reputation).toBe(3);
+  expect(afterAccept.lastToast).toBe('Boss已变弱 33->32');
 
   for (let i = 0; i < 3; i += 1) {
     await waitForPawnshopPhase(page, 'negotiating');
@@ -713,7 +719,7 @@ test('P11 E2E 4: Day 7 Father overdue watch redemption (Accept vs Reject) & Endi
   const bossStart = await waitForBattleReady(page, 'play');
   expect(bossStart.bossFragmentNames).not.toContain('手表的执念');
   expect(bossStart.bossFragmentNames).toEqual(['自行车的执念', '二胡的执念']);
-  expect(bossStart.demonMaxHp).toBe(36);
+  expect(bossStart.demonMaxHp).toBe(32);
 
   const res = await playGreedyUntilResult(page, canvas);
   expect(res.result).toBe('win');
@@ -822,8 +828,90 @@ test('P11 E2E 5: Conditional demon banner & victory aftermath show generic copy 
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   const bareBoss = await waitForBattleReady(page, 'play');
   expect(bareBoss.bossComponentCount).toBe(0);
-  expect(bareBoss.demonMaxHp).toBe(32);
+  expect(bareBoss.demonMaxHp).toBe(30);
   expect(bareBoss.demonIntroBannerText).toContain('柜子空了，债主只身前来');
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('Playtest fix round: Day 7 daytime deal shows Boss已涨血 toast and chapter failure screen shows Q8 hints', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+
+  // Day 7 with 0 items in deck (30 HP) -> buy first customer item (high tier) -> Boss strengthens 30->31
+  await page.goto('/?seed=4&demon=boss_ch1');
+  await page.evaluate(
+    ([saveKey, tutKey]) => {
+      localStorage.setItem(tutKey, '1');
+      localStorage.setItem(
+        saveKey,
+        JSON.stringify({
+          version: 3,
+          day: 7,
+          money: 300,
+          reputation: 2,
+          deck: ['算盘', '钢笔', '秤砣'],
+          shopLevel: 2,
+          redeemTickets: 0,
+          chapter: {
+            currentChapter: 1,
+            dayInChapter: 7,
+            chapter1Completed: false,
+            chapter1FailedCount: 0,
+            status: 'in_progress',
+            bossBattleActive: true,
+            pactChoice: null,
+            sideQuestChoice: null,
+            daysCleared: [1, 2, 3, 4, 5, 6],
+            daysVisited: [1, 2, 3, 4, 5, 6],
+            pawnsCollected: 0,
+            demonsDefeated: 6,
+            day4TrimDone: true,
+            day6SideQuestDone: true,
+            day7FatherRedemptionDone: true,
+          },
+        }),
+      );
+    },
+    [SAVE_STORAGE_KEY, TUTORIAL_STORAGE_KEY] as const,
+  );
+  await page.reload();
+
+  const canvas = page.locator('#game-container canvas');
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'boss_preview');
+  await clickLogical(page, canvas, BUTTONS.bossPreviewConfirm);
+
+  await waitForPawnshopPhase(page, 'negotiating');
+  await clickLogical(page, canvas, BUTTONS.tierHigh);
+  const fb = await waitForPawnshopPhase(page, 'feedback');
+  expect(fb.lastToast).toBe('Boss已涨血 30->31');
+
+  await clickLogical(page, canvas, BUTTONS.nextOrSummary);
+  for (let i = 1; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, BUTTONS.skipCustomer);
+  }
+  await waitForPawnshopPhase(page, 'summary');
+  await clickLogical(page, canvas, BUTTONS.enterNightBattle);
+
+  const bossStart = await waitForBattleReady(page, 'play');
+  expect(bossStart.demonMaxHp).toBe(31);
+
+  // Also verify lose_timeout chapter failure hint
+  for (let r = 1; r <= 4; r += 1) {
+    await clickLogical(page, canvas, BUTTONS.endTurn);
+    if (r < 4) {
+      await expect.poll(async () => (await getBattleState(page)).round).toBe(r + 1);
+    }
+  }
+  const timeoutFail = await waitForBattleReady(page, 'result_scene');
+  expect(timeoutFail.result).toBe('lose_timeout');
+  expect(timeoutFail.resultView).toBe('chapter_failed');
+  expect(timeoutFail.chapterFailHint).toBe('提醒：试试多攒伤害牌来打断封门');
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);

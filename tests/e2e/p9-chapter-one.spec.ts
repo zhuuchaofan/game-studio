@@ -102,9 +102,11 @@ interface BattleDebugState {
   bossChargeInterrupted?: boolean;
   detailMode?: 'effect' | 'story';
   hand: string[];
+  handSlotXs?: number[];
   discardCount: number;
   result: string;
   resultView?: 'normal' | 'diary' | 'ending' | 'chapter_failed';
+  chapterFailHint?: string | null;
   demonId: string;
   demonName: string;
   isAnimating?: boolean;
@@ -254,7 +256,7 @@ async function playGreedyUntilResult(page: Page, canvas: Locator): Promise<Battl
       const prevRenqing = state.renqing;
       const prevDiscard = state.discardCount;
       await clickLogical(page, canvas, {
-        x: computeHandCardX(chosenIdx, state.hand.length),
+        x: state.handSlotXs?.[chosenIdx] ?? computeHandCardX(chosenIdx, state.hand.length),
         y: HAND_Y,
       });
       await expect
@@ -401,8 +403,8 @@ test('P9 E2E 1: Full Chapter 1 playthrough (?seed=2&deck=test) Day 1 -> Day 3 ru
       expect(battleStart.demonId).toBe('boss_ch1');
       expect(battleStart.demonName).toBe('老债主·催账单');
       expect(battleStart.maxRounds).toBe(4);
-      // TEST_DECK has 3 pawnshop items (倒转, 守诺, 旧书) -> 32 + 2*3 = 38 HP
-      expect(battleStart.demonMaxHp).toBe(38);
+      // TEST_DECK has 3 pawnshop items (倒转, 守诺, 旧书) -> 30 + 1*3 = 33 HP
+      expect(battleStart.demonMaxHp).toBe(33);
     }
 
     const res = await playGreedyUntilResult(page, canvas);
@@ -594,8 +596,8 @@ test('P9 E2E 3: Boss R2 Interrupt path (>=10 dmg -> +1 renqing, R3 deals 3 dmg) 
 
   const r1 = await waitForBattleReady(page, 'play');
   expect(r1.demonId).toBe('boss_ch1');
-  // 0 pawnshop items in deck -> bare Boss (素体) 32 HP, R2 interrupt rule unchanged
-  expect(r1.demonHp).toBe(32);
+  // 0 pawnshop items in deck -> bare Boss (素体) 30 HP, R2 interrupt rule unchanged
+  expect(r1.demonHp).toBe(30);
   expect(r1.detailMode).toBe('effect');
 
   // Verify Plan C detail bar toggle [故] <-> [效]
@@ -613,14 +615,14 @@ test('P9 E2E 3: Boss R2 Interrupt path (>=10 dmg -> +1 renqing, R3 deals 3 dmg) 
 
   const r2Start = await getBattleState(page);
   expect(r2Start.playerHp).toBe(27);
-  expect(r2Start.demonShield).toBe(4);
+  expect(r2Start.demonShield).toBe(2);
   expect(r2Start.bossCharging).toBe(true);
   expect(r2Start.renqing).toBe(5);
   await page.screenshot({ path: 'test-results/p9-boss-r2-charging.png' });
 
   // Play two 秤砣 (5 + 5 = 10 dmg) -> triggers BOSS_CHARGE_INTERRUPTED (+1 renqing refund: 5 - 2 + 1 = 4)
   await clickLogical(page, canvas, {
-    x: computeHandCardX(0, r2Start.hand.length),
+    x: r2Start.handSlotXs?.[0] ?? computeHandCardX(0, r2Start.hand.length),
     y: HAND_Y,
   });
   await expect.poll(async () => {
@@ -630,7 +632,7 @@ test('P9 E2E 3: Boss R2 Interrupt path (>=10 dmg -> +1 renqing, R3 deals 3 dmg) 
 
   const midR2 = await getBattleState(page);
   await clickLogical(page, canvas, {
-    x: computeHandCardX(0, midR2.hand.length),
+    x: midR2.handSlotXs?.[0] ?? computeHandCardX(0, midR2.hand.length),
     y: HAND_Y,
   });
   await expect.poll(async () => {
@@ -740,6 +742,7 @@ test('P9 E2E 4: Boss R2 Non-Interrupt path (R3 deals full 11 dmg) & Chapter Fail
   await clickLogical(page, canvas, BUTTONS.endTurn);
   const failResult = await waitForBattleReady(page, 'result_scene');
   expect(failResult.resultView).toBe('chapter_failed');
+  expect(failResult.chapterFailHint).toBe('提醒：试试多攒伤害牌来打断封门');
   expect(failResult.savedData?.chapter?.status).toBe('failed');
   expect(failResult.savedData?.chapter?.chapter1FailedCount).toBe(1);
   // Money and deck must NOT be deducted on Boss defeat
