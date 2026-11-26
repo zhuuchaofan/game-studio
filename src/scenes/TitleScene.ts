@@ -32,7 +32,7 @@ export {
   TITLE_VOLUME_BUTTON,
 } from '../game/layout';
 
-export const GAME_VERSION = 'v0.4.4-OpeningLayout';
+export const GAME_VERSION = 'v0.4.5-NightStakes';
 export const TITLE_TUTORIAL_LABEL = '新手局';
 
 export class TitleScene extends Phaser.Scene {

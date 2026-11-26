@@ -16,6 +16,7 @@ export type OfferTier = 'low' | 'fair' | 'high';
 export type CustomerTemperament = 'urgent' | 'proud' | 'sentimental';
 
 export type PawnshopPhase =
+  | 'morning'
   | 'boss_preview'
   | 'pact'
   | 'trim_deck'
@@ -24,6 +25,15 @@ export type PawnshopPhase =
   | 'feedback'
   | 'side_quest'
   | 'summary';
+
+export type MorningAction = 'rest' | 'medicine' | 'work';
+
+export interface MorningOptionStatus {
+  enabled: boolean;
+  reason: 'full_hp' | 'insufficient_funds' | null;
+}
+
+export type MorningActionAvailability = Record<MorningAction, MorningOptionStatus>;
 
 export type DebugPhase = 'title' | 'calendar' | PawnshopPhase;
 
@@ -92,6 +102,7 @@ export interface PawnshopState {
   log: string[];
   items: PawnItem[];
   lastOutcome: OfferOutcome | null;
+  currentHp?: number;
   redeemTickets?: number;
   pawnPrices?: PawnPriceLedger;
   redemptionOffer?: RedemptionOffer | null;
@@ -104,6 +115,7 @@ export interface PawnshopInitialOptions {
   deck?: readonly string[];
   items?: readonly PawnItem[];
   balance?: BalanceConfig;
+  currentHp?: number;
   redeemTickets?: number;
   pawnPrices?: PawnPriceLedger;
   redemptionOffer?: RedemptionOffer | null;
@@ -117,6 +129,9 @@ export interface PawnshopDebugSnapshot {
   deck: string[];
   log: string[];
   day?: number;
+  currentHp?: number;
+  dailyCustomerCount?: number;
+  morningAvailability?: MorningActionAvailability | null;
   shopLevel?: number;
   redeemTickets?: number;
   maxRenqing?: number;
@@ -238,6 +253,92 @@ export const BALANCE: BalanceConfig = {
 };
 
 export const DAILY_CUSTOMER_COUNT = 3;
+
+/** 任务书 19 §4：早上三选一（休息回血 / 买补药 / 打理当铺）数值常量。 */
+export const MORNING_REST_HEAL = 10;
+export const MORNING_REST_CUSTOMER_COST = 1;
+export const MORNING_MEDICINE_PRICE = 20;
+export const MORNING_MEDICINE_HEAL = 10;
+
+export function getMorningActionAvailability(
+  currentHp: number,
+  money: number,
+  maxHp: number = BALANCE.startingHp,
+): MorningActionAvailability {
+  const isFullHp = currentHp >= maxHp;
+  const canAffordMed = money >= MORNING_MEDICINE_PRICE;
+  return {
+    rest: {
+      enabled: !isFullHp,
+      reason: isFullHp ? 'full_hp' : null,
+    },
+    medicine: {
+      enabled: !isFullHp && canAffordMed,
+      reason: isFullHp ? 'full_hp' : !canAffordMed ? 'insufficient_funds' : null,
+    },
+    work: {
+      enabled: true,
+      reason: null,
+    },
+  };
+}
+
+export function applyMorningChoice(input: {
+  action: MorningAction;
+  currentHp: number;
+  money: number;
+  maxHp?: number;
+}): {
+  currentHp: number;
+  money: number;
+  customerCount: number;
+  applied: boolean;
+} {
+  const maxHp = input.maxHp ?? BALANCE.startingHp;
+  const clampedHp = Math.max(0, Math.min(maxHp, Math.round(input.currentHp)));
+  const availability = getMorningActionAvailability(clampedHp, input.money, maxHp);
+
+  if (input.action === 'rest') {
+    if (!availability.rest.enabled) {
+      return {
+        currentHp: clampedHp,
+        money: input.money,
+        customerCount: DAILY_CUSTOMER_COUNT,
+        applied: false,
+      };
+    }
+    return {
+      currentHp: Math.min(maxHp, clampedHp + MORNING_REST_HEAL),
+      money: input.money,
+      customerCount: Math.max(1, DAILY_CUSTOMER_COUNT - MORNING_REST_CUSTOMER_COST),
+      applied: true,
+    };
+  }
+
+  if (input.action === 'medicine') {
+    if (!availability.medicine.enabled) {
+      return {
+        currentHp: clampedHp,
+        money: input.money,
+        customerCount: DAILY_CUSTOMER_COUNT,
+        applied: false,
+      };
+    }
+    return {
+      currentHp: Math.min(maxHp, clampedHp + MORNING_MEDICINE_HEAL),
+      money: input.money - MORNING_MEDICINE_PRICE,
+      customerCount: DAILY_CUSTOMER_COUNT,
+      applied: true,
+    };
+  }
+
+  return {
+    currentHp: clampedHp,
+    money: input.money,
+    customerCount: DAILY_CUSTOMER_COUNT,
+    applied: true,
+  };
+}
 
 /** 第 1 天当客池保底：至少 1 件出伤害牌的旧物（永久自行车→飞驰 / 二胡→余音，P6 B2）。 */
 export const DAY1_GUARANTEED_DAMAGE_ITEM_IDS: readonly string[] = ['bicycle', 'erhu'];
@@ -852,6 +953,7 @@ export function createInitialState(
     log: [],
     items: items.map((item) => ({ ...item })),
     lastOutcome: null,
+    ...(opts.currentHp !== undefined ? { currentHp: opts.currentHp } : {}),
     ...(opts.redeemTickets !== undefined ? { redeemTickets: opts.redeemTickets } : {}),
     ...(opts.pawnPrices !== undefined ? { pawnPrices: clonePawnPrices(opts.pawnPrices) } : {}),
     ...(redemptionOffer !== null
@@ -1035,6 +1137,7 @@ export function settle(
       reputationDelta,
       message,
     },
+    ...(state.currentHp !== undefined ? { currentHp: state.currentHp } : {}),
     ...(state.redeemTickets !== undefined ? { redeemTickets: state.redeemTickets } : {}),
     ...(nextPawnPrices !== undefined ? { pawnPrices: nextPawnPrices } : {}),
   };
@@ -1077,6 +1180,7 @@ export function skipCustomer(
     log: [...state.log, logEntry],
     items: state.items.map((item) => ({ ...item })),
     lastOutcome: null,
+    ...(state.currentHp !== undefined ? { currentHp: state.currentHp } : {}),
     ...(state.redeemTickets !== undefined ? { redeemTickets: state.redeemTickets } : {}),
     ...(state.pawnPrices !== undefined ? { pawnPrices: clonePawnPrices(state.pawnPrices) } : {}),
   };
@@ -1106,6 +1210,7 @@ export function toDebugSnapshot(state: PawnshopState): PawnshopDebugSnapshot {
     reputation: state.reputation,
     deck: [...state.deck],
     log: [...state.log],
+    ...(state.currentHp !== undefined ? { currentHp: state.currentHp } : {}),
   };
 }
 

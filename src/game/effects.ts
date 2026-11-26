@@ -26,6 +26,7 @@ export interface CardDef {
   name: string;
   item: string;
   cost: number;
+  unplayable?: boolean;
   effects: CardEffect[];
   story: string;
   color?: string;

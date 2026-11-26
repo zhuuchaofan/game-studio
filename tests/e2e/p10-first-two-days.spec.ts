@@ -3,6 +3,7 @@ import {
   BATTLE_END_TURN_BUTTON,
   BATTLE_HAND_Y,
   computeHandCardX,
+  MORNING_OPTION_BUTTONS,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_SKIP_BUTTON,
   PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
@@ -23,6 +24,7 @@ const PAWN_PRICES_STORAGE_KEY = 'pawnshop-cards-pawn-prices-v1';
 interface PawnshopDebugState {
   phase:
     | 'title'
+    | 'morning'
     | 'pact'
     | 'trim_deck'
     | 'redemption'
@@ -316,9 +318,11 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
   expect(loseResult.tutorialCopy).toContain('头一天没打下来');
   expect(loseResult.tutorialCopy).not.toContain('过关');
 
-  // Dismiss final bubble and advance to Day 2 -> recovery guarantees affordable damage item (bicycle low=40 <= 75!)
+  // Dismiss final bubble and advance to Day 2 -> morning -> work -> recovery guarantees affordable damage item (bicycle low=40 <= 75!)
   await clickLogical(page, canvas, getTutorialBubbleLayout('settlement').continueClickPoint);
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2.day).toBe(2);
@@ -381,6 +385,8 @@ test('P10 E2E 2: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   expect(loseResult.result).toBe('lose_timeout');
 
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const brideState = await waitForPawnshopPhase(page, 'redemption');
   expect(brideState.day).toBe(2);
   expect(brideState.redeemTickets).toBe(0);
@@ -393,19 +399,21 @@ test('P10 E2E 2: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
     isBrideScripted: true,
   });
 
-  // Accept Bride redemption -> 守诺 leaves deck, money 150 + 108 = 258, rep 1 -> 2, tickets still 0
+  // Accept Bride redemption -> 守诺 leaves deck (leaving 欠条 from Night 1 loss), money 150 + 108 = 258, rep 0 -> 1, tickets still 0
   await clickLogical(page, canvas, BUTTONS.redeemAccept);
   const day2Neg = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2Neg.money).toBe(258);
-  expect(day2Neg.reputation).toBe(2);
+  expect(day2Neg.reputation).toBe(1);
   expect(day2Neg.redeemTickets).toBe(0);
-  expect(day2Neg.deck).toEqual([]);
+  expect(day2Neg.deck).toEqual(['欠条']);
   expect(day2Neg.redemptionOffer).toBeNull();
 
   // Reload Day 2 -> Bride event must NOT trigger a second time
   await page.reload();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const afterReload = await waitForPawnshopPhase(page, 'negotiating');
   expect(afterReload.day).toBe(2);
   expect(afterReload.money).toBe(258);
@@ -452,16 +460,18 @@ test('P10 E2E 3: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   await loseNightByEndingThreeTurns(page, canvas);
 
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const brideState = await waitForPawnshopPhase(page, 'redemption');
   expect(brideState.redemptionOffer?.isBrideScripted).toBe(true);
   expect(brideState.redemptionOffer?.cardName).toBe('守诺');
 
-  // Reject Bride redemption -> 守诺 kept, money unchanged (150), rep 1 -> 0 (-1!)
+  // Reject Bride redemption -> 守诺 kept (plus 欠条 from Night 1 loss), money unchanged (150), rep 1 -> 0 (-1 loss) -> -1 (-1 reject)
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const day2Neg = await waitForPawnshopPhase(page, 'negotiating');
-  expect(day2Neg.deck).toEqual(['守诺']);
+  expect(day2Neg.deck).toEqual(['守诺', '欠条']);
   expect(day2Neg.money).toBe(150);
-  expect(day2Neg.reputation).toBe(0);
+  expect(day2Neg.reputation).toBe(-1);
   expect(day2Neg.redeemTickets).toBe(0);
 
   expect(failedRequests).toEqual([]);

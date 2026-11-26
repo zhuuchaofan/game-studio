@@ -6,6 +6,7 @@ import {
   HAND_SCROLL_ARROW_WIDTH,
   HAND_SCROLL_ARROW_Y,
   HAND_SLOT_STEP,
+  MORNING_OPTION_BUTTONS,
   PAWNSHOP_SKIP_BUTTON,
   PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
   TITLE_CONTINUE_BUTTON,
@@ -316,7 +317,7 @@ test('Task 18 §2/§6/§7: new game starts with 240, title shows 新手局 butto
 
   const title = await waitForPawnshopPhase(page, 'title');
   expect(title.tutorialButtonLabel).toBe('新手局');
-  expect(title.version).toBe('v0.4.4-OpeningLayout');
+  expect(title.version).toBe('v0.4.5-NightStakes');
   await page.screenshot({ path: `${SHOT_DIR}/title.png` });
 
   await clickLogical(page, canvas, TITLE_TUTORIAL_BUTTON);
@@ -343,6 +344,8 @@ for (const vp of VIEWPORTS) {
     await expect(canvas).toBeVisible();
     await waitForPawnshopPhase(page, 'title');
     await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+    await waitForPawnshopPhase(page, 'morning');
+    await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
     for (let i = 0; i < 3; i += 1) {
       await waitForPawnshopPhase(page, 'negotiating');
       await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
@@ -383,6 +386,8 @@ test('Task 18 §3 (plan B): 7/9/11-card hand scrolls at fixed 104 spacing, every
   await expect(canvas).toBeVisible();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   for (let i = 0; i < 3; i += 1) {
     await waitForPawnshopPhase(page, 'negotiating');
     await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
@@ -481,6 +486,8 @@ test('Task 18 round3 fix 1: vertical drag >=6px on card does not play card, whil
   await expect(canvas).toBeVisible();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   for (let i = 0; i < 3; i += 1) {
     await waitForPawnshopPhase(page, 'negotiating');
     await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
@@ -552,6 +559,8 @@ for (const vp of VIEWPORTS) {
     await expect(canvas).toBeVisible();
     await waitForPawnshopPhase(page, 'title');
     await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+    await waitForPawnshopPhase(page, 'morning');
+    await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
     await waitForPawnshopPhase(page, 'negotiating');
     await expect

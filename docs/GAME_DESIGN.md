@@ -554,3 +554,31 @@
 - **sim 测量项**：`simulateNightOneMoneyCurve` 印出起始钱 200/240 两档首夜胜率（单攻/双攻、买齐 3 件局数占比），不进护栏。
 - **版本号**：`GAME_VERSION` 与 `package.json` 同步 `v0.4.4-OpeningLayout` / `0.4.4`。
 
+---
+
+## §24 夜战压力 B+C 轮定稿（v0.4.5-NightStakes，2026-11-26）
+
+依据 `proto-tasks/19-night-stakes-bc-round.md` 与 §14.0 全部拍板决定（Q1–Q5 全部锁定），不改动心魔/Boss 数值与 `demons.json`、`items.json`、`balance.json`、兜底 D1/D2、第 4 天契约、第 6 天支线、赎当规则、存档 v3、`pixel-font.json`（774 字形）、音频与 `.github/workflows/`。
+
+- **B 生命跨夜保留（`save.ts` / `battle.ts` / `CardBattleScene.ts` / `ResultScene.ts` / `PawnshopScene.ts`）**：
+  - `SaveData` 新增可选字段 `currentHp?: number`（`SAVE_VERSION` 保持 `3`，老存档缺省 `30`，非法值按损坏存档隔离），`createNewGame` 初值 `30`。
+  - `createBattle` 新增 `initialPlayerHp?: number`（`playerHp` 取结转值、`maxPlayerHp` 恒为 `30`，保持血条按 `30` 缩放且缝纫机回血封顶 `30`）。
+  - `applyDayResult` 四分支写回 `currentHp`：普通胜/败局末 `>0` 则 `clamp(endHp + 5, 0, 30)`（睡回 `+5`），普通夜 KO（局末 `0`）次日以 `5` 血醒来（`wake-at-5`）并继续章节；Boss 胜/败写回局末值。
+  - 白天 HUD 新增 `命：当前/30`（`640×360` 内与「台历」按钮零重叠）。
+- **C 输夜代价——纯占位欠条（`cards.json` / `effects.ts` / `battle.ts` / `save.ts` / `glossary.ts` / `pixelart.ts`）**：
+  - `cards.json` 新增第 24 张卡「欠条」（`0` 费、`unplayable: true`、`effects: []`），`canPlayCard` 与牌局点击禁出，`resolveWinReward` 过滤 `unplayable`（永不进奖励池），不进 `items.json` / `pickDailyItems`。
+  - 普通夜输：牌组 `+1` 欠条（上限 `3` 张）且口碑 `-1`；普通夜赢：`-1` 欠条；Boss 夜输不叠加。
+  - 失败页 `y=171` 继续行改写为 `输了这一夜，留下一张欠条，口碑-1，明天继续`（避开第 1 天 `6/6` 教程气泡 `y=186..274`，不动 `y=102` 失败原因行）；术语表新增 `debt_note`（`欠条：输夜留下的债，占一张手牌，打不出去`）；原创 32×32（8 色）像素画 `DEBT_NOTE_ART` 登记于 `docs/ASSET_LEDGER.md`。
+- **早上三选一板（`pawnshop.ts` / `PawnshopScene.ts` / `layout.ts`）**：
+  - 第 2–7 天 `PawnshopScene.create` 在 `pickDailyItems` 及 `boss_preview`/`pact`/`trim_deck`/`redemption` 之前进入 `morning` 阶段（第 1 天跳过），标题「新的一天」，严格三选一（选完即进入当天，无留板）：
+    - **休息**：回 `10` 血（封顶 `30`），当天少收 `1` 位当客（`2` 位）；满血置灰「已满血」。
+    - **买补药**：花 `20` 元，回 `10` 血（封顶 `30`），保持 `3` 位当客；满血置灰「已满血」、钱 `<20` 置灰「钱不够」。
+    - **打理当铺**：照常开张（`3` 位当客）。
+  - 未休息时当日当客序列与原有完全一致。
+- **sim 实测与 fallback 决策（`montecarlo.ts`，240 档，1000 局）**：
+  - 新增 `opts.persistentHp` 章节模拟（严格按 `wake-at-5`，区分入局血与上限 `30`；策略：`currentHp >= 15` 打理、`< 15` 且钱 `>= 60` 买补药、否则休息）：
+  - **B+C 定值档（`restHeal = 10`）**：通关率 **69.8%**（`698/1000`），进入 `checkSimGuardrails` `[35%, 75%]` 通过；**未超 75%，不触发 fallback 弱化，保留休息 `+10`**。
+  - 其余实测指标：平均胜夜 `5.22/7`、终局中位钱 `132.0`、进 Boss 血量均值 `27.73` / 中位 `30.0` / `<10` 血占比 `0.0%`、Boss 前死亡 `0.0%`、首次局末 `<10` 血占比 `33.9%`、连续输 `>=3` 夜占比 `14.5%`、买补药触发率 `1.17%`（均 `0.07` 次/局；休息 `0.18`、打理 `5.75`）、均增欠条 `1.43` 张/局；满血对照 `73.9%`（`739/1000`），全冻结护栏 0 漂移。
+- **字库与版本号**：新增文案全数避开 §0 禁用字并使用 `pixel-font.json`（774 字形）内字符，`fontCoverage.test.ts` 零缺字；`GAME_VERSION` 与 `package.json` 同步升为 `v0.4.5-NightStakes` / `0.4.5`。
+
+

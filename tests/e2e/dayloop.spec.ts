@@ -3,6 +3,7 @@ import {
   BATTLE_END_TURN_BUTTON,
   BATTLE_HAND_Y,
   computeHandCardX,
+  MORNING_OPTION_BUTTONS,
   PACT_OPTION_BUTTONS,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
@@ -27,7 +28,7 @@ interface SaveSnapshot {
 }
 
 interface PawnshopDebugState {
-  phase: 'title' | 'pact' | 'trim_deck' | 'redemption' | 'negotiating' | 'feedback' | 'side_quest' | 'summary';
+  phase: 'title' | 'morning' | 'pact' | 'trim_deck' | 'redemption' | 'negotiating' | 'feedback' | 'side_quest' | 'summary';
   customerIndex: number;
   money: number;
   reputation: number;
@@ -361,8 +362,10 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   expect(winResult.savedData!.deck[3]).toBe(winResult.reward!.cardName);
   await page.screenshot({ path: 'test-results/dayloop-desktop-result.png' });
 
-  // Click "下一天" -> Day 2 opens with C4 redemption (1 redeemTicket + pawnshop cards in deck); reject to enter Day 2 negotiating
+  // Click "下一天" -> Day 2 morning choice -> "打理当铺" -> C4 redemption -> reject to enter Day 2 negotiating
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
@@ -385,8 +388,10 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   expect(titleWithSave.shopLevel).toBe(2);
   await page.screenshot({ path: 'test-results/dayloop-desktop-title-continue.png' });
 
-  // Click Continue -> restores Day 2 PawnshopScene (reject redemption to keep saved money/deck intact)
+  // Click Continue -> Day 2 morning choice -> "打理当铺" -> restores Day 2 PawnshopScene
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const restoredDay2 = await waitForPawnshopPhase(page, 'negotiating');
@@ -459,20 +464,22 @@ test('lose flow advances day +1 while keeping deck, money, shopLevel, and redeem
     version: 3,
     day: 2,
     money: 75,
-    reputation: 3,
-    deck: ['余音', '倒转', '旧书'],
+    reputation: 2,
+    deck: ['余音', '倒转', '旧书', '欠条'],
     shopLevel: 1,
     redeemTickets: 0,
   });
 
-  // Click "下一天" -> Day 2 starts with unchanged deck/money/level (maxRenqing still 3)
+  // Click "下一天" -> Day 2 morning board -> "打理当铺" -> starts with 欠条 in deck and rep -1 (maxRenqing still 3)
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const day2AfterLose = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2AfterLose.day).toBe(2);
   expect(day2AfterLose.money).toBe(75);
   expect(day2AfterLose.shopLevel).toBe(1);
   expect(day2AfterLose.maxRenqing).toBe(3);
-  expect(day2AfterLose.deck).toEqual(['余音', '倒转', '旧书']);
+  expect(day2AfterLose.deck).toEqual(['余音', '倒转', '旧书', '欠条']);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -509,6 +516,8 @@ test('renders pixel font, 32x32 pixel art (2x), and day loop cleanly on mobile l
   await page.screenshot({ path: 'test-results/dayloop-mobile-result.png' });
 
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
@@ -548,8 +557,10 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   expect(titleState.hasSave).toBe(true);
   expect(titleState.day).toBe(3);
 
-  // Day 3 Pawnshop: reject C4 redemption -> 6-item pool shuffled and sliced to 3 customers
+  // Day 3 Pawnshop: morning -> work -> reject C4 redemption -> 6-item pool shuffled and sliced to 3 customers
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const day3Start = await waitForPawnshopPhase(page, 'negotiating');
@@ -589,8 +600,10 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   expect(night3Result.savedData!.day).toBe(4);
   expect(night3Result.savedData!.money).toBe(day3Summary.money);
 
-  // Day 4 Pawnshop (P9: Pact -> free Trim -> Redemption -> Negotiating) -> Night 4 -> Demon D (学费, HP 20)
+  // Day 4 Pawnshop (morning -> Pact -> free Trim -> Redemption -> Negotiating) -> Night 4 -> Demon D (学费, HP 20)
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'pact');
   await clickLogical(page, canvas, BUTTONS.pactSteady);
   await waitForPawnshopPhase(page, 'trim_deck');
@@ -629,6 +642,8 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
 
   // Day 5 Pawnshop -> Night 5 -> P9 Chapter 1 escalated pool (B / C / D)
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'redemption');
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const day5Start = await waitForPawnshopPhase(page, 'negotiating');

@@ -14,10 +14,13 @@ import {
   clearTutorialDone,
   CORRUPT_SAVE_STORAGE_KEY,
   createNewGame,
+  DEBT_NOTE_CAP,
+  DEBT_NOTE_CARD_NAME,
   demonIdForDay,
   loadSave,
   loadSaveDetailed,
   loadTutorialDone,
+  MAX_PLAYER_HP,
   maxRenqingForLevel,
   MIGRATIONS,
   migrateSaveData,
@@ -59,6 +62,7 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
       deck: [],
       shopLevel: 1,
       redeemTickets: 0,
+      currentHp: 30,
       chapter: createInitialChapterState(),
     });
   });
@@ -224,6 +228,7 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
       deck: ['倒转', '守诺', '钢笔'],
       shopLevel: 2,
       redeemTickets: 1,
+      currentHp: 30,
       chapter: createInitialChapterState({
         dayInChapter: 2,
         daysCleared: [1],
@@ -250,7 +255,7 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
     expect(afterFullWin.chapter.daysCleared).toEqual([1, 2]);
   });
 
-  it('applyDayResult increments only day on lose while keeping money, deck, level, tickets unchanged', () => {
+  it('applyDayResult on normal lose increments day, applies sleep heal, adds 1 欠条, and deducts 1 reputation', () => {
     const initial: SaveData = {
       version: 3,
       day: 1,
@@ -267,10 +272,11 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
       version: 3,
       day: 2,
       money: 90,
-      reputation: -1,
-      deck: ['倒转', '旧书'],
+      reputation: -2,
+      deck: ['倒转', '旧书', DEBT_NOTE_CARD_NAME],
       shopLevel: 2,
       redeemTickets: 1,
+      currentHp: 30,
       chapter: createInitialChapterState({
         dayInChapter: 2,
         daysCleared: [],
@@ -279,6 +285,80 @@ describe('SaveData, MIGRATIONS & corrupt-save quarantine', () => {
       }),
     });
     expect(afterLose.deck).not.toBe(initial.deck);
+  });
+
+  it('Task 19 §2/§3: persists currentHp across all 4 branches (sleep +5, cap 30, KO->5), caps 欠条 at 3, removes 1 on win, and validates currentHp', () => {
+    const base = createNewGame();
+    base.deck = ['倒转', '飞驰'];
+
+    // 1. Normal win: endHp 20 -> 25; endHp 28 -> capped 30
+    const win20 = applyDayResult(base, { outcome: 'win', endHp: 20 });
+    expect(win20.currentHp).toBe(25);
+    const win28 = applyDayResult(base, { outcome: 'win', endHp: 28 });
+    expect(win28.currentHp).toBe(30);
+
+    // 2. Normal lose: KO endHp 0 -> wake at 5, +1 欠条, reputation -1
+    const loseKo = applyDayResult(base, { outcome: 'lose', endHp: 0 });
+    expect(loseKo.currentHp).toBe(5);
+    expect(loseKo.reputation).toBe(-1);
+    expect(loseKo.deck).toEqual(['倒转', '飞驰', DEBT_NOTE_CARD_NAME]);
+
+    // 3. Debt note cap = 3 (4th loss still deducts reputation -1 but adds no 4th 欠条)
+    const atCap: SaveData = {
+      ...base,
+      reputation: 0,
+      deck: ['倒转', DEBT_NOTE_CARD_NAME, DEBT_NOTE_CARD_NAME, DEBT_NOTE_CARD_NAME],
+    };
+    const loseAtCap = applyDayResult(atCap, { outcome: 'lose', endHp: 14 });
+    expect(loseAtCap.currentHp).toBe(19);
+    expect(loseAtCap.reputation).toBe(-1);
+    expect(loseAtCap.deck.filter((n) => n === DEBT_NOTE_CARD_NAME)).toHaveLength(DEBT_NOTE_CAP);
+
+    // 4. Normal win removes 1 欠条 (2 -> 1)
+    const twoDebt: SaveData = {
+      ...base,
+      deck: ['倒转', DEBT_NOTE_CARD_NAME, '飞驰', DEBT_NOTE_CARD_NAME],
+    };
+    const winRepays = applyDayResult(twoDebt, {
+      outcome: 'win',
+      endHp: 15,
+      reward: { money: 40, cardName: '钢笔', redeemTicket: 1, allOwnedBonus: false },
+    });
+    expect(winRepays.currentHp).toBe(20);
+    expect(winRepays.deck.filter((n) => n === DEBT_NOTE_CARD_NAME)).toHaveLength(1);
+    expect(winRepays.deck).toContain('钢笔');
+
+    // 5. Boss branches write endHp directly without +5, debt note changes, or rep penalty
+    const day7Base: SaveData = {
+      ...base,
+      day: 7,
+      reputation: 2,
+      deck: ['倒转', DEBT_NOTE_CARD_NAME],
+      chapter: createInitialChapterState({ dayInChapter: 7, bossBattleActive: true }),
+    };
+    const bossWin = applyDayResult(day7Base, { outcome: 'win', isBossBattle: true, endHp: 12 });
+    expect(bossWin.currentHp).toBe(12);
+    expect(bossWin.deck).toEqual(['倒转', DEBT_NOTE_CARD_NAME]);
+    const bossLose = applyDayResult(day7Base, { outcome: 'lose', isBossBattle: true, endHp: 0 });
+    expect(bossLose.currentHp).toBe(0);
+    expect(bossLose.reputation).toBe(2);
+    expect(bossLose.deck).toEqual(['倒转', DEBT_NOTE_CARD_NAME]);
+
+    // 6. Legacy v3 save without currentHp loads cleanly (defaults to 30 in scenes) and invalid currentHp quarantines
+    const storage = createMemoryStorage();
+    const legacyV3 = { ...base };
+    delete legacyV3.currentHp;
+    storage.setItem(SAVE_STORAGE_KEY, JSON.stringify(legacyV3));
+    const legacyRes = loadSaveDetailed(storage);
+    expect(legacyRes.quarantinedCorrupt).toBe(false);
+    expect(legacyRes.save?.currentHp).toBeUndefined();
+
+    for (const badHp of [-5, MAX_PLAYER_HP + 1, '20', null]) {
+      storage.setItem(SAVE_STORAGE_KEY, JSON.stringify({ ...base, currentHp: badHp }));
+      const badRes = loadSaveDetailed(storage);
+      expect(badRes.save).toBeNull();
+      expect(badRes.quarantinedCorrupt).toBe(true);
+    }
   });
 
   it('persists tutorial completion backward-compatibly across v1->v2->v3 migration', () => {

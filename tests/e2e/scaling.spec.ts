@@ -3,6 +3,7 @@ import {
   BATTLE_END_TURN_BUTTON,
   BATTLE_HAND_Y,
   computeHandCardX,
+  MORNING_OPTION_BUTTONS,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_SKIP_BUTTON,
   PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
@@ -156,8 +157,10 @@ for (const vp of [
 
     await expect.poll(async () => (await getBattleState(page))?.phase).toBe('result_scene');
 
-    // 4. Result scene: click "下一天" button -> returns to Day 2 PawnshopScene
+    // 4. Result scene: click "下一天" button -> Day 2 morning board -> click "打理当铺" -> negotiating
     await clickLogical(page, canvas, RESULT_NEXT_DAY_BUTTON);
+    await expect.poll(() => getPawnshopPhase(page)).toBe('morning');
+    await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
     await expect.poll(() => getPawnshopPhase(page)).toBe('negotiating');
 
     expect(failedRequests).toEqual([]);

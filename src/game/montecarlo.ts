@@ -48,6 +48,10 @@ import {
   getEffectiveAcceptRate,
   getReputationDelta,
   ITEMS,
+  MORNING_MEDICINE_HEAL,
+  MORNING_MEDICINE_PRICE,
+  MORNING_REST_CUSTOMER_COST,
+  MORNING_REST_HEAL,
   pickDailyItems,
   quotePrice,
   REDEMPTION_COOLDOWN_DAYS,
@@ -57,9 +61,13 @@ import {
 } from './pawnshop';
 import {
   consumePawnPrice,
+  DEBT_NOTE_CAP,
+  DEBT_NOTE_CARD_NAME,
   demonIdForDay,
   maxRenqingForLevel,
+  NIGHT_LOSS_REP_DELTA,
   recordPawnPrice,
+  SLEEP_HEAL_AMOUNT,
   type DemonId,
   type PawnPriceLedger,
 } from './save';
@@ -126,6 +134,40 @@ export interface Day7EndgameSample {
   activeItemIds: string[];
 }
 
+export interface PersistentHpOptions {
+  sleepHeal: number;
+  restHeal: number;
+  restCustomerCost: number;
+  medicinePrice: number;
+  medicineHeal: number;
+  debtCap: number;
+}
+
+export const DEFAULT_PERSISTENT_HP_OPTIONS: PersistentHpOptions = {
+  sleepHeal: SLEEP_HEAL_AMOUNT,
+  restHeal: MORNING_REST_HEAL,
+  restCustomerCost: MORNING_REST_CUSTOMER_COST,
+  medicinePrice: MORNING_MEDICINE_PRICE,
+  medicineHeal: MORNING_MEDICINE_HEAL,
+  debtCap: DEBT_NOTE_CAP,
+};
+
+export interface PersistentHpSimMetrics {
+  config: PersistentHpOptions;
+  avgBossEntryHp: number;
+  medianBossEntryHp: number;
+  bossEntryHpLt10Rate: number;
+  preBossDeathRate: number;
+  firstLowHpShare: number;
+  lossStreakGe3Rate: number;
+  avgRestsPerRun: number;
+  avgMedicinesPerRun: number;
+  medicineTriggerRate: number;
+  avgWorksPerRun: number;
+  avgDebtNotesAddedPerRun: number;
+  avgEndReputation: number;
+}
+
 export interface ChapterOneSimStats {
   runs: number;
   clears: number;
@@ -142,6 +184,7 @@ export interface ChapterOneSimStats {
   avgBossRenqing: number;
   avgBossComponents: number;
   day7Samples: Day7EndgameSample[];
+  persistentHpMetrics?: PersistentHpSimMetrics;
 }
 
 export interface BossSubsetSimStats {
@@ -280,6 +323,7 @@ export interface BalanceSimulationReport {
   economy: SevenDayEconomyStats;
   boss: MonteCarloStats;
   chapter1: ChapterOneSimStats;
+  chapter1PersistentHp: ChapterOneSimStats;
   bossComposition: BossCompositionScanReport;
   newPlayerFirstNight: NewPlayerFirstNightStats;
   thinDeckPath: ThinDeckPathReport;
@@ -669,6 +713,8 @@ export interface ChapterOneSimOptions {
   items?: readonly PawnItem[];
   chapters?: readonly ChapterConfig[];
   runs?: number;
+  /** 任务书 19 §9：开启跨夜生命结转 + 早上三选一 + 欠条 + 口碑-1。缺省关闭（满血基线）。 */
+  persistentHp?: PersistentHpOptions;
 }
 
 function getCardBaseDamage(card: CardDef | undefined): number {
@@ -936,6 +982,16 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
   const finalMoneys: number[] = [];
   const day7Samples: Day7EndgameSample[] = [];
   const baseBoss = getBossDemonDef(demons, chapter.bossId);
+  const persistentHp = opts.persistentHp;
+  const bossEntryHps: number[] = [];
+  let preBossDeaths = 0;
+  let firstLowHpCount = 0;
+  let lossStreakGe3Count = 0;
+  let totalRests = 0;
+  let totalMedicines = 0;
+  let totalWorks = 0;
+  let totalDebtNotesAdded = 0;
+  let totalEndReputation = 0;
 
   for (let seed = 1; seed <= runs; seed += 1) {
     const offerRng = mulberry32(seed * 9973 + 17);
@@ -951,8 +1007,28 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     let pactChoice: PactId | null = null;
     let sideQuestAccepted = false;
     let nightsWon = 0;
+    let currentHp = battleBalance.startingHp;
+    let hadLowEndHp = false;
+    let consecutiveLosses = 0;
+    let maxConsecutiveLosses = 0;
 
     for (let day = 1; day <= CHAPTER_DAYS; day += 1) {
+      // 任务书 19 §9：第 2–7 天早上三选一策略（HP >= 15 打理；HP < 15 且钱 >= 60 买补药 20/+10 且 3 当客；否则休息少 1 当客）
+      let dailyCustomerCount = DAILY_CUSTOMER_COUNT;
+      if (persistentHp && day >= 2) {
+        if (currentHp >= 15) {
+          totalWorks += 1;
+        } else if (money >= Math.max(60, persistentHp.medicinePrice)) {
+          money -= persistentHp.medicinePrice;
+          currentHp = Math.min(battleBalance.startingHp, currentHp + persistentHp.medicineHeal);
+          totalMedicines += 1;
+        } else {
+          currentHp = Math.min(battleBalance.startingHp, currentHp + persistentHp.restHeal);
+          dailyCustomerCount = Math.max(1, DAILY_CUSTOMER_COUNT - persistentHp.restCustomerCost);
+          totalRests += 1;
+        }
+      }
+
       // Day 4: Pact (rotate evenly across all 3 pacts so all branches are tested) + free trim
       if (day === 4) {
         pactChoice = VALID_PACT_IDS[(seed - 1) % VALID_PACT_IDS.length];
@@ -960,18 +1036,20 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         money += delta.moneyDelta;
         reputation += delta.reputationDelta;
 
-        // Free trim: remove 1 zero-damage non-draw/non-renqing card if deck has >= 4 cards
+        // Free trim: remove debt note first if present, else 1 zero-damage non-draw/non-renqing card
         if (deck.length >= 4) {
-          let trimIdx = -1;
-          for (let i = 0; i < deck.length; i += 1) {
-            const c = cardByName.get(deck[i]);
-            if (
-              c &&
-              getCardBaseDamage(c) === 0 &&
-              !c.effects.some((e) => e.type === 'draw' || e.type === 'renqing')
-            ) {
-              trimIdx = i;
-              break;
+          let trimIdx = persistentHp ? deck.indexOf(DEBT_NOTE_CARD_NAME) : -1;
+          if (trimIdx < 0) {
+            for (let i = 0; i < deck.length; i += 1) {
+              const c = cardByName.get(deck[i]);
+              if (
+                c &&
+                getCardBaseDamage(c) === 0 &&
+                !c.effects.some((e) => e.type === 'draw' || e.type === 'renqing')
+              ) {
+                trimIdx = i;
+                break;
+              }
             }
           }
           if (trimIdx >= 0) {
@@ -1006,9 +1084,9 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         }
       }
 
-      // Daytime pawnshop (3 customers, Day 1 damage guarantee + P11 D1 cooldown & D2 prefer unowned)
+      // Daytime pawnshop (3 customers, or 2 when rested; Day 1 damage guarantee + P11 D1 cooldown & D2 prefer unowned)
       const dayRng = mulberry32(deriveDaySeed(seed, day));
-      const dailyCustomers = pickDailyItems(items, day, dayRng, DAILY_CUSTOMER_COUNT, {
+      const dailyCustomers = pickDailyItems(items, day, dayRng, dailyCustomerCount, {
         deck,
         redeemedDayByItem,
         cooldownDays: REDEMPTION_COOLDOWN_DAYS,
@@ -1074,7 +1152,7 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         }
       }
 
-      // Night battle
+      // Night battle (max HP stays battleBalance.startingHp = 30; entry HP is carried over when persistentHp is active)
       const demonId = selectDemonForChapterDay(CHAPTER_ONE_ID, day, seed, chapters);
       const nightRenqing = maxRenqingForLevel(shopLevel);
       const nightBalance: BattleBalanceConfig = {
@@ -1083,9 +1161,14 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         maxRenqing: nightRenqing,
       };
 
-      let battleOptions: CreateBattleOptions | undefined;
+      let battleOptions: CreateBattleOptions | undefined = persistentHp
+        ? { initialPlayerHp: currentHp }
+        : undefined;
       if (day === CHAPTER_DAYS) {
         bossReached += 1;
+        if (persistentHp) {
+          bossEntryHps.push(currentHp);
+        }
         totalBossRenqing += nightRenqing;
         const composed: ComposedBossResult = composeBoss(deck, pactChoice, baseBoss);
         totalBossComponents += composed.componentCount;
@@ -1095,9 +1178,12 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
           pactChoice,
           activeItemIds: composed.activeComponents.map((c) => c.itemId),
         });
-        battleOptions = { demonOverride: composed.bossDef };
+        battleOptions = { ...(battleOptions ?? {}), demonOverride: composed.bossDef };
       } else if (day === 6 && sideQuestAccepted) {
-        battleOptions = { demonHpBonus: chapter.day6SideQuest.nightDemonHpBonus };
+        battleOptions = {
+          ...(battleOptions ?? {}),
+          demonHpBonus: chapter.day6SideQuest.nightDemonHpBonus,
+        };
       }
 
       if (deck.length === 0) {
@@ -1119,8 +1205,27 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         bossInterrupts += 1;
       }
 
+      if (persistentHp && finalBattle.playerHp < 10) {
+        hadLowEndHp = true;
+      }
+
       if (finalBattle.result === 'win') {
         nightsWon += 1;
+        consecutiveLosses = 0;
+        if (persistentHp) {
+          if (day < CHAPTER_DAYS) {
+            currentHp = Math.min(
+              battleBalance.startingHp,
+              finalBattle.playerHp + persistentHp.sleepHeal,
+            );
+            const debtIdx = deck.indexOf(DEBT_NOTE_CARD_NAME);
+            if (debtIdx >= 0) {
+              deck.splice(debtIdx, 1);
+            }
+          } else {
+            currentHp = finalBattle.playerHp;
+          }
+        }
         const reward = resolveWinReward(deck, cards, battleBalance, rewardRng);
         money += reward.money;
         if (reward.cardName) {
@@ -1132,9 +1237,36 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
           bossWins += 1;
           clears += 1;
         }
+      } else if (persistentHp) {
+        consecutiveLosses += 1;
+        if (consecutiveLosses > maxConsecutiveLosses) {
+          maxConsecutiveLosses = consecutiveLosses;
+        }
+        if (day < CHAPTER_DAYS) {
+          // wake-at-5 rule: KO (endHp=0) + sleepHeal(5) => 5 HP next morning, chapter continues
+          currentHp = Math.min(
+            battleBalance.startingHp,
+            Math.max(0, finalBattle.playerHp) + persistentHp.sleepHeal,
+          );
+          const debtCount = deck.filter((n) => n === DEBT_NOTE_CARD_NAME).length;
+          if (debtCount < persistentHp.debtCap) {
+            deck.push(DEBT_NOTE_CARD_NAME);
+            totalDebtNotesAdded += 1;
+          }
+          reputation += NIGHT_LOSS_REP_DELTA;
+        } else {
+          currentHp = finalBattle.playerHp;
+        }
       }
     }
 
+    if (hadLowEndHp) {
+      firstLowHpCount += 1;
+    }
+    if (maxConsecutiveLosses >= 3) {
+      lossStreakGe3Count += 1;
+    }
+    totalEndReputation += reputation;
     totalNightsWon += nightsWon;
     totalFinalMoney += money;
     totalFinalDeckSize += deck.length;
@@ -1157,6 +1289,31 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     avgBossRenqing: bossReached > 0 ? totalBossRenqing / bossReached : 0,
     avgBossComponents: bossReached > 0 ? totalBossComponents / bossReached : 0,
     day7Samples,
+    ...(persistentHp
+      ? {
+          persistentHpMetrics: {
+            config: { ...persistentHp },
+            avgBossEntryHp:
+              bossEntryHps.length > 0
+                ? bossEntryHps.reduce((a, b) => a + b, 0) / bossEntryHps.length
+                : 0,
+            medianBossEntryHp: median(bossEntryHps),
+            bossEntryHpLt10Rate:
+              bossEntryHps.length > 0
+                ? bossEntryHps.filter((hp) => hp < 10).length / bossEntryHps.length
+                : 0,
+            preBossDeathRate: runs > 0 ? preBossDeaths / runs : 0,
+            firstLowHpShare: runs > 0 ? firstLowHpCount / runs : 0,
+            lossStreakGe3Rate: runs > 0 ? lossStreakGe3Count / runs : 0,
+            avgRestsPerRun: runs > 0 ? totalRests / runs : 0,
+            avgMedicinesPerRun: runs > 0 ? totalMedicines / runs : 0,
+            medicineTriggerRate: runs > 0 ? totalMedicines / (runs * (CHAPTER_DAYS - 1)) : 0,
+            avgWorksPerRun: runs > 0 ? totalWorks / runs : 0,
+            avgDebtNotesAddedPerRun: runs > 0 ? totalDebtNotesAdded / runs : 0,
+            avgEndReputation: runs > 0 ? totalEndReputation / runs : 0,
+          },
+        }
+      : {}),
   };
 }
 
@@ -2046,7 +2203,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
   };
   const bossStats = runMonteCarlo(cards, demons, bossBalance, TEST_DECK, 'boss_ch1', runs);
 
-  // Full 7-day Chapter 1 progression simulation (Day 1 -> Night 7 Composed Boss)
+  // Full 7-day Chapter 1 progression simulation (baseline full-HP control for Day 7 Boss samples)
   const chapter1 = simulateChapterOne({
     cards,
     demons,
@@ -2055,6 +2212,18 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     items: ITEMS,
     chapters: CHAPTERS,
     runs,
+  });
+
+  // Task 19: Chapter 1 progression simulation with B+C persistent HP, wake-at-5, debt notes, rep -1 & morning 3-way choice
+  const chapter1PersistentHp = simulateChapterOne({
+    cards,
+    demons,
+    battleBalance,
+    pawnBalance,
+    items: ITEMS,
+    chapters: CHAPTERS,
+    runs,
+    persistentHp: DEFAULT_PERSISTENT_HP_OPTIONS,
   });
 
   // P11 Composed Boss sweep (n = 0..6, credit_stock on/off, single-item sensitivity, redemption path, stamp interrupt study)
@@ -2100,6 +2269,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     economy,
     boss: bossStats,
     chapter1,
+    chapter1PersistentHp,
     bossComposition,
     newPlayerFirstNight,
     thinDeckPath,
@@ -2144,10 +2314,10 @@ export function checkSimGuardrails(report: BalanceSimulationReport): SimGuardrai
     );
   }
 
-  const clearRate = report.chapter1.clearRate;
+  const clearRate = report.chapter1PersistentHp.clearRate;
   if (clearRate < SIM_CHAPTER_CLEAR_RATE_MIN || clearRate > SIM_CHAPTER_CLEAR_RATE_MAX) {
     errors.push(
-      `Chapter 1 7-day clearRate ${(clearRate * 100).toFixed(1)}% out of [${(SIM_CHAPTER_CLEAR_RATE_MIN * 100).toFixed(0)}%, ${(SIM_CHAPTER_CLEAR_RATE_MAX * 100).toFixed(0)}%]`,
+      `Chapter 1 7-day persistent-HP clearRate ${(clearRate * 100).toFixed(1)}% out of [${(SIM_CHAPTER_CLEAR_RATE_MIN * 100).toFixed(0)}%, ${(SIM_CHAPTER_CLEAR_RATE_MAX * 100).toFixed(0)}%]`,
     );
   }
 
@@ -2253,13 +2423,31 @@ export function formatSimReport(report: BalanceSimulationReport): string {
   );
 
   const ch = report.chapter1;
-  lines.push('\n[第 1 章 7 天完整通关模拟 (组合 Boss + D1 冷却 + D2 优先未拥有)]');
+  lines.push('\n[第 1 章 7 天完整通关模拟 (满血对照, 组合 Boss + D1 冷却 + D2 优先未拥有)]');
   lines.push(
     `  7 天通关率: ${(ch.clearRate * 100).toFixed(1)}% (${ch.clears}/${ch.runs}) | Boss战胜率: ${(ch.bossWinRate * 100).toFixed(1)}% | Boss打断率: ${(ch.bossInterruptRate * 100).toFixed(1)}% | 平均组件数: ${ch.avgBossComponents.toFixed(2)}`,
   );
   lines.push(
     `  平均胜夜数: ${ch.avgNightsWon.toFixed(2)}/7 | 第7夜平均人情: ${ch.avgBossRenqing.toFixed(2)} | 终局中位钱: ${ch.medianFinalMoney.toFixed(1)} | 终局均牌数: ${ch.avgFinalDeckSize.toFixed(1)}`,
   );
+
+  const ph = report.chapter1PersistentHp;
+  const phm = ph.persistentHpMetrics;
+  lines.push(`\n[生命结转章节模拟 (B+C 定值档, ${ph.runs} 局)]`);
+  lines.push(
+    `  7 天通关率: ${(ph.clearRate * 100).toFixed(1)}% (${ph.clears}/${ph.runs}) | Boss战胜率: ${(ph.bossWinRate * 100).toFixed(1)}% | 平均胜夜数: ${ph.avgNightsWon.toFixed(2)}/7 | 终局中位钱: ${ph.medianFinalMoney.toFixed(1)} | 终局均牌数: ${ph.avgFinalDeckSize.toFixed(1)} | 终局均口碑: ${(phm?.avgEndReputation ?? 0).toFixed(2)}`,
+  );
+  if (phm) {
+    lines.push(
+      `  进 Boss 血量: 均值/中位 ${phm.avgBossEntryHp.toFixed(2)}/${phm.medianBossEntryHp.toFixed(1)} | <10 血占率: ${(phm.bossEntryHpLt10Rate * 100).toFixed(1)}%`,
+    );
+    lines.push(
+      `  连败指标: Boss 夜前归零率: ${(phm.preBossDeathRate * 100).toFixed(1)}% | 首次局末 <10 血率: ${(phm.firstLowHpShare * 100).toFixed(1)}% | 连输 >=3 夜率: ${(phm.lossStreakGe3Rate * 100).toFixed(1)}%`,
+    );
+    lines.push(
+      `  早上三选一(均/局): 休息 ${phm.avgRestsPerRun.toFixed(2)} 买补药 ${phm.avgMedicinesPerRun.toFixed(2)} (买率 ${(phm.medicineTriggerRate * 100).toFixed(2)}%) 打理 ${phm.avgWorksPerRun.toFixed(2)} | 欠条加(均/局): ${phm.avgDebtNotesAddedPerRun.toFixed(2)}`,
+    );
+  }
 
   const bc = report.bossComposition;
   const avgTierMetrics = (tier: BossTierSummary): { avgRound: number; avgRemainHp: number } => {

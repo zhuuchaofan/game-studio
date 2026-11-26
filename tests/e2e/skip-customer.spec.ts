@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  MORNING_OPTION_BUTTONS,
   PACT_OPTION_BUTTONS,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_SKIP_BUTTON,
@@ -23,7 +24,7 @@ interface SaveSnapshot {
 }
 
 interface PawnshopDebugState {
-  phase: 'title' | 'pact' | 'trim_deck' | 'redemption' | 'negotiating' | 'feedback' | 'side_quest' | 'summary';
+  phase: 'title' | 'morning' | 'pact' | 'trim_deck' | 'redemption' | 'negotiating' | 'feedback' | 'side_quest' | 'summary';
   customerIndex: number;
   money: number;
   reputation: number;
@@ -250,6 +251,8 @@ test('seed=4 Day 4 mid-day skip: skipping unaffordable Bicycle (low 40 > 35 mone
 
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
   // Day 4 starts with P9 Pact -> pick 稳扎稳打 (+1 rep, money stays 35) -> skip free trim -> reject redemption
   await waitForPawnshopPhase(page, 'pact');

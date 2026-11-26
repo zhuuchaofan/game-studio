@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  MORNING_OPTION_BUTTONS,
   REDEMPTION_ACCEPT_BUTTON,
   REDEMPTION_REJECT_BUTTON,
   TITLE_CONTINUE_BUTTON,
@@ -17,7 +18,7 @@ interface SaveSnapshot {
 }
 
 interface PawnshopDebugState {
-  phase: 'title' | 'redemption' | 'negotiating' | 'feedback' | 'summary';
+  phase: 'title' | 'morning' | 'redemption' | 'negotiating' | 'feedback' | 'summary';
   customerIndex: number;
   money: number;
   reputation: number;
@@ -123,6 +124,8 @@ test('C4 redemption accept: removes card from deck, adds dealPrice * 1.2 money, 
 
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
   // Before customer 1, redemption event triggers!
   const redeemState = await waitForPawnshopPhase(page, 'redemption');
@@ -149,6 +152,8 @@ test('C4 redemption accept: removes card from deck, adds dealPrice * 1.2 money, 
   await page.reload();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const reloaded = await waitForPawnshopPhase(page, 'negotiating');
   expect(reloaded.money).toBe(158);
   expect(reloaded.redeemTickets).toBe(0);
@@ -187,6 +192,8 @@ test('C4 redemption reject: preserves card, money, reputation, and redeemTickets
 
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
 
   const redeemState = await waitForPawnshopPhase(page, 'redemption');
   expect(redeemState.redemptionOffer).toEqual({
@@ -211,6 +218,8 @@ test('C4 redemption reject: preserves card, money, reputation, and redeemTickets
   await page.reload();
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleContinue);
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const afterReload = await waitForPawnshopPhase(page, 'negotiating');
   expect(afterReload.day).toBe(2);
   expect(afterReload.redeemTickets).toBe(2);

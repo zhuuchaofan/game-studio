@@ -172,6 +172,10 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
     expect(text).toContain('邮票册打断专项');
     expect(text).toContain('单伤害牌路径模拟');
     expect(text).toContain('实测路线 [余音/倒转/旧书]');
+    expect(text).toContain('生命结转章节模拟');
+    expect(baseline.chapter1PersistentHp.persistentHpMetrics?.preBossDeathRate).toBe(0);
+    expect(baseline.chapter1PersistentHp.clearRate).toBeGreaterThanOrEqual(0.35);
+    expect(baseline.chapter1PersistentHp.clearRate).toBeLessThanOrEqual(0.75);
 
     const parsed = parseSimTuneEnv('{"demonAHp":22,"runs":200}');
     expect(parsed).toEqual({ demonAHp: 22, runs: 200 });

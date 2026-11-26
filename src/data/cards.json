@@ -223,5 +223,15 @@
     ],
     "story": "攒了二十年的邮票册，最后一页还空着",
     "color": "#4E739E"
+  },
+  {
+    "id": "debt_note",
+    "name": "欠条",
+    "item": "欠条",
+    "cost": 0,
+    "unplayable": true,
+    "effects": [],
+    "story": "输夜留下的债，占一张手牌，打不出去",
+    "color": "#B03A2E"
   }
 ]
