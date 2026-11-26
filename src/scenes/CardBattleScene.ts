@@ -214,7 +214,7 @@ export class CardBattleScene extends Phaser.Scene {
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const demonParam = params.get('demon');
     const deckParam = params.get('deck');
-    const playerHpParam = Number(params.get('playerHp'));
+    const playerHpParam = deckParam === 'test' ? Number(params.get('playerHp')) : NaN;
     const resolvedDemonId =
       demonParam && DEMONS.some((d) => d.id === demonParam)
         ? demonParam

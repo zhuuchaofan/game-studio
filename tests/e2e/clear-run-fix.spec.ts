@@ -546,8 +546,8 @@ test('Task 17 §4: normal failure page shows 3 lines for lose_timeout and lose_h
   expect(nextDayState.money).toBe(123);
   expect(nextDayState.deck).toEqual(['余音', '倒转', '旧书']);
 
-  // 2) Normal lose_hp via ?playerHp=2
-  await page.goto('/?seed=7&demon=c&playerHp=2');
+  // 2) Normal lose_hp via ?deck=test&playerHp=2
+  await page.goto('/?seed=7&demon=c&deck=test&playerHp=2');
   await page.evaluate(
     ([saveKey, tutKey]) => {
       localStorage.setItem(tutKey, '1');
@@ -818,6 +818,58 @@ test('Task 17 §8 & multi-viewport: Day 3 summary 7-card truncation stays intact
       return !s.isAnimating && (s.discardCount > 0 || s.renqing !== prevRenqing);
     })
     .toBe(true);
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('Task 17 review regression: ?playerHp=999 without deck=test keeps startingHp at 30 in normal battle', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+
+  await page.goto('/?seed=7&playerHp=999');
+  await page.evaluate(
+    ([saveKey, tutKey]) => {
+      localStorage.setItem(tutKey, '1');
+      localStorage.setItem(
+        saveKey,
+        JSON.stringify({
+          version: 3,
+          day: 3,
+          money: 90,
+          reputation: 5,
+          deck: ['余音', '倒转', '旧书'],
+          shopLevel: 2,
+          redeemTickets: 0,
+          tutorialCompleted: true,
+          chapter: {
+            currentChapter: 1,
+            dayInChapter: 3,
+            chapter1Completed: false,
+            chapter1FailedCount: 0,
+            status: 'in_progress',
+            bossBattleActive: false,
+            pactChoice: null,
+            sideQuestChoice: null,
+            daysCleared: [1, 2],
+            daysVisited: [1, 2],
+            pawnsCollected: 3,
+            demonsDefeated: 2,
+            day4TrimDone: false,
+            day6SideQuestDone: false,
+          },
+        }),
+      );
+    },
+    [SAVE_STORAGE_KEY, TUTORIAL_STORAGE_KEY] as const,
+  );
+  await page.reload();
+
+  const canvas = page.locator('#game-container canvas');
+  await expect(canvas).toBeVisible();
+  const battleState = await enterBattleFromSeededDay(page, canvas);
+  expect(battleState.playerHp).toBe(30);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);

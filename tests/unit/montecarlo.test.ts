@@ -209,7 +209,7 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
       const distNight = report.singleAttackDistribution[i];
       expect(routeNight.night).toBe(i + 1);
       expect(routeNight.winRate).toBeLessThan(0.05);
-      expect(routeNight.avgTotalDamage).toBeLessThan(20);
+      expect(routeNight.avgTotalDamage).toBe(18);
       expect(distNight.runs).toBe(200);
       expect(distNight.wins + distNight.lossesHp + distNight.lossesTimeout).toBe(200);
     }
