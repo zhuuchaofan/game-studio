@@ -255,6 +255,10 @@ export function validateDemons(demons: readonly DemonDef[]): DataValidationResul
       errors.push(`${label}: mechanicLine must be a non-empty string`);
     }
 
+    if (demon.genericVictoryLine !== undefined && !isNonEmptyString(demon.genericVictoryLine)) {
+      errors.push(`${label}: genericVictoryLine must be a non-empty string`);
+    }
+
     if (demon.linkedItemIds !== undefined) {
       if (
         !Array.isArray(demon.linkedItemIds) ||

@@ -131,6 +131,7 @@ export interface DemonDef {
   genericCustomerLink?: string;
   customerTag?: string;
   victoryLine?: string;
+  genericVictoryLine?: string;
   aftermathLine?: string;
   genericAftermathLine?: string;
   composition?: BossCompositionConfig;

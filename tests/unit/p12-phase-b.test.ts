@@ -125,6 +125,14 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
       validateDemons([emptyNarrativeVictory]).errors.some((e) => e.includes('victoryLine must be non-empty')),
     ).toBe(true);
 
+    const emptyGenericVictory: DemonDef = {
+      ...DEMONS[0],
+      genericVictoryLine: '  ',
+    };
+    expect(
+      validateDemons([emptyGenericVictory]).errors.some((e) => e.includes('genericVictoryLine')),
+    ).toBe(true);
+
     expect(validateAllGameData(CARDS, ITEMS, DEMONS, CHAPTERS).errors).toEqual([]);
   });
 
@@ -285,7 +293,11 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
     for (const demon of [demonA, demonB, demonC, demonD]) {
       const res = resolveDemonNarrative(demon, ['钢笔'], [], ITEMS);
       expect(res.isLinked).toBe(false);
-      expect(res.victoryLine).toBe(demon.victoryLine);
+      expect(res.victoryLine).toBe(demon.genericVictoryLine);
+      expect(res.victoryLine).not.toContain('手表');
+      expect(res.victoryLine).not.toContain('新娘');
+      expect(res.victoryLine).not.toContain('旧书');
+      expect(res.victoryLine).not.toContain('自行车');
     }
 
     const bossRes = resolveDemonNarrative(boss, ['倒转'], ['watch'], ITEMS);

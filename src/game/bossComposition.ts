@@ -70,6 +70,7 @@ export const DEFAULT_BOSS_ID = 'boss_ch1';
 export const DEFAULT_BARE_BOSS_INTRO = '柜子空了，债主只身前来';
 export const DEFAULT_COMPOSED_BOSS_INTRO = '柜子里的事，今夜一起上门了';
 export const DEFAULT_GENERIC_CUSTOMER_LINK = '老街上又一桩没了结的事，今夜找上门来';
+export const DEFAULT_GENERIC_VICTORY_LINE = '今晚，药费被扛过去了。老街的账还得一笔笔算。';
 export const DEFAULT_GENERIC_AFTERMATH = '今晚扛过去了，老街的账还得一笔笔算。';
 export const MONTH_END_EPILOGUE_TITLE = '月末结算 · 掌柜回铺对账';
 
@@ -386,7 +387,9 @@ export function resolveDemonNarrative(
     customerLink: isLinked
       ? (itemNarrative?.customerLink ?? demon.customerLink ?? '')
       : (demon.genericCustomerLink ?? DEFAULT_GENERIC_CUSTOMER_LINK),
-    victoryLine: itemNarrative?.victoryLine ?? demon.victoryLine ?? '',
+    victoryLine: isLinked
+      ? (itemNarrative?.victoryLine ?? demon.victoryLine ?? '')
+      : (demon.genericVictoryLine ?? DEFAULT_GENERIC_VICTORY_LINE),
     aftermathLine: isLinked
       ? (itemNarrative?.aftermathLine ?? demon.aftermathLine ?? '')
       : (demon.genericAftermathLine ?? DEFAULT_GENERIC_AFTERMATH),

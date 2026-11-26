@@ -17,6 +17,7 @@
     "genericCustomerLink": "老街上又一桩没了结的事，今夜找上门来",
     "customerTag": "旧手表·父亲",
     "victoryLine": "今晚，药费被扛过去了。当了手表的父亲，能睡个安稳觉了。",
+    "genericVictoryLine": "今晚，药费被扛过去了。老街的账还得一笔笔算。",
     "aftermathLine": "白天手表还在柜台，下月账单还在。",
     "genericAftermathLine": "今晚扛过去了，老街的账还得一笔笔算。",
     "actions": [
@@ -53,6 +54,7 @@
     "genericCustomerLink": "老街上又一桩没了结的事，今夜找上门来",
     "customerTag": "婚戒·新娘",
     "victoryLine": "今晚，车票被扛过去了。当了婚戒的新娘，离回家又近了一步。",
+    "genericVictoryLine": "今晚，车票被扛过去了。远路还得一步步走。",
     "aftermathLine": "白天婚戒仍在铺里，远路还得自己走。",
     "genericAftermathLine": "今晚扛过去了，远路还得一步步走。",
     "actions": [
@@ -89,6 +91,7 @@
     "genericCustomerLink": "老街上又一桩没了结的事，今夜找上门来",
     "customerTag": "旧书·学生",
     "victoryLine": "今晚，房租被扛过去了。当了旧书的学生，不用再为下个月发愁了。",
+    "genericVictoryLine": "今晚，房租被扛过去了。街坊的难处还在门外。",
     "aftermathLine": "白天旧书仍堆在柜后，下月房租还在。",
     "genericAftermathLine": "今晚扛过去了，街坊的难处还在门外。",
     "actions": [
@@ -120,6 +123,7 @@
     "genericCustomerLink": "老街上又一桩没了结的事，今夜找上门来",
     "customerTag": "自行车·父亲",
     "victoryLine": "今晚，学费被扛过去了。骑永久自行车送儿子的父亲，值了。",
+    "genericVictoryLine": "今晚，学费被扛过去了。日子的担子还得接着扛。",
     "aftermathLine": "白天老车仍停在铺里，学费单子还在。",
     "genericAftermathLine": "今晚扛过去了，日子的担子还得接着扛。",
     "actions": [

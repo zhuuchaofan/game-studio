@@ -713,3 +713,47 @@ test('P12 Phase B fix: non-primary linked items (harmonica / medicine_box) show 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+test('P12 Phase B fix: unlinked demon victory falls back to generic victoryLine and aftermathLine', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+  const canvas = page.locator('#game-container canvas');
+
+  await seedAndStartSavedDay(
+    page,
+    canvas,
+    '/?seed=7',
+    buildSeededSave({
+      day: 2,
+      deck: ['钢笔', '秤砣', '秤砣', '秤砣', '秤砣', '秤砣'],
+      pawnedItemIds: [],
+    }),
+  );
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+  for (let i = 0; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  }
+  await waitForPawnshopPhase(page, 'summary');
+  await clickLogical(page, canvas, PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON);
+
+  const bStart = await waitForBattleReady(page, 'play');
+  expect(bStart.demonId).toBe('b');
+  expect(bStart.demonIntroBannerText).toContain('老街上又一桩没了结的事');
+  expect(bStart.demonIntroBannerText).not.toContain('婚戒');
+  expect(bStart.demonIntroBannerText).not.toContain('新娘');
+  await dismissBattleBannerIfPresent(page, canvas);
+
+  const bResult = await winBattleWithCard(page, canvas, '秤砣');
+  expect(bResult.result).toBe('win');
+  expect(bResult.victoryLine).toBe('今晚，车票被扛过去了。远路还得一步步走。');
+  expect(bResult.victoryLine).not.toContain('手表');
+  expect(bResult.victoryLine).not.toContain('新娘');
+  expect(bResult.victoryLine).not.toContain('旧书');
+  expect(bResult.victoryLine).not.toContain('自行车');
+  expect(bResult.aftermathLine).toBe('今晚扛过去了，远路还得一步步走。');
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
