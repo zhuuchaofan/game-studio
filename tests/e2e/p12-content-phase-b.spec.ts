@@ -67,6 +67,7 @@ interface BattleDebugState {
   demonObsessionActive?: boolean;
   demonObsessionLabel?: string | null;
   demonCustomerLink?: string;
+  victoryLine?: string | null;
   aftermathLine?: string | null;
   demonIntroBannerText?: string;
   introBannerVisible?: boolean;
@@ -671,6 +672,8 @@ test('P12 Phase B fix: non-primary linked items (harmonica / medicine_box) show 
 
   const bResult = await winBattleWithCard(page, canvas, '秤砣');
   expect(bResult.result).toBe('win');
+  expect(bResult.victoryLine).toBe('今晚，车票被扛过去了。当了口琴的工人，离回家又近了一步。');
+  expect(bResult.victoryLine).not.toContain('新娘');
   expect(bResult.aftermathLine).toBe('白天口琴仍在铺里，远路还得自己走。');
   expect(bResult.aftermathLine).not.toContain('婚戒');
 
@@ -702,6 +705,8 @@ test('P12 Phase B fix: non-primary linked items (harmonica / medicine_box) show 
 
   const aResult = await winBattleWithCard(page, canvas, '秤砣');
   expect(aResult.result).toBe('win');
+  expect(aResult.victoryLine).toBe('今晚，药费被扛过去了。当了药箱的老头，能睡个安稳觉了。');
+  expect(aResult.victoryLine).not.toContain('手表');
   expect(aResult.aftermathLine).toBe('白天药箱还在柜里，下月账单还在。');
   expect(aResult.aftermathLine).not.toContain('手表');
 

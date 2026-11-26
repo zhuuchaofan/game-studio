@@ -90,6 +90,7 @@ export interface DemonObsessionConfig {
 
 export interface DemonItemNarrative {
   customerLink: string;
+  victoryLine: string;
   aftermathLine: string;
 }
 

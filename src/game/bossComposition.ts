@@ -40,6 +40,7 @@ export interface DemonNarrativeResolution {
   isLinked: boolean;
   linkedItemId: string | null;
   customerLink: string;
+  victoryLine: string;
   aftermathLine: string;
 }
 
@@ -366,6 +367,7 @@ export function resolveDemonNarrative(
       isLinked: false,
       linkedItemId: null,
       customerLink: demon.customerLink ?? '',
+      victoryLine: demon.victoryLine ?? '',
       aftermathLine: demon.aftermathLine ?? '',
     };
   }
@@ -384,6 +386,7 @@ export function resolveDemonNarrative(
     customerLink: isLinked
       ? (itemNarrative?.customerLink ?? demon.customerLink ?? '')
       : (demon.genericCustomerLink ?? DEFAULT_GENERIC_CUSTOMER_LINK),
+    victoryLine: itemNarrative?.victoryLine ?? demon.victoryLine ?? '',
     aftermathLine: isLinked
       ? (itemNarrative?.aftermathLine ?? demon.aftermathLine ?? '')
       : (demon.genericAftermathLine ?? DEFAULT_GENERIC_AFTERMATH),

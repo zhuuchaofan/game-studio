@@ -284,10 +284,17 @@ export function validateDemons(demons: readonly DemonDef[]): DataValidationResul
             errors.push(`${label}.linkedItemNarratives[${itemId}]: entry must be an object`);
             continue;
           }
-          const typedEntry = entry as Partial<Record<'customerLink' | 'aftermathLine', unknown>>;
+          const typedEntry = entry as Partial<
+            Record<'customerLink' | 'aftermathLine' | 'victoryLine', unknown>
+          >;
           if (!isNonEmptyString(typedEntry.customerLink)) {
             errors.push(
               `${label}.linkedItemNarratives[${itemId}]: customerLink must be non-empty string`,
+            );
+          }
+          if (!isNonEmptyString(typedEntry.victoryLine)) {
+            errors.push(
+              `${label}.linkedItemNarratives[${itemId}]: victoryLine must be non-empty string`,
             );
           }
           if (!isNonEmptyString(typedEntry.aftermathLine)) {

@@ -78,7 +78,7 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
       ...DEMONS[1],
       linkedItemNarratives: {
         ...(DEMONS[1].linkedItemNarratives ?? {}),
-        unknown_item: { customerLink: '测试', aftermathLine: '测试' },
+        unknown_item: { customerLink: '测试', victoryLine: '测试', aftermathLine: '测试' },
       },
     };
     expect(
@@ -88,7 +88,7 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
     const emptyNarrativeLink: DemonDef = {
       ...DEMONS[1],
       linkedItemNarratives: {
-        harmonica: { customerLink: '', aftermathLine: '测试' },
+        harmonica: { customerLink: '', victoryLine: '测试', aftermathLine: '测试' },
       },
     };
     expect(
@@ -98,11 +98,31 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
     const emptyNarrativeAftermath: DemonDef = {
       ...DEMONS[1],
       linkedItemNarratives: {
-        harmonica: { customerLink: '测试', aftermathLine: '  ' },
+        harmonica: { customerLink: '测试', victoryLine: '测试', aftermathLine: '  ' },
       },
     };
     expect(
       validateDemons([emptyNarrativeAftermath]).errors.some((e) => e.includes('aftermathLine must be non-empty')),
+    ).toBe(true);
+
+    const missingNarrativeVictory: DemonDef = {
+      ...DEMONS[1],
+      linkedItemNarratives: {
+        harmonica: { customerLink: '测试', aftermathLine: '测试' } as never,
+      },
+    };
+    expect(
+      validateDemons([missingNarrativeVictory]).errors.some((e) => e.includes('victoryLine must be non-empty')),
+    ).toBe(true);
+
+    const emptyNarrativeVictory: DemonDef = {
+      ...DEMONS[1],
+      linkedItemNarratives: {
+        harmonica: { customerLink: '测试', victoryLine: '  ', aftermathLine: '测试' },
+      },
+    };
+    expect(
+      validateDemons([emptyNarrativeVictory]).errors.some((e) => e.includes('victoryLine must be non-empty')),
     ).toBe(true);
 
     expect(validateAllGameData(CARDS, ITEMS, DEMONS, CHAPTERS).errors).toEqual([]);
@@ -177,11 +197,12 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
     expect(narrC.linkedItemId).toBe('tin_trunk');
   });
 
-  it('Block 2 分件叙事：6 件非首选关联牌返回各自两行文案，4 件首选牌仍返回心魔级文案', () => {
+  it('Block 2 分件叙事：6 件非首选关联牌返回各自三行文案，4 件首选牌、未关联与 Boss 回退心魔级文案', () => {
     const demonA = DEMONS.find((d) => d.id === 'a')!;
     const demonB = DEMONS.find((d) => d.id === 'b')!;
     const demonC = DEMONS.find((d) => d.id === 'c')!;
     const demonD = DEMONS.find((d) => d.id === 'd')!;
+    const boss = DEMONS.find((d) => d.isBoss)!;
 
     const nonPrimaryCases = [
       {
@@ -189,6 +210,7 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
         itemId: 'medicine_box',
         cardName: '药箱',
         expectedLink: '白天当了药箱的老头的难处',
+        expectedVictory: '今晚，药费被扛过去了。当了药箱的老头，能睡个安稳觉了。',
         expectedAftermath: '白天药箱还在柜里，下月账单还在。',
       },
       {
@@ -196,6 +218,7 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
         itemId: 'harmonica',
         cardName: '口琴',
         expectedLink: '白天当了口琴的工人的难处',
+        expectedVictory: '今晚，车票被扛过去了。当了口琴的工人，离回家又近了一步。',
         expectedAftermath: '白天口琴仍在铺里，远路还得自己走。',
       },
       {
@@ -203,6 +226,7 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
         itemId: 'gold_watch',
         cardName: '金表',
         expectedLink: '白天当了金表的人的难处',
+        expectedVictory: '今晚，车票被扛过去了。当了金表的人，离回家又近了一步。',
         expectedAftermath: '白天金表仍在铺里，远路还得自己走。',
       },
       {
@@ -210,6 +234,7 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
         itemId: 'tin_trunk',
         cardName: '顶住',
         expectedLink: '白天当了铁皮箱的打工人的难处',
+        expectedVictory: '今晚，房租被扛过去了。当了铁皮箱的打工人，不用再为下个月发愁了。',
         expectedAftermath: '白天铁皮箱仍堆在柜后，下月房租还在。',
       },
       {
@@ -217,6 +242,7 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
         itemId: 'ledger',
         cardName: '账本',
         expectedLink: '白天当了账本的人的难处',
+        expectedVictory: '今晚，房租被扛过去了。当了账本的人，不用再为下个月发愁了。',
         expectedAftermath: '白天账本仍堆在柜后，下月房租还在。',
       },
       {
@@ -224,6 +250,7 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
         itemId: 'cloth_ticket',
         cardName: '布票',
         expectedLink: '白天当了布票的母亲的难处',
+        expectedVictory: '今晚，学费被扛过去了。当了布票的母亲，值了。',
         expectedAftermath: '白天布票仍在铺里，学费单子还在。',
       },
     ];
@@ -233,8 +260,10 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
       expect(res.isLinked).toBe(true);
       expect(res.linkedItemId).toBe(c.itemId);
       expect(res.customerLink).toBe(c.expectedLink);
+      expect(res.victoryLine).toBe(c.expectedVictory);
       expect(res.aftermathLine).toBe(c.expectedAftermath);
       expect(res.customerLink).not.toBe(c.demon.customerLink);
+      expect(res.victoryLine).not.toBe(c.demon.victoryLine);
     }
 
     const primaryCases = [
@@ -249,8 +278,20 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
       expect(res.isLinked).toBe(true);
       expect(res.linkedItemId).toBe(c.itemId);
       expect(res.customerLink).toBe(c.demon.customerLink);
+      expect(res.victoryLine).toBe(c.demon.victoryLine);
       expect(res.aftermathLine).toBe(c.demon.aftermathLine);
     }
+
+    for (const demon of [demonA, demonB, demonC, demonD]) {
+      const res = resolveDemonNarrative(demon, ['钢笔'], [], ITEMS);
+      expect(res.isLinked).toBe(false);
+      expect(res.victoryLine).toBe(demon.victoryLine);
+    }
+
+    const bossRes = resolveDemonNarrative(boss, ['倒转'], ['watch'], ITEMS);
+    expect(bossRes.isLinked).toBe(false);
+    expect(bossRes.linkedItemId).toBeNull();
+    expect(bossRes.victoryLine).toBe(boss.victoryLine);
   });
 
   it('§3.2 四心魔各自机制：A 3/3/5、B R1/R2 各 1 盾、C 3/5/7、D R1/R2 各 2 盾（含 R2 盾刷新）', () => {
