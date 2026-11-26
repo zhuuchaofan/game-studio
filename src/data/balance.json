@@ -1,6 +1,6 @@
 {
   "_note": "P1 占位数值（开局钱 200 等），待制作人评审后调整；调数值只改本 JSON。",
-  "startingMoney": 200,
+  "startingMoney": 240,
   "startingReputation": 0,
   "startingHp": 30,
   "startingRenqing": 3,

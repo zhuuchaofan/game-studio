@@ -136,6 +136,8 @@ export interface PawnshopDebugSnapshot {
   canSkip?: boolean;
   /** 最近一次界面轻提示文案（如钱不够，供 E2E 断言用）。 */
   lastToast?: string | null;
+  lastGlossaryTip?: string | null;
+  glossaryBannerVisible?: boolean;
   /** 当前赎当事件信息（仅 redemption 阶段由场景钩子提供）。 */
   redemptionOffer?: {
     itemId: string;
@@ -1135,6 +1137,11 @@ export function wrapCjkText(text: string, maxCharsPerLine: number): string {
   }
 
   return lines.join('\n');
+}
+
+/** 结算牌组列表 >6 张时只列前 5 名，第 6 格写余数（任务书 18 §5；「共」不在字库，禁用）。 */
+export function formatDeckRemainder(deckLength: number): string {
+  return `等${deckLength - 5}张`;
 }
 
 export function formatDay3Rumor(text: string): string {

@@ -119,14 +119,26 @@ test('seed=4 Day 1 deadlock: when all 3 tiers are unaffordable on Ring, skip but
   const { pageErrors, failedRequests } = trackErrors(page);
 
   await page.goto('/?seed=4');
-  await page.evaluate((key) => localStorage.removeItem(key), SAVE_STORAGE_KEY);
+  // 新局开局钱已升到 240（任务书 18），死角需要 200 的紧手状态，故预置 Day 1 存档
+  await page.evaluate((key) => {
+    const day1Save: SaveSnapshot = {
+      version: 1,
+      day: 1,
+      money: 200,
+      reputation: 0,
+      deck: [],
+      shopLevel: 1,
+      redeemTickets: 0,
+    };
+    localStorage.setItem(key, JSON.stringify(day1Save));
+  }, SAVE_STORAGE_KEY);
   await page.reload();
 
   const canvas = page.locator('#game-container canvas');
   await expect(canvas).toBeVisible();
 
   await waitForPawnshopPhase(page, 'title');
-  await clickLogical(page, canvas, BUTTONS.titleStart);
+  await clickLogical(page, canvas, BUTTONS.titleContinue);
 
   // Day 1 with seed=4: watch (60 high) -> bicycle (120 high) -> ring (30/60/90)
   const c1 = await waitForPawnshopPhase(page, 'negotiating');

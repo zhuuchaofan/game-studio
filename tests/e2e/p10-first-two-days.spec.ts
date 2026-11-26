@@ -278,7 +278,7 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
   await clickLogical(page, canvas, getTutorialBubbleLayout('offer_tiers').continueClickPoint);
   await expect.poll(async () => (await getPawnshopState(page)).currentStep).toBeNull();
 
-  // Buy all 3 items at High on seed=7 (erhu 75 + watch 60 + old_book 30 = 165 -> 35 yuan left!)
+  // Buy all 3 items at High on seed=7 (erhu 75 + watch 60 + old_book 30 = 165 -> 75 yuan left from 240!)
   await clickLogical(page, canvas, BUTTONS.tierHigh);
   await waitForPawnshopPhase(page, 'feedback');
   await clickLogical(page, canvas, getTutorialBubbleLayout('deal_card').continueClickPoint);
@@ -293,7 +293,7 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
   }
 
   const summary = await waitForPawnshopPhase(page, 'summary');
-  expect(summary.money).toBe(35);
+  expect(summary.money).toBe(75);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
 
   // Dismiss Night 1 tutorial bubbles (4/6 & 5/6) — Q4: intro banner waits until bubbles finish
@@ -316,18 +316,18 @@ test('P10 E2E 1: Night 1 tutorial shows 20HP/3-round goal & damage-card route be
   expect(loseResult.tutorialCopy).toContain('头一天没打下来');
   expect(loseResult.tutorialCopy).not.toContain('过关');
 
-  // Dismiss final bubble and advance to Day 2 -> recovery guarantees affordable damage item (erhu low=25 <= 35!)
+  // Dismiss final bubble and advance to Day 2 -> recovery guarantees affordable damage item (bicycle low=40 <= 75!)
   await clickLogical(page, canvas, getTutorialBubbleLayout('settlement').continueClickPoint);
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
 
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2.day).toBe(2);
-  expect(day2.money).toBe(35);
-  expect(day2.itemsOrder).toContain('erhu');
+  expect(day2.money).toBe(75);
+  expect(day2.itemsOrder).toContain('bicycle');
 
-  // Advance until erhu is on screen and verify low tier (25 yuan <= 35 yuan) is affordable!
+  // Advance until bicycle is on screen and verify low tier (40 yuan <= 75 yuan) is affordable!
   let current = day2;
-  while (current.itemsOrder && current.itemsOrder[current.customerIndex] !== 'erhu') {
+  while (current.itemsOrder && current.itemsOrder[current.customerIndex] !== 'bicycle') {
     await clickLogical(page, canvas, BUTTONS.skipCustomer);
     current = await waitForPawnshopPhase(page, 'negotiating');
   }
@@ -359,7 +359,7 @@ test('P10 E2E 2: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleStart);
 
-  // Skip watch, skip bicycle, buy ring at High (90 yuan -> money 110, rep +1, deck ['守诺'])
+  // Skip watch, skip bicycle, buy ring at High (90 yuan -> money 150, rep +1, deck ['守诺'])
   await waitForPawnshopPhase(page, 'negotiating');
   await clickLogical(page, canvas, BUTTONS.skipCustomer);
   await waitForPawnshopPhase(page, 'negotiating');
@@ -371,7 +371,7 @@ test('P10 E2E 2: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
 
   const summary = await waitForPawnshopPhase(page, 'summary');
   expect(summary.deck).toEqual(['守诺']);
-  expect(summary.money).toBe(110);
+  expect(summary.money).toBe(150);
   expect(summary.reputation).toBe(1);
 
   // Lose Night 1 (0 redeemTickets!) -> Bride scripted event STILL triggers on Day 2!
@@ -393,10 +393,10 @@ test('P10 E2E 2: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
     isBrideScripted: true,
   });
 
-  // Accept Bride redemption -> 守诺 leaves deck, money 110 + 108 = 218, rep 1 -> 2, tickets still 0
+  // Accept Bride redemption -> 守诺 leaves deck, money 150 + 108 = 258, rep 1 -> 2, tickets still 0
   await clickLogical(page, canvas, BUTTONS.redeemAccept);
   const day2Neg = await waitForPawnshopPhase(page, 'negotiating');
-  expect(day2Neg.money).toBe(218);
+  expect(day2Neg.money).toBe(258);
   expect(day2Neg.reputation).toBe(2);
   expect(day2Neg.redeemTickets).toBe(0);
   expect(day2Neg.deck).toEqual([]);
@@ -408,7 +408,7 @@ test('P10 E2E 2: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   await clickLogical(page, canvas, BUTTONS.titleContinue);
   const afterReload = await waitForPawnshopPhase(page, 'negotiating');
   expect(afterReload.day).toBe(2);
-  expect(afterReload.money).toBe(218);
+  expect(afterReload.money).toBe(258);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -436,7 +436,7 @@ test('P10 E2E 3: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleStart);
 
-  // Skip watch & bicycle, buy ring at High (90 -> money 110, rep +1, deck ['守诺'])
+  // Skip watch & bicycle, buy ring at High (90 -> money 150, rep +1, deck ['守诺'])
   await waitForPawnshopPhase(page, 'negotiating');
   await clickLogical(page, canvas, BUTTONS.skipCustomer);
   await waitForPawnshopPhase(page, 'negotiating');
@@ -456,11 +456,11 @@ test('P10 E2E 3: Day 1 pawning 婚戒 triggers Day 2 Bride scripted redemption (
   expect(brideState.redemptionOffer?.isBrideScripted).toBe(true);
   expect(brideState.redemptionOffer?.cardName).toBe('守诺');
 
-  // Reject Bride redemption -> 守诺 kept, money unchanged (110), rep 1 -> 0 (-1!)
+  // Reject Bride redemption -> 守诺 kept, money unchanged (150), rep 1 -> 0 (-1!)
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const day2Neg = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2Neg.deck).toEqual(['守诺']);
-  expect(day2Neg.money).toBe(110);
+  expect(day2Neg.money).toBe(150);
   expect(day2Neg.reputation).toBe(0);
   expect(day2Neg.redeemTickets).toBe(0);
 

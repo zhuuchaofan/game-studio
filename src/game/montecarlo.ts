@@ -262,6 +262,18 @@ export interface ThinDeckPathReport {
   singleAttackDistribution: ThinDeckNightStats[];
 }
 
+export interface NightOneMoneyRow {
+  startingMoney: number;
+  runs: number;
+  wins: number;
+  winRate: number;
+  singleAttackRuns: number;
+  singleAttackWinRate: number;
+  doubleAttackRuns: number;
+  doubleAttackWinRate: number;
+  buyAll3Rate: number;
+}
+
 export interface BalanceSimulationReport {
   overrides: SimTuneOverrides;
   demons: MonteCarloStats[];
@@ -271,6 +283,7 @@ export interface BalanceSimulationReport {
   bossComposition: BossCompositionScanReport;
   newPlayerFirstNight: NewPlayerFirstNightStats;
   thinDeckPath: ThinDeckPathReport;
+  nightOneMoney: NightOneMoneyRow[];
 }
 
 export interface SimGuardrailCheckResult {
@@ -1700,6 +1713,120 @@ function simulateBattleTrackingDamage(
 }
 
 /**
+ * Task 18 §9: Measurement-only Night-1 win rate vs starting money (money-limited Day-1 purchases,
+ * same buy policy as simulateChapterOne day 1, same battle policy as simulateNewPlayerFirstNight).
+ * Does not enter pass/fail guardrails.
+ */
+export function simulateNightOneMoneyCurve(
+  moneyLevels: readonly number[],
+  opts: NewPlayerFirstNightSimOptions = {},
+): NightOneMoneyRow[] {
+  const cards = opts.cards ?? (cardsJson as CardDef[]);
+  const demons = opts.demons ?? (demonsJson as DemonDef[]);
+  const battleBalance: BattleBalanceConfig = opts.battleBalance ?? {
+    startingHp: balanceJson.startingHp,
+    startingRenqing: balanceJson.startingRenqing,
+    maxRenqing: balanceJson.maxRenqing,
+    drawFirst: balanceJson.drawFirst,
+    drawPerRound: balanceJson.drawPerRound,
+    winRewardMoney: balanceJson.winRewardMoney,
+  };
+  const items = opts.items ?? ITEMS;
+  const runs = opts.runs ?? 1000;
+  const cardByName = new Map<string, CardDef>();
+  for (const card of cards) {
+    cardByName.set(card.name, card);
+  }
+  const skipRepDelta = getSkipCustomerReputationDelta(null, CHAPTER_ONE_ID, CHAPTERS);
+
+  return moneyLevels.map((startingMoney) => {
+    let wins = 0;
+    let singleRuns = 0;
+    let singleWins = 0;
+    let doubleRuns = 0;
+    let doubleWins = 0;
+    let buyAll3 = 0;
+
+    for (let seed = 1; seed <= runs; seed += 1) {
+      const dayRng = mulberry32(deriveDaySeed(seed, 1));
+      const dailyItems = pickDailyItems(items, 1, dayRng, DAILY_CUSTOMER_COUNT, {
+        deck: [],
+        redeemedDayByItem: {},
+        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
+      });
+
+      let money = startingMoney;
+      let reputation = BALANCE.startingReputation;
+      const deck: string[] = [];
+      const offerRng = mulberry32(seed * 9973 + 17);
+      for (const item of dailyItems) {
+        const highPrice = quotePrice(item.trueValue, 'high', BALANCE);
+        const fairPrice = quotePrice(item.trueValue, 'fair', BALANCE);
+        const lowPrice = quotePrice(item.trueValue, 'low', BALANCE);
+        const itemCard = cardByName.get(item.cardName);
+        const isDamageItem = getCardBaseDamage(itemCard) > 0;
+        const isDrawOrRenqing = Boolean(
+          itemCard?.effects.some((e) => e.type === 'draw' || e.type === 'renqing'),
+        );
+        let chosenTier: 'high' | 'fair' | 'low' | null = null;
+        if (isDamageItem) {
+          if (money >= highPrice && deck.length < 4) {
+            chosenTier = 'high';
+          } else if (money >= fairPrice) {
+            chosenTier = 'fair';
+          } else if (money >= lowPrice) {
+            chosenTier = 'low';
+          }
+        } else if (isDrawOrRenqing) {
+          if (money >= fairPrice && deck.length < 8) {
+            chosenTier = 'fair';
+          } else if (money >= lowPrice && deck.length < 10) {
+            chosenTier = 'low';
+          }
+        } else if (deck.length < 4 && money >= lowPrice) {
+          chosenTier = 'low';
+        }
+        if (chosenTier === null) {
+          reputation += skipRepDelta;
+          continue;
+        }
+        const rate = getEffectiveAcceptRate(chosenTier, reputation, BALANCE, item.temperament);
+        if (resolveOffer(rate, offerRng)) {
+          money -= quotePrice(item.trueValue, chosenTier, BALANCE);
+          reputation += getReputationDelta(chosenTier, true, item.temperament, BALANCE);
+          deck.push(item.cardName);
+        }
+      }
+
+      if (deck.length >= 3) buyAll3 += 1;
+      const attackCount = deck.filter((name) => isAttackCard(cardByName.get(name))).length;
+      if (attackCount === 1) singleRuns += 1;
+      else if (attackCount >= 2) doubleRuns += 1;
+      if (deck.length === 0) continue;
+
+      const finalState = simulateChapterBattle(cards, demons, battleBalance, deck, 'a', seed * 1009 + 37);
+      if (finalState.result === 'win') {
+        wins += 1;
+        if (attackCount === 1) singleWins += 1;
+        else if (attackCount >= 2) doubleWins += 1;
+      }
+    }
+
+    return {
+      startingMoney,
+      runs,
+      wins,
+      winRate: runs > 0 ? wins / runs : 0,
+      singleAttackRuns: singleRuns,
+      singleAttackWinRate: singleRuns > 0 ? singleWins / singleRuns : 0,
+      doubleAttackRuns: doubleRuns,
+      doubleAttackWinRate: doubleRuns > 0 ? doubleWins / doubleRuns : 0,
+      buyAll3Rate: runs > 0 ? buyAll3 / runs : 0,
+    };
+  });
+}
+
+/**
  * Task 17 §9: Measurement-only thin-deck path simulation (Day 1 single-attack decks vs Nights 1-3).
  * Does not enter pass/fail guardrails.
  */
@@ -1958,6 +2085,15 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     runs,
   });
 
+  // Task 18 §9 Night-1 win rate vs starting money (only output metrics, no guardrails)
+  const nightOneMoney = simulateNightOneMoneyCurve([200, pawnBalance.startingMoney], {
+    cards,
+    demons,
+    battleBalance,
+    items: ITEMS,
+    runs,
+  });
+
   return {
     overrides,
     demons: demonStats,
@@ -1967,6 +2103,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     bossComposition,
     newPlayerFirstNight,
     thinDeckPath,
+    nightOneMoney,
   };
 }
 
@@ -2207,6 +2344,13 @@ export function formatSimReport(report: BalanceSimulationReport): string {
   for (const n of td.singleAttackDistribution) {
     lines.push(
       `    第${n.night}夜 ${n.demonName}(${n.demonHp}血): 胜率 ${(n.winRate * 100).toFixed(1)}% (${n.wins}/${n.runs}) | 期望总伤 ${n.avgTotalDamage.toFixed(1)} | 血归零 ${n.lossesHp} / 超时 ${n.lossesTimeout}`,
+    );
+  }
+
+  lines.push('\n[首夜胜率限钱测量 (第1天按钱买旧物, 对阵心魔 A 药费, 仅测量)]');
+  for (const r of report.nightOneMoney) {
+    lines.push(
+      `  起始钱 ${r.startingMoney}: 首夜胜率 ${(r.winRate * 100).toFixed(1)}% (${r.wins}/${r.runs}) | 单攻 ${(r.singleAttackWinRate * 100).toFixed(1)}% (${r.singleAttackRuns}) | 双攻 ${(r.doubleAttackWinRate * 100).toFixed(1)}% (${r.doubleAttackRuns}) | 买齐3件局数占 ${(r.buyAll3Rate * 100).toFixed(1)}%`,
     );
   }
 

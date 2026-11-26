@@ -50,6 +50,13 @@ import {
   BATTLE_EMPTY_RETURN_BUTTON,
   BATTLE_END_TURN_BUTTON,
   computeHandCardPose,
+  computeHandMaxScroll,
+  HAND_CLIP_RECT,
+  HAND_DRAG_THRESHOLD_PX,
+  HAND_SCROLL_ARROW_HEIGHT,
+  HAND_SCROLL_ARROW_WIDTH,
+  HAND_SCROLL_ARROW_Y,
+  HAND_SLOT_STEP,
   DEMON_HP_BAR_RECT,
   DEMON_INTRO_BANNER_RECT,
 } from '../game/layout';
@@ -80,8 +87,6 @@ interface HandSlotView {
   card: CardDef;
   x: number;
   y: number;
-  rotation: number;
-  compactText: boolean;
   container: Phaser.GameObjects.Container;
   frame: Phaser.GameObjects.Rectangle;
   artImage: Phaser.GameObjects.Image;
@@ -153,6 +158,9 @@ export class CardBattleScene extends Phaser.Scene {
   private detailMode: 'effect' | 'story' = 'effect';
 
   private handSlots: HandSlotView[] = [];
+  private handScroll = 0;
+  private handDragged = false;
+  private handArrows: Phaser.GameObjects.Container[] = [];
   private playQueue: number[] = [];
   private inFlightSlotIndex: number | null = null;
   private pendingIntroBanner = false;
@@ -306,19 +314,26 @@ export class CardBattleScene extends Phaser.Scene {
         lastFloatSpawns: [...this.lastFloatSpawns],
         handSlotXs: this.state.hand.map(
           (_, idx) =>
-            this.handSlots.find((s) => !s.consumed && s.currentHandIndex === idx)?.x ??
-            computeHandCardPose(idx, this.state.hand.length).x,
+            (this.handSlots.find((s) => !s.consumed && s.currentHandIndex === idx)?.x ??
+              computeHandCardPose(idx, this.state.hand.length).x) - this.handScroll,
         ),
         handSlotYs: this.state.hand.map(
           (_, idx) =>
             this.handSlots.find((s) => !s.consumed && s.currentHandIndex === idx)?.y ??
             computeHandCardPose(idx, this.state.hand.length).y,
         ),
-        handSlotRotations: this.state.hand.map(
-          (_, idx) =>
-            this.handSlots.find((s) => !s.consumed && s.currentHandIndex === idx)?.rotation ??
-            computeHandCardPose(idx, this.state.hand.length).rotation,
-        ),
+        handSlotRenderProps: this.state.hand.map((_, idx) => {
+          const slot = this.handSlots.find((s) => !s.consumed && s.currentHandIndex === idx);
+          return slot
+            ? {
+                rotation: slot.container.rotation,
+                nameFontSize: slot.nameText.fontSize,
+                effectFontSize: slot.effectText.fontSize,
+              }
+            : null;
+        }),
+        handScroll: this.handScroll,
+        handScrollMax: this.handScrollMax(),
         detailMode: this.detailMode,
         queuedCount: this.playQueue.length,
         lastGlossaryTip: this.lastGlossaryTip,
@@ -343,6 +358,13 @@ export class CardBattleScene extends Phaser.Scene {
     this.detailContentLayer = this.add.container(0, 0);
     this.detailLayer.add(this.detailContentLayer);
     this.handLayer = this.add.container(0, 0);
+    this.handLayer.setMask(
+      this.make
+        .graphics({}, false)
+        .fillRect(HAND_CLIP_RECT.x, HAND_CLIP_RECT.y, HAND_CLIP_RECT.width, HAND_CLIP_RECT.height)
+        .createGeometryMask(),
+    );
+    this.createHandScrollInput();
     this.fxLayer = this.add.container(0, 0).setDepth(50);
 
     this.createActionStrip();
@@ -1025,27 +1047,18 @@ export class CardBattleScene extends Phaser.Scene {
     this.detailLayer.add([toggleBtn, toggleLabel]);
   }
 
-  private restoreHandZOrder(): void {
-    for (const s of this.handSlots) {
-      this.handLayer.bringToTop(s.container);
-    }
-  }
-
   private createHandSlotView(
     card: CardDef,
     slotIndex: number,
     handIndex: number,
     x: number,
     y: number,
-    rotation: number,
-    compactText: boolean,
     isChoiceMode: boolean,
   ): HandSlotView {
     const selectable = isChoiceMode || canPlayCard(this.state, handIndex);
     const stripColor = card.color ? parseHexColor(card.color) : PALETTE.brass.num;
 
     const cardContainer = this.add.container(x, y);
-    cardContainer.setRotation(rotation);
     // P10 子项 2：不可出牌改银蓝底+夜黑字（CR 7.24 vs 原雾蓝 3.60），费用徽章与效果字均为最高对比度
     const bgColor = isChoiceMode
       ? PALETTE.candle.num
@@ -1072,19 +1085,11 @@ export class CardBattleScene extends Phaser.Scene {
     const textHex = selectable ? PALETTE.ink.hex : PALETTE.nightBlack.hex;
     const costTextHex = card.cost === 0 ? PALETTE.paperWhite.hex : textHex;
     const costText = addPixelText(this, -34, -48, `${card.cost}`, { color: costTextHex, origin: 0.5 });
-    const nameText = compactText
-      ? addPixelText(this, -44, 24, card.name, { size: 12, color: textHex, origin: [0, 0.5] })
-      : addPixelText(this, 0, 24, card.name, { color: textHex, origin: 0.5 });
-    const effectText = compactText
-      ? addPixelText(this, -44, 44, formatEffectShort(card), {
-          size: 12,
-          color: textHex,
-          origin: [0, 0.5],
-        })
-      : addPixelText(this, 0, 48, formatEffectShort(card), {
-          color: textHex,
-          origin: 0.5,
-        });
+    const nameText = addPixelText(this, 0, 24, card.name, { color: textHex, origin: 0.5 });
+    const effectText = addPixelText(this, 0, 48, formatEffectShort(card), {
+      color: textHex,
+      origin: 0.5,
+    });
 
     cardContainer.add([frame, strip, artImage, costBg, costText, nameText, effectText]);
 
@@ -1094,8 +1099,6 @@ export class CardBattleScene extends Phaser.Scene {
       card,
       x,
       y,
-      rotation,
-      compactText,
       container: cardContainer,
       frame,
       artImage,
@@ -1114,25 +1117,13 @@ export class CardBattleScene extends Phaser.Scene {
       if (this.state.pendingChoice) {
         cardContainer.y = slotView.y - 12;
         frame.setStrokeStyle(2, PALETTE.vermilion.num);
-        if (slotView.compactText) {
-          cardContainer.setRotation(0);
-          this.handLayer.bringToTop(cardContainer);
-        }
       } else if (!slotView.queued && this.canQueueOrPlaySlot(slotView)) {
         cardContainer.y = slotView.y - 8;
         frame.setStrokeStyle(2, PALETTE.lampYellow.num);
-        if (slotView.compactText) {
-          cardContainer.setRotation(0);
-          this.handLayer.bringToTop(cardContainer);
-        }
       }
     });
     frame.on('pointerout', () => {
       if (slotView.consumed || slotView.queued) return;
-      cardContainer.setRotation(slotView.rotation);
-      if (slotView.compactText) {
-        this.restoreHandZOrder();
-      }
       if (this.state.pendingChoice) {
         cardContainer.y = slotView.y - 6;
         frame.setStrokeStyle(2, PALETTE.lampYellow.num);
@@ -1141,9 +1132,79 @@ export class CardBattleScene extends Phaser.Scene {
       cardContainer.y = slotView.y;
       frame.setStrokeStyle(2, this.canQueueOrPlaySlot(slotView) ? PALETTE.ink.num : PALETTE.nightBlack.num);
     });
-    frame.on('pointerdown', () => this.handleSlotClick(slotView.slotIndex));
+    frame.on('pointerup', () => {
+      if (!this.handDragged) this.handleSlotClick(slotView.slotIndex);
+    });
 
     return slotView;
+  }
+
+  private handScrollMax(): number {
+    return computeHandMaxScroll(Math.max(this.handSlots.length, this.state.hand.length));
+  }
+
+  private applyHandScroll(): void {
+    const max = this.handScrollMax();
+    this.handScroll = Math.round(Phaser.Math.Clamp(this.handScroll, 0, max));
+    this.handLayer.x = -this.handScroll;
+    this.handArrows.forEach((arrow, i) => {
+      const atEnd = i === 0 ? this.handScroll <= 0 : this.handScroll >= max;
+      arrow.setVisible(max > 0).setAlpha(atEnd ? 0.3 : 1);
+    });
+  }
+
+  private scrollHandBy(dx: number): void {
+    this.handScroll += dx;
+    this.applyHandScroll();
+  }
+
+  private createHandScrollInput(): void {
+    const arrowDefs = [
+      { x: HAND_SCROLL_ARROW_WIDTH / 2, dir: -1 },
+      { x: BASE_WIDTH - HAND_SCROLL_ARROW_WIDTH / 2, dir: 1 },
+    ];
+    this.handArrows = arrowDefs.map(({ x, dir }) => {
+      const button = this.add
+        .rectangle(0, 0, HAND_SCROLL_ARROW_WIDTH, HAND_SCROLL_ARROW_HEIGHT, PALETTE.lampYellow.num)
+        .setStrokeStyle(2, PALETTE.ink.num)
+        .setInteractive({ useHandCursor: true });
+      button.on('pointerup', () => {
+        if (!this.handDragged) this.scrollHandBy(dir * HAND_SLOT_STEP);
+      });
+      const tip = dir < 0 ? [8, 0, 8, 16, 0, 8] : [0, 0, 0, 16, 8, 8];
+      const tri = this.add.triangle(0, 0, tip[0], tip[1], tip[2], tip[3], tip[4], tip[5], PALETTE.ink.num);
+      return this.add.container(x, HAND_SCROLL_ARROW_Y, [button, tri]).setDepth(5).setVisible(false);
+    });
+
+    let dragStartX: number | null = null;
+    let dragStartY: number | null = null;
+    let dragStartScroll = 0;
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.handDragged = false;
+      const inHandArea = pointer.y >= HAND_CLIP_RECT.y;
+      dragStartX = inHandArea ? pointer.x : null;
+      dragStartY = inHandArea ? pointer.y : null;
+      dragStartScroll = this.handScroll;
+    });
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (dragStartX === null || dragStartY === null || !pointer.isDown) return;
+      const dx = pointer.x - dragStartX;
+      const dy = pointer.y - dragStartY;
+      if (this.handDragged || Math.hypot(dx, dy) >= HAND_DRAG_THRESHOLD_PX) {
+        this.handDragged = true;
+        if (this.handScrollMax() > 0) {
+          this.handScroll = dragStartScroll - dx;
+          this.applyHandScroll();
+        }
+      }
+    });
+    this.input.on('pointerup', () => {
+      dragStartX = null;
+      dragStartY = null;
+    });
+    this.input.on('wheel', (_p: Phaser.Input.Pointer, _o: unknown, dx: number, dy: number) => {
+      this.scrollHandBy(dx || dy);
+    });
   }
 
   private renderHand(keepPositions = false): void {
@@ -1181,14 +1242,11 @@ export class CardBattleScene extends Phaser.Scene {
             handIndex,
             oldSlot.x,
             oldSlot.y,
-            oldSlot.rotation,
-            oldSlot.compactText,
             false,
           );
           this.handLayer.add(newSlot.container);
           this.handSlots[slotIdx] = newSlot;
         });
-        this.restoreHandZOrder();
         this.refreshHandSlotsInPlace();
         return;
       }
@@ -1211,13 +1269,12 @@ export class CardBattleScene extends Phaser.Scene {
         index,
         pose.x,
         y,
-        pose.rotation,
-        pose.compactText,
         isChoiceMode,
       );
       this.handSlots.push(slotView);
       this.handLayer.add(slotView.container);
     });
+    this.applyHandScroll();
   }
 
   private getProjectedResources(): { renqing: number; handCount: number } {
@@ -1267,14 +1324,12 @@ export class CardBattleScene extends Phaser.Scene {
       }
       if (slot.queued) {
         slot.container.y = slot.y - 10;
-        slot.container.setRotation(slot.rotation);
         slot.frame.setFillStyle(PALETTE.candle.num);
         slot.frame.setStrokeStyle(2, PALETTE.lampYellow.num);
         continue;
       }
       const playable = this.canQueueOrPlaySlot(slot);
       slot.container.y = slot.y;
-      slot.container.setRotation(slot.rotation);
       slot.frame.setFillStyle(playable ? PALETTE.paperWhite.num : PALETTE.silverBlue.num);
       slot.frame.setStrokeStyle(2, playable ? PALETTE.ink.num : PALETTE.nightBlack.num);
       if (playable) slot.artImage.clearTint();
@@ -1348,7 +1403,8 @@ export class CardBattleScene extends Phaser.Scene {
       return;
     }
 
-    const { card, x: fromX, y: fromY } = slot;
+    const { card, y: fromY } = slot;
+    const fromX = slot.x - this.handScroll;
     audio.unlock();
     audio.playSfx('play_card');
     this.isAnimating = true;
@@ -1363,12 +1419,11 @@ export class CardBattleScene extends Phaser.Scene {
 
     const afterimage = this.add
       .rectangle(fromX, fromY, CARD_WIDTH, CARD_HEIGHT, PALETTE.oldPaper.num)
-      .setStrokeStyle(2, PALETTE.ink.num)
-      .setRotation(slot.rotation);
+      .setStrokeStyle(2, PALETTE.ink.num);
     this.fxLayer.add(afterimage);
     this.time.delayedCall(AFTERIMAGE_MS, () => afterimage.destroy());
 
-    const flyingCard = this.add.container(fromX, fromY).setRotation(slot.rotation);
+    const flyingCard = this.add.container(fromX, fromY);
     const artKey = pixelRowsToTexture(this, `card-art-${card.id}`, CARD_PIXEL_ART[card.id] ?? CARD_PIXEL_ART.old_book);
     flyingCard.add([
       this.add.rectangle(0, 0, CARD_WIDTH, CARD_HEIGHT, PALETTE.paperWhite.num).setStrokeStyle(2, PALETTE.lampYellow.num),
@@ -1381,7 +1436,6 @@ export class CardBattleScene extends Phaser.Scene {
       targets: flyingCard,
       x: DEMON_X,
       y: DEMON_Y,
-      rotation: 0,
       duration: FLY_DURATION_MS,
       ease: 'Linear',
       onComplete: () => {

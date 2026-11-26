@@ -116,7 +116,7 @@ describe('Pixel bitmap font JSON coverage', () => {
       '当铺纸牌',
       '开始',
       '继续',
-      '教程',
+      '新手局',
       '音量:开',
       '音量:关',
       TUTORIAL_SKIP_LABEL,

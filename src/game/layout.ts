@@ -73,62 +73,48 @@ export const BATTLE_EMPTY_RETURN_BUTTON = { x: 320, y: 236, width: 192, height: 
 export const DEMON_HP_BAR_RECT = { x: 212, y: 76, width: 316, height: 8 } as const;
 export const DEMON_INTRO_BANNER_RECT = { x: 46, y: 130, width: 444, height: 74 } as const;
 
-export const HAND_FAN_THRESHOLD = 7;
-export const HAND_FAN_MAX_ANGLE_DEG = 5;
-export const HAND_FAN_ARC_DROP = 8;
+export const HAND_SCROLL_THRESHOLD = 7;
+export const HAND_SLOT_STEP = BATTLE_CARD_WIDTH + BATTLE_CARD_GAP;
+/** 横向滚动手牌区两侧留给箭头按钮的边距。 */
+export const HAND_SCROLL_MARGIN = 20;
+export const HAND_SCROLL_ARROW_WIDTH = 18;
+export const HAND_SCROLL_ARROW_Y = BATTLE_HAND_Y;
+export const HAND_SCROLL_ARROW_HEIGHT = 64;
+export const HAND_CLIP_RECT = { x: 0, y: 200, width: 640, height: 160 } as const;
+/** 拖动与点按的分界：按下后移动 <6px 算点按。 */
+export const HAND_DRAG_THRESHOLD_PX = 6;
 
 export interface HandCardPose {
   readonly x: number;
   readonly y: number;
-  readonly rotation: number;
-  readonly compactText: boolean;
 }
 
 /**
- * Computes fixed-slot fan pose (center X, arc Y, rotation radians, compact text mode)
- * for a hand card in 640x360 logical coordinates.
- * Counts <= 6 stay flat at natural 104px spacing; counts >= 7 use fixed 9/11-slot fan buckets
- * so cards stay legible and never shift when played mid-turn.
+ * Hand card pose in 640x360 logical coordinates (scroll offset not applied).
+ * Counts <= 6 are centered at natural 104px spacing; counts >= 7 keep the same 104px spacing,
+ * left-aligned after the arrow margin, and the hand layer scrolls horizontally.
  */
 export function computeHandCardPose(index: number, count: number): HandCardPose {
   if (count <= 0) {
-    return {
-      x: Math.floor(BASE_WIDTH / 2),
-      y: BATTLE_HAND_Y,
-      rotation: 0,
-      compactText: false,
-    };
+    return { x: Math.floor(BASE_WIDTH / 2), y: BATTLE_HAND_Y };
   }
-  if (count < HAND_FAN_THRESHOLD) {
-    const naturalStep = BATTLE_CARD_WIDTH + BATTLE_CARD_GAP;
-    const totalWidth = BATTLE_CARD_WIDTH + (count - 1) * naturalStep;
+  if (count < HAND_SCROLL_THRESHOLD) {
+    const totalWidth = BATTLE_CARD_WIDTH + (count - 1) * HAND_SLOT_STEP;
     const startCenterX =
       Math.floor((BASE_WIDTH - totalWidth) / 2) + Math.floor(BATTLE_CARD_WIDTH / 2);
-    return {
-      x: startCenterX + index * naturalStep,
-      y: BATTLE_HAND_Y,
-      rotation: 0,
-      compactText: false,
-    };
+    return { x: startCenterX + index * HAND_SLOT_STEP, y: BATTLE_HAND_Y };
   }
-
-  const slotCount = count <= 9 ? 9 : count <= 11 ? 11 : count;
-  const margin = slotCount <= 9 ? 8 : 6;
-  const availableWidth = BASE_WIDTH - margin * 2;
-  const step = Math.floor((availableWidth - BATTLE_CARD_WIDTH) / (slotCount - 1));
-  const totalWidth = BATTLE_CARD_WIDTH + (slotCount - 1) * step;
-  const startCenterX =
-    Math.floor((BASE_WIDTH - totalWidth) / 2) + Math.floor(BATTLE_CARD_WIDTH / 2);
-  const slotOffset = Math.floor((slotCount - count) / 2);
-  const fixedSlot = Math.max(0, Math.min(slotCount - 1, slotOffset + index));
-  const t = slotCount > 1 ? (fixedSlot / (slotCount - 1)) * 2 - 1 : 0;
-
   return {
-    x: startCenterX + fixedSlot * step,
-    y: BATTLE_HAND_Y + Math.round(t * t * HAND_FAN_ARC_DROP) - Math.round(HAND_FAN_ARC_DROP / 2),
-    rotation: (t * HAND_FAN_MAX_ANGLE_DEG * Math.PI) / 180,
-    compactText: true,
+    x: HAND_SCROLL_MARGIN + BATTLE_CARD_WIDTH / 2 + index * HAND_SLOT_STEP,
+    y: BATTLE_HAND_Y,
   };
+}
+
+/** Max horizontal scroll (px) for `slotCount` slots; 0 when everything fits. */
+export function computeHandMaxScroll(slotCount: number): number {
+  if (slotCount < HAND_SCROLL_THRESHOLD) return 0;
+  const content = HAND_SCROLL_MARGIN * 2 + BATTLE_CARD_WIDTH + (slotCount - 1) * HAND_SLOT_STEP;
+  return Math.max(0, content - BASE_WIDTH);
 }
 
 /**

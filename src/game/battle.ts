@@ -78,7 +78,9 @@ export interface BattleDebugSnapshot {
   hand: string[];
   handSlotXs?: number[];
   handSlotYs?: number[];
-  handSlotRotations?: number[];
+  handSlotRenderProps?: ({ rotation: number; nameFontSize: number; effectFontSize: number } | null)[];
+  handScroll?: number;
+  handScrollMax?: number;
   introBannerVisible?: boolean;
   detailLayerVisible?: boolean;
   lastFloatSpawns?: { label: string; lane: string; startY: number; endY: number }[];

@@ -15,6 +15,7 @@ import {
   DAY1_GUARANTEED_DAMAGE_ITEM_IDS,
   deriveDaySeed,
   formatDay3Rumor,
+  formatDeckRemainder,
   formatOfferDialogue,
   formatReputationHint,
   getEffectiveAcceptRate,
@@ -114,7 +115,7 @@ describe('settle & advanceCustomer', () => {
 
   it('applies money, reputation, and card rules on accepted offers across all tiers (with P7 temperaments)', () => {
     // Watch (urgent): low (20, rep -2 under P7 urgent rule, card 倒转)
-    let state = createInitialState();
+    let state = createInitialState({ money: 200 }); // 固定 200，只验证扣款算术
     state = settle(state, 'low', true);
     expect(state.phase).toBe('feedback');
     expect(state.money).toBe(180);
@@ -285,7 +286,7 @@ describe('skipCustomer & hasAnyAffordableTier', () => {
     const day1Items = shuffleItems(ITEMS, mulberry32(deriveDaySeed(4, 1))).slice(0, 3);
     expect(day1Items.map((it) => it.id)).toEqual(['watch', 'bicycle', 'ring']);
 
-    let state = createInitialState({ day: 1, items: day1Items });
+    let state = createInitialState({ day: 1, items: day1Items, money: 200 }); // 紧手状态：原开局 200
     state = advanceCustomer(settle(state, 'high', true)); // 200 -> 140
     state = advanceCustomer(settle(state, 'high', true)); // 140 -> 20
 
@@ -802,5 +803,13 @@ describe('Playtest fix round: redemption rejection tracking (Semantic A) & first
     expect(consumeFirstGlossaryTip('obsession', storage)).toBe(GLOSSARY_TIPS.obsession);
     expect(consumeFirstGlossaryTip('charge_threshold', storage)).toBe(GLOSSARY_TIPS.charge_threshold);
     expect(consumeFirstGlossaryTip('charge_threshold', storage)).toBeNull();
+  });
+});
+
+describe('Deck list remainder label (Task 18 §5)', () => {
+  it('shows the hidden remainder, not the total (7 -> 等2张, 8 -> 等3张, 12 -> 等7张)', () => {
+    expect(formatDeckRemainder(7)).toBe('等2张');
+    expect(formatDeckRemainder(8)).toBe('等3张');
+    expect(formatDeckRemainder(12)).toBe('等7张');
   });
 });

@@ -394,4 +394,14 @@
 - **验证证据**：
   - `npx tsc --noEmit` 0 错误；`npm run build` 退出码 0；`npx vitest run` 17/17 文件、144/144 单测全过（含 `fontCoverage.test.ts`）；`npm run sim:check` PASSED（冻结零漂移）；`npm run test:e2e` 54/54 全过；本地截图（`clear-run-fix-screenshots/`，17 张）全部目视核查通过。
 
+## 2026-11-26 — 开局与排版修整轮（feature/opening-and-layout-fix-round）
+- **范围**：按 `proto-tasks/18-opening-and-layout-fix-round.md` 与 §15 全部拍板决定（Q1=240 / Q2=A 试 16px 验收失败后转 B 横向滚动 / Q3=「新手局」 / Q4=`v0.4.4-OpeningLayout` / Q5 先查因）完成开局与排版修整轮（未碰 `demons.json`、兜底 D1/D2、`battle.ts` 规则 / `effects.ts`、P12 扩容、存档 v3、`pixel-font.json`、音频与 `.github/workflows/`）：
+  - **起始资金（§2）**：`balance.json` `startingMoney` 200→240；通关率 73.9%，首夜限钱测量 25.3%→26.2%。同步更新依赖开局钱的单测/E2E 断言；`skip-customer` 死角用例改用预置 200 钱存档并走继续按钮。
+  - **手牌横向滚动（§3 备选 B）**：A 方案（16px 紧凑字）在 7/11 张竖屏截图下效果行尾字被右邻牌遮挡，按任务书转 B：`layout.ts` 槽位间距恒为 `HAND_SLOT_STEP = 104`、取消倾角与紧凑字模式；`CardBattleScene.ts` 手牌层加 Phaser 裁剪遮罩（`HAND_CLIP_RECT`）+ 拖动（`<6px` 判点按）/滚轮/两侧箭头按钮；`pixelFont.ts` 保持原样（仅 12/24/48）；`layout.test.ts` 断言 7/9/11 张间距恒为 104 且无紧凑字模式。
+  - **牌组列表（§4 / §5 / §8）**：净空测量 E2E 断言；`formatDeckRemainder`（等N张余数）；口碑提示条查因为非常驻重叠，未改代码。
+  - **标题页（§6 / §7）**：「教程」→「新手局」，`GAME_VERSION` 与 `package.json` 同步 `v0.4.4-OpeningLayout` / `0.4.4`。
+  - **sim 测量（§9）**：新增 `simulateNightOneMoneyCurve`（只印数字，不进护栏）。
+  - **文档**：`docs/GAME_DESIGN.md` §23、本文件、`proto-tasks/17` §12 护栏表 n=2..5 基线更正为 71.8/69.7/69.2/64.0。
+- **验证证据**：
+  - `npx tsc --noEmit` 0 错误；`npm run build` 退出码 0；`npx vitest run` 17/17 文件、145/145 单测全过（含 `fontCoverage.test.ts`、方案 B 104 间距与无紧凑模式不变量、余数文案）；`npm run sim:check` PASSED（冻结零漂移，通关率 73.9%，常赢现金流 58.0，首夜限钱 200→25.3% / 240→26.2%）；`npm run test:e2e` 60/60 全过；本地交付截图（`~/workspace/game-studio/opening-layout-fix-screenshots/`，32 张）逐屏目视核查通过。
 

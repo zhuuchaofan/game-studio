@@ -42,7 +42,7 @@ Make the smallest change that fully solves the task. Do not add abstractions, fa
 
 ## 模型路由（额度，2026-11-26 实测）
 
-- 提案/方案/文案 → Gemini Orchestrator (Neon)：`--model gemini-pro-orchestrator-neon`。Gemini 周剩 14%，12-01 08:53 CST 重置，省着用
+- 提案/方案/文案 → Gemini Orchestrator (Neon)：`--model gemini-pro-orchestrator-neon`。Gemini 已于 2026-11-26 约 16:00 重置回 100%，新周期至 12-03
 - 改代码/查 bug → Claude Sonnet 5.5 Medium：`--model claude-sonnet-5-5-medium`；难的 → Claude Opus 5.5 Medium：`--model claude-opus-5-5-medium`
 - 审查 → Codex CLI（ChatGPT Plus）
 - agy 内的 `gpt-oss-120b-medium` 是 GPT-OSS 120B 开源模型，不是 GPT-6.2，不用于严谨任务
@@ -53,6 +53,7 @@ Make the smallest change that fully solves the task. Do not add abstractions, fa
 - 挡上线（Block）：算错数（钱/血量/口碑等数值）、丢数据/丢存档、越权改动（改了任务书范围之外的文件或规则）
 - 其他只记建议（Suggestion），不挡
 - 最多审两轮。审稿意见先由 PL 核实（跑测试/读代码），核实过的才进修整单，未核实的丢弃并注明原因
+- 已固定为每轮必跑（制作人 2026-11-26 定）
 
 ## 错一次，补一个测试
 
