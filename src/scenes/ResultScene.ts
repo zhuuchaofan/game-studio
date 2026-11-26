@@ -141,7 +141,10 @@ export class ResultScene extends Phaser.Scene {
             ITEMS,
           )
         : null;
-    const victoryLine = result === 'win' ? (demonDef?.victoryLine ?? null) : null;
+    const victoryLine =
+      result === 'win'
+        ? (resolvedNarrative?.victoryLine ?? demonDef?.victoryLine ?? null)
+        : null;
     const aftermathLine =
       result === 'win'
         ? (resolvedNarrative?.aftermathLine ?? demonDef?.aftermathLine ?? null)

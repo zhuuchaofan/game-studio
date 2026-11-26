@@ -6,6 +6,7 @@ import { buildCardMap, formatEffectDescription, formatEffectShort, type CardDef 
 import {
   composeBoss,
   formatBossPreviewHpLine,
+  getItemObsessionHint,
   type ComposedBossResult,
 } from '../game/bossComposition';
 import { cloneChapterState, deriveSideQuestSeed, getChapterConfig, getNightDemonHpBonus, getRedemptionMultiplier, getSkipCustomerReputationDelta, isBossDay, pickSideQuestItem, removeCardAtIndex, selectDemonForChapterDay, type PactId } from '../game/chapters';
@@ -339,6 +340,8 @@ export class PawnshopScene extends Phaser.Scene {
       this.state = { ...this.state, phase: 'pact' };
     } else if (needsDay4Trim) {
       this.state = { ...this.state, phase: 'trim_deck' };
+    } else if (this.state.phase === 'summary') {
+      this.maybeTriggerDay6SideQuestOrSummary();
     }
 
     if (renderAfter) {
@@ -422,6 +425,7 @@ export class PawnshopScene extends Phaser.Scene {
           currentTemperament,
           currentTemperamentLabel,
           lastMessage: this.state.lastOutcome?.message ?? null,
+          obsessionHint: isNegotiating ? this.getCurrentObsessionHint(currentItem) : null,
           canSkip: isNegotiating,
           lastToast: this.lastToast,
           lastGlossaryTip: this.lastGlossaryTip,
@@ -699,6 +703,18 @@ export class PawnshopScene extends Phaser.Scene {
     return composeBoss(this.state.deck, this.save.chapter.pactChoice);
   }
 
+  private getCurrentObsessionHint(item: PawnItem | undefined): string | null {
+    if (!item) {
+      return null;
+    }
+    const nightDemonId = selectDemonForChapterDay(
+      this.save.chapter.currentChapter,
+      this.save.chapter.dayInChapter,
+      this.seed,
+    );
+    return getItemObsessionHint(item.id, this.save.chapter.dayInChapter, nightDemonId);
+  }
+
   private enterPostBossPreviewEvents(): void {
     const pawnPrices = this.state.pawnPrices ?? loadPawnPrices();
     const fatherOffer = createFatherOverdueRedemptionOffer(
@@ -731,7 +747,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.state = {
       ...this.state,
-      phase: randomOffer ? 'redemption' : 'negotiating',
+      phase: randomOffer ? 'redemption' : this.state.items.length === 0 ? 'summary' : 'negotiating',
       redemptionOffer: randomOffer,
     };
     this.renderCurrentPhase();
@@ -1173,7 +1189,7 @@ export class PawnshopScene extends Phaser.Scene {
 
     this.state = {
       ...this.state,
-      phase: redemptionOffer ? 'redemption' : 'negotiating',
+      phase: redemptionOffer ? 'redemption' : this.state.items.length === 0 ? 'summary' : 'negotiating',
       redemptionOffer,
     };
     this.renderCurrentPhase();
@@ -1928,6 +1944,9 @@ export class PawnshopScene extends Phaser.Scene {
       }
     }
 
+    if (this.state.phase === 'summary') {
+      this.maybeTriggerDay6SideQuestOrSummary();
+    }
     this.renderCurrentPhase();
     if (accept && prevBossHp !== null) {
       this.notifyDay7BossHpChange(prevBossHp);
@@ -2002,6 +2021,22 @@ export class PawnshopScene extends Phaser.Scene {
         addPixelText(this, 116, 127, `效果:${formatEffectDescription(cardDef)}`, {
           color: PALETTE.deepWood.hex,
           origin: [0, 0],
+        }),
+      );
+    }
+
+    // P12 §3.1：执念提前预告（仅第 2 天起且对应今夜心魔执念时在报价区上方提示，不挡教程气泡/跳过按钮）
+    const obsessionHint = this.getCurrentObsessionHint(item);
+    if (obsessionHint) {
+      this.contentLayer.add(
+        this.add
+          .rectangle(264, 249, 448, 28, PALETTE.nightBlack.num)
+          .setStrokeStyle(2, PALETTE.vermilion.num),
+      );
+      this.contentLayer.add(
+        addPixelText(this, 264, 249, obsessionHint, {
+          color: PALETTE.lampYellow.hex,
+          origin: 0.5,
         }),
       );
     }

@@ -183,7 +183,7 @@ describe('Battle state machine & BattleEvent stream', () => {
 
     expect(state.phase).toBe('result');
     expect(state.result).toBe('lose_timeout');
-    expect(state.playerHp).toBe(21);
+    expect(state.playerHp).toBe(19);
     expect(state.demonHp).toBe(20);
     expect(lastTurn.events).toContainEqual({ type: 'BATTLE_ENDED', result: 'lose_timeout', round: 3 });
   });
@@ -204,17 +204,20 @@ describe('Battle state machine & BattleEvent stream', () => {
     const rng = mulberry32(12);
     let state = createBattle(TEST_DECK, 'b', rng, CARDS, DEMONS, BALANCE);
     expect(state.demonHp).toBe(22);
-    expect(getIntent(state).current).toEqual({ round: 1, damage: 2 });
+    expect(state.demonShield).toBe(1);
+    expect(getIntent(state).current).toEqual({ round: 1, damage: 2, shield: 1 });
     expect(getIntent(state).upcomingSkill).toBeNull();
 
     state = endTurn(state).state;
     expect(state.round).toBe(2);
     expect(state.playerHp).toBe(28);
+    expect(state.demonShield).toBe(1);
     expect(getIntent(state).upcomingSkill).toEqual({ round: 3, damage: 8, skill: '远行' });
 
     state = endTurn(state).state;
     expect(state.round).toBe(3);
     expect(state.playerHp).toBe(26);
+    expect(state.demonShield).toBe(0);
     expect(getIntent(state).current).toEqual({ round: 3, damage: 8, skill: '远行' });
 
     state = endTurn(state).state;
@@ -302,28 +305,31 @@ describe('Battle state machine & BattleEvent stream', () => {
     expect(state.renqing).toBe(1);
   });
 
-  it('verifies Demon C (房租) escalating damage 3->4->5 and Demon D (学费) Round 3 skill "开学" 10 damage', () => {
+  it('verifies Demon C (房租) escalating damage 3->5->7 and Demon D (学费) R1/R2 2 shield & Round 3 skill "开学" 10 damage', () => {
     let stateC = createBattle(TEST_DECK, 'c', mulberry32(21), CARDS, DEMONS, BALANCE);
     expect(stateC.demonHp).toBe(26);
     expect(getIntent(stateC).current).toEqual({ round: 1, damage: 3 });
     stateC = endTurn(stateC).state;
     expect(stateC.playerHp).toBe(27);
-    expect(getIntent(stateC).current).toEqual({ round: 2, damage: 4 });
+    expect(getIntent(stateC).current).toEqual({ round: 2, damage: 5 });
     stateC = endTurn(stateC).state;
-    expect(stateC.playerHp).toBe(23);
-    expect(getIntent(stateC).current).toEqual({ round: 3, damage: 5 });
+    expect(stateC.playerHp).toBe(22);
+    expect(getIntent(stateC).current).toEqual({ round: 3, damage: 7 });
     stateC = endTurn(stateC).state;
-    expect(stateC.playerHp).toBe(18);
+    expect(stateC.playerHp).toBe(15);
     expect(stateC.result).toBe('lose_timeout');
 
     let stateD = createBattle(TEST_DECK, 'd', mulberry32(22), CARDS, DEMONS, BALANCE);
     expect(stateD.demonHp).toBe(20);
-    expect(getIntent(stateD).current).toEqual({ round: 1, damage: 1 });
+    expect(stateD.demonShield).toBe(2);
+    expect(getIntent(stateD).current).toEqual({ round: 1, damage: 1, shield: 2 });
     stateD = endTurn(stateD).state;
     expect(stateD.playerHp).toBe(29);
+    expect(stateD.demonShield).toBe(2);
     expect(getIntent(stateD).upcomingSkill).toEqual({ round: 3, damage: 10, skill: '开学' });
     stateD = endTurn(stateD).state;
     expect(stateD.playerHp).toBe(27);
+    expect(stateD.demonShield).toBe(0);
     expect(getIntent(stateD).current).toEqual({ round: 3, damage: 10, skill: '开学' });
     stateD = endTurn(stateD).state;
     expect(stateD.playerHp).toBe(17);

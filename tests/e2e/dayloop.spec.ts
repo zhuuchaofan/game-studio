@@ -572,13 +572,13 @@ test('P4 content expansion: new pawnshop items appear in 3-customer lineup and N
   expect(day3Summary.money).toBeLessThanOrEqual(200);
   expect(day3Summary.log.some((entry) => entry.includes('二胡'))).toBe(true);
 
-  // Night 3 -> Demon C (房租, HP 26)
+  // Night 3 -> Demon C (房租, base HP 26 + 2 obsession from 旧书 in deck = 28)
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   const night3 = await waitForBattleReady(page, 'play');
   expect(night3.day).toBe(3);
   expect(night3.demonId).toBe('c');
   expect(night3.demonName).toBe('房租');
-  expect(night3.demonHp).toBe(26);
+  expect(night3.demonHp).toBe(28);
   await page.screenshot({ path: 'test-results/p4-night3-demon-c.png' });
 
   // End 3 turns to advance cleanly to Day 4

@@ -451,22 +451,22 @@ describe('P11 Sub-item 4: Anti-repetition D1 cooldown & D2 soft unowned priority
     expect(validation.valid).toBe(true);
   });
 
-  it('prefers unowned items (D2 soft) and relaxes cleanly to owned items when unowned pool < 3', () => {
-    // 3 owned items -> remaining 3 unowned items must be picked exclusively
+  it('excludes owned items (Follow-up 1 hard exclusion) and returns fewer customers when eligible pool < 3', () => {
+    // 3 owned items -> remaining unowned items must be picked exclusively
     const deck3 = ['倒转', '守诺', '旧书'];
     const picked3 = pickDailyItems(ITEMS, 3, mulberry32(11), 3, { deck: deck3 });
     expect(picked3).toHaveLength(3);
     expect(picked3.every((i) => !deck3.includes(i.cardName))).toBe(true);
 
-    // 5 owned items -> the 1 remaining unowned item (集邮) MUST be picked, and 2 owned items fill the rest
-    const deck5 = ['倒转', '守诺', '旧书', '飞驰', '余音'];
-    const picked5 = pickDailyItems(ITEMS, 4, mulberry32(22), 3, { deck: deck5 });
-    expect(picked5).toHaveLength(3);
-    expect(picked5.some((i) => i.id === 'stamp_album')).toBe(true);
+    // 10 owned items -> only the 2 remaining unowned items appear (no owned padding)
+    const deck10 = ITEMS.slice(0, 10).map((i) => i.cardName);
+    const picked10 = pickDailyItems(ITEMS, 4, mulberry32(22), 3, { deck: deck10 });
+    expect(picked10).toHaveLength(2);
+    expect(picked10.every((i) => !deck10.includes(i.cardName))).toBe(true);
 
-    // All 6 owned -> relaxes cleanly to 3 items without crashing or returning empty
-    const deck6 = ['倒转', '守诺', '旧书', '飞驰', '余音', '集邮'];
-    const picked6 = pickDailyItems(ITEMS, 5, mulberry32(33), 3, { deck: deck6 });
-    expect(picked6).toHaveLength(3);
+    // All 12 owned -> 0 customers without crashing
+    const deck12 = ITEMS.map((i) => i.cardName);
+    const picked12 = pickDailyItems(ITEMS, 5, mulberry32(33), 3, { deck: deck12 });
+    expect(picked12).toHaveLength(0);
   });
 });

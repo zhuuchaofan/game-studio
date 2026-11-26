@@ -204,7 +204,7 @@ test('Task 19 §2/§3/§6: persistent HP carries across nights (+5 sleep heal), 
   expect(night1.playerHp).toBe(30);
   expect(night1.maxPlayerHp).toBe(30);
 
-  // End 3 turns without playing cards -> Demon A deals 3+3+3 = 9 dmg -> endHp = 21 -> sleep +5 -> 26
+  // End 3 turns without playing cards -> Demon A deals 3+3+5 = 11 dmg -> endHp = 19 -> sleep +5 -> 24
   for (let r = 1; r <= 3; r += 1) {
     await clickLogical(page, canvas, BATTLE_END_TURN_BUTTON);
     if (r < 3) {
@@ -217,14 +217,14 @@ test('Task 19 §2/§3/§6: persistent HP carries across nights (+5 sleep heal), 
   const n1Res = await waitForBattleReady(page, 'result_scene');
   expect(n1Res.result).toBe('lose_timeout');
   expect(n1Res.normalFailContinueLine).toBe('输了这一夜，留下一张欠条，口碑-1，明天继续');
-  expect(n1Res.savedData?.currentHp).toBe(26);
+  expect(n1Res.savedData?.currentHp).toBe(24);
   expect(n1Res.savedData?.reputation).toBe(3); // Day 1 high on stamp_album(+2)/tin_trunk(+1)/erhu(+1) = +4, Night 1 loss -1 => 3
   expect(n1Res.savedData?.deck).toEqual(['集邮', '顶住', '余音', '欠条']);
 
-  // Advance to Day 2 morning -> pick 打理当铺 -> Night 2 enters at 26/30 HP
+  // Advance to Day 2 morning -> pick 打理当铺 -> Night 2 enters at 24/30 HP
   await clickLogical(page, canvas, RESULT_NEXT_DAY_BUTTON);
   const day2Morning = await waitForPawnshopPhase(page, 'morning');
-  expect(day2Morning.currentHp).toBe(26);
+  expect(day2Morning.currentHp).toBe(24);
   await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   for (let i = 0; i < 3; i += 1) {
     await waitForPawnshopPhase(page, 'negotiating');
@@ -234,7 +234,7 @@ test('Task 19 §2/§3/§6: persistent HP carries across nights (+5 sleep heal), 
   await clickLogical(page, canvas, PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON);
 
   const night2 = await waitForBattleReady(page, 'play');
-  expect(night2.playerHp).toBe(26);
+  expect(night2.playerHp).toBe(24);
   expect(night2.maxPlayerHp).toBe(30);
 
   // 2) KO via ?deck=test&playerHp=2 on Night 2 -> wakes at 5 HP on Day 3, chapter continues
