@@ -54,6 +54,19 @@ describe('calculateScaledDimensions', () => {
     });
   });
 
+  it('scales proportionally by width without integer flooring in portrait viewports', () => {
+    const mobilePortrait = calculateScaledDimensions(390, 844);
+    expect(mobilePortrait.scale).toBeCloseTo(390 / BASE_WIDTH, 6);
+    expect(mobilePortrait.width).toBe(390);
+    expect(mobilePortrait.height).toBe(219);
+    expect(mobilePortrait.width).toBeLessThanOrEqual(390);
+
+    const tabletPortrait = calculateScaledDimensions(720, 1280);
+    expect(tabletPortrait.scale).toBeCloseTo(720 / BASE_WIDTH, 6);
+    expect(tabletPortrait.width).toBe(720);
+    expect(tabletPortrait.height).toBe(405);
+  });
+
   it('keeps E2E helper logical dimensions as single source of truth with BASE_WIDTH/BASE_HEIGHT', () => {
     expect(LOGICAL_WIDTH).toBe(BASE_WIDTH);
     expect(LOGICAL_HEIGHT).toBe(BASE_HEIGHT);

@@ -519,4 +519,4 @@
   - `obsession`：`执念：留柜未赎旧物，第7夜化作大心魔力量`
   - `charge_threshold`：`封门阈值：R2累伤打满可打断封门，返+1情`
 - **章节失败页分支提示（Q8）**：仅在 `ResultScene.renderChapterFailed` 按失败分支添加灯黄提示条——回合耗尽（`lose_timeout`）显示 `提醒：试试多攒伤害牌来打断封门`，血量归零（`lose_hp`）显示 `提醒：先攒护盾牌，顶住前两回合`（使用合成后实际数值与字库内字符）。
-- **竖屏行为与版本号**：文档同步明确 640×360 竖屏已切换为 `#portrait-hint` 全屏横屏提示遮罩（不改代码）；`TitleScene.ts` 新增底栏版本号 `v0.4.2-PlaytestFix`（`size: 12`, `silverBlue`, `(320, 338)`），`package.json` 同步升至 `0.4.2`。
+- **竖屏模式与版本号（§7.5 方案 A 定稿）**：竖屏按宽度缩小可玩——移除全屏阻塞遮罩，恢复画布下方 in-flow 提示条 `↻ 横屏体验更佳`（`pointer-events: none`、无点击/关闭行为）；竖屏时 `calculateScaledDimensions` 采用 `scale = min(可用宽/640, 可用高/360)` 不取整（390×844 下约 `0.61×`、画布 `390×219`）并保持画布可见与输入可点（`game.scale.refresh()`），横屏仍保持整数倍缩放不动；`TitleScene.ts` 新增底栏版本号 `v0.4.2-PlaytestFix`（`size: 12`, `silverBlue`, `(320, 338)`），`package.json` 同步升至 `0.4.2`。

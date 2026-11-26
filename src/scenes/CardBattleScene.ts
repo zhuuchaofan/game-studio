@@ -398,10 +398,16 @@ export class CardBattleScene extends Phaser.Scene {
       const lines = this.formatBossBannerLines(this.composedBoss);
       const children: Phaser.GameObjects.GameObject[] = [
         bg,
-        addPixelText(this, cx, isBoss2Line ? topY + 16 : topY + 15, `${this.state.demonName} 现身`, {
-          color: PALETTE.lampYellow.hex,
-          origin: 0.5,
-        }),
+        addPixelText(
+          this,
+          cx,
+          isBoss3Line ? topY + 13 : isBoss2Line ? topY + 16 : topY + 15,
+          `${this.state.demonName} 现身`,
+          {
+            color: PALETTE.lampYellow.hex,
+            origin: 0.5,
+          },
+        ),
       ];
       if (this.composedBoss.isBare) {
         children.push(
@@ -423,15 +429,15 @@ export class CardBattleScene extends Phaser.Scene {
         );
       } else {
         children.push(
-          addPixelText(this, cx, topY + 37, lines[0], {
+          addPixelText(this, cx, topY + 39, lines[0], {
             color: PALETTE.oldPaper.hex,
             origin: 0.5,
           }),
-          addPixelText(this, cx, topY + 59, lines[1], {
+          addPixelText(this, cx, topY + 65, lines[1], {
             color: PALETTE.oldPaper.hex,
             origin: 0.5,
           }),
-          addPixelText(this, cx, topY + 83, lines[2], {
+          addPixelText(this, cx, topY + 91, lines[2], {
             color: PALETTE.paperWhite.hex,
             origin: 0.5,
           }),
