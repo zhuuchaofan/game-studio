@@ -42,7 +42,7 @@ Make the smallest change that fully solves the task. Do not add abstractions, fa
 
 ## 模型路由（额度，2026-11-26 实测）
 
-- 提案/方案/文案 → Gemini Orchestrator (Neon)：`--model gemini-pro-orchestrator-neon`。Gemini 周剩 14%，12-01 08:53 CST 重置，省着用
+- 提案/方案/文案 → Gemini Orchestrator (Neon)：`--model gemini-pro-orchestrator-neon`。Gemini 已于 2026-11-26 约 16:00 重置回 100%，新周期至 12-03
 - 改代码/查 bug → Claude Sonnet 5.5 Medium：`--model claude-sonnet-5-5-medium`；难的 → Claude Opus 5.5 Medium：`--model claude-opus-5-5-medium`
 - 审查 → Codex CLI（ChatGPT Plus）
 - agy 内的 `gpt-oss-120b-medium` 是 GPT-OSS 120B 开源模型，不是 GPT-6.2，不用于严谨任务

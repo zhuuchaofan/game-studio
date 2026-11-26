@@ -41,6 +41,7 @@ interface PawnshopDebugState {
   tutorialActive?: boolean;
   currentStep?: string | null;
   lastGlossaryTip?: string | null;
+  glossaryBannerVisible?: boolean;
 }
 
 interface BattleDebugState {
@@ -50,6 +51,7 @@ interface BattleDebugState {
   hand: string[];
   handSlotXs?: number[];
   handSlotYs?: number[];
+  handSlotRenderProps?: ({ rotation: number; nameFontSize: number; effectFontSize: number } | null)[];
   handScroll?: number;
   handScrollMax?: number;
   introBannerVisible?: boolean;
@@ -184,6 +186,16 @@ async function dragHand(page: Page, canvas: Locator, fromX: number, toX: number)
   await page.mouse.down();
   await page.mouse.move(px((fromX + toX) / 2), py, { steps: 4 });
   await page.mouse.move(px(toX), py, { steps: 4 });
+  await page.mouse.up();
+}
+
+async function dragCardVertical(page: Page, canvas: Locator, x: number, startY: number, dy: number): Promise<void> {
+  const box = (await canvas.boundingBox())!;
+  const px = box.x + (x / 640) * box.width;
+  const py = (y: number): number => box.y + (y / 360) * box.height;
+  await page.mouse.move(px, py(startY));
+  await page.mouse.down();
+  await page.mouse.move(px, py(startY + dy), { steps: 4 });
   await page.mouse.up();
 }
 
@@ -393,6 +405,13 @@ test('Task 18 §3 (plan B): 7/9/11-card hand scrolls at fixed 104 spacing, every
     for (let i = 1; i < state.hand.length; i += 1) {
       expect(state.handSlotXs![i] - state.handSlotXs![i - 1]).toBe(HAND_SLOT_STEP);
     }
+    expect(state.handSlotRenderProps).toHaveLength(state.hand.length);
+    for (const props of state.handSlotRenderProps!) {
+      expect(props).not.toBeNull();
+      expect(props!.rotation).toBe(0);
+      expect(props!.nameFontSize).toBe(24);
+      expect(props!.effectFontSize).toBe(24);
+    }
 
     for (const vp of VIEWPORTS) {
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -446,3 +465,124 @@ test('Task 18 §3 (plan B): 7/9/11-card hand scrolls at fixed 104 spacing, every
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+test('Task 18 round3 fix 1: vertical drag >=6px on card does not play card, while <6px tap plays normally', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { pageErrors, failedRequests } = trackErrors(page);
+  await page.goto('/?seed=7&demon=c');
+  const deck = [
+    '旧书', '旧书', '旧书', '旧书', '算盘', '算盘', '算盘', '倒转', '手电', '集邮', '余音', '蒲扇', '铁皮青蛙', '守诺', '守诺',
+  ];
+  await seedSave(page, day3Save(deck, 4));
+  await page.reload();
+  const canvas = page.locator('#game-container canvas');
+  await expect(canvas).toBeVisible();
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  for (let i = 0; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  }
+  await waitForPawnshopPhase(page, 'summary');
+  await clickLogical(page, canvas, PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON);
+  let state = await waitForBattleReady(page);
+  await clickLogical(page, canvas, {
+    x: Math.floor(DEMON_INTRO_BANNER_RECT.x + DEMON_INTRO_BANNER_RECT.width / 2),
+    y: Math.floor(DEMON_INTRO_BANNER_RECT.y + DEMON_INTRO_BANNER_RECT.height / 2),
+  });
+  await expect.poll(async () => (await getBattleState(page)).introBannerVisible).toBe(false);
+  state = await growHandTo(page, canvas, await getBattleState(page), 7);
+
+  const playableIdx = state.hand.findIndex((name) => (CARD_COST.get(name) ?? 9) <= state.renqing);
+  expect(playableIdx).toBeGreaterThanOrEqual(0);
+  state = await bringIntoView(page, canvas, playableIdx);
+  const cardX = state.handSlotXs![playableIdx];
+  const cardY = state.handSlotYs![playableIdx];
+  await canvas.screenshot({ path: `${SHOT_DIR}/round3-vdrag-before.png` });
+
+  // 竖向拖动 20px（>=6px）后在牌面松开：手牌数、弃牌数、人情均不变
+  await dragCardVertical(page, canvas, cardX, cardY, 20);
+  await page.waitForTimeout(300);
+  const afterGe6 = await getBattleState(page);
+  expect(afterGe6.isAnimating).toBe(false);
+  expect(afterGe6.hand).toEqual(state.hand);
+  expect(afterGe6.discardCount).toBe(state.discardCount);
+  expect(afterGe6.renqing).toBe(state.renqing);
+  expect(afterGe6.handScroll).toBe(state.handScroll);
+  await canvas.screenshot({ path: `${SHOT_DIR}/round3-vdrag-after-ge6.png` });
+
+  // 竖向移动 3px（<6px）后在牌面松开：正常出牌
+  await dragCardVertical(page, canvas, cardX, cardY, 3);
+  const afterLt6 = await settle(page, afterGe6);
+  expect(
+    afterLt6.hand.length !== afterGe6.hand.length ||
+      afterLt6.discardCount !== afterGe6.discardCount ||
+      afterLt6.renqing !== afterGe6.renqing,
+  ).toBe(true);
+  await canvas.screenshot({ path: `${SHOT_DIR}/round3-vdrag-after-lt6.png` });
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+for (const vp of VIEWPORTS) {
+  test(`Task 18 round3 fix 2 ${vp.name}: first-time reputation glossary tip clears when entering summary within 3.4s`, async ({
+    page,
+  }) => {
+    const { pageErrors, failedRequests } = trackErrors(page);
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto('/?seed=7');
+    await page.evaluate(
+      ([saveKey, tutKey, glossaryKey, save]) => {
+        localStorage.setItem(tutKey, '1');
+        localStorage.removeItem(glossaryKey);
+        localStorage.setItem(saveKey, save);
+      },
+      [
+        SAVE_STORAGE_KEY,
+        TUTORIAL_STORAGE_KEY,
+        GLOSSARY_STORAGE_KEY,
+        day3Save(['旧书', '飞驰', '集邮', '余音', '守诺', '算盘', '钢笔'], 3),
+      ] as const,
+    );
+    await page.reload();
+    const canvas = page.locator('#game-container canvas');
+    await expect(canvas).toBeVisible();
+    await waitForPawnshopPhase(page, 'title');
+    await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+
+    await waitForPawnshopPhase(page, 'negotiating');
+    await expect
+      .poll(async () => {
+        const s = await getPawnshopState(page);
+        return s.glossaryBannerVisible === true && s.lastGlossaryTip === '口碑：越高越易低价平价收当';
+      })
+      .toBe(true);
+    const tipShownAt = Date.now();
+
+    for (let i = 0; i < 3; i += 1) {
+      await waitForPawnshopPhase(page, 'negotiating');
+      await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+    }
+    const summary = await waitForPawnshopPhase(page, 'summary');
+    expect(Date.now() - tipShownAt).toBeLessThan(3000);
+    expect(summary.lastGlossaryTip).toBe('口碑：越高越易低价平价收当');
+    expect(summary.glossaryBannerVisible).toBe(false);
+
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(150);
+    await canvas.screenshot({ path: `${SHOT_DIR}/round3-summary-firsttip-${vp.name}.png` });
+
+    // 第二行中间格（x=320, y=194，「守诺」）与左格（x=144, y=194，「余音」）均无遮挡且净空 >=5px
+    for (const cellX of [144, 320]) {
+      const m = await measureDeckRowClearance(page, canvas, cellX, 194);
+      expect(m, `row2 cell x=${cellX} not measurable (covered by tip?)`).not.toBeNull();
+      expect(m!.clearance).toBeGreaterThanOrEqual(5 - 1 / m!.scale);
+    }
+
+    expect(failedRequests).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+}

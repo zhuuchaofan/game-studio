@@ -136,6 +136,8 @@ export interface PawnshopDebugSnapshot {
   canSkip?: boolean;
   /** 最近一次界面轻提示文案（如钱不够，供 E2E 断言用）。 */
   lastToast?: string | null;
+  lastGlossaryTip?: string | null;
+  glossaryBannerVisible?: boolean;
   /** 当前赎当事件信息（仅 redemption 阶段由场景钩子提供）。 */
   redemptionOffer?: {
     itemId: string;

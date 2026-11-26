@@ -214,4 +214,15 @@ describe('Monte Carlo battle simulation (1000 runs per demon)', () => {
       expect(distNight.wins + distNight.lossesHp + distNight.lossesTimeout).toBe(200);
     }
   });
+
+  it('Task 18 §9: nightOneMoney curve labels and simulates SIM_TUNE startingMoney override', () => {
+    const defaultReport = runBalanceSimulation({ runs: 50 });
+    expect(defaultReport.nightOneMoney.map((r) => r.startingMoney)).toEqual([200, balanceJson.startingMoney]);
+
+    const tuned260 = runBalanceSimulation({ startingMoney: 260, runs: 50 });
+    expect(tuned260.nightOneMoney.map((r) => r.startingMoney)).toEqual([200, 260]);
+
+    const tuned280 = runBalanceSimulation({ startingMoney: 280, runs: 50 });
+    expect(tuned280.nightOneMoney.map((r) => r.startingMoney)).toEqual([200, 280]);
+  });
 });

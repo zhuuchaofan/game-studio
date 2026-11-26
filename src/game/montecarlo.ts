@@ -2086,7 +2086,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
   });
 
   // Task 18 §9 Night-1 win rate vs starting money (only output metrics, no guardrails)
-  const nightOneMoney = simulateNightOneMoneyCurve([200, balanceJson.startingMoney], {
+  const nightOneMoney = simulateNightOneMoneyCurve([200, pawnBalance.startingMoney], {
     cards,
     demons,
     battleBalance,

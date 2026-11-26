@@ -322,6 +322,16 @@ export class CardBattleScene extends Phaser.Scene {
             this.handSlots.find((s) => !s.consumed && s.currentHandIndex === idx)?.y ??
             computeHandCardPose(idx, this.state.hand.length).y,
         ),
+        handSlotRenderProps: this.state.hand.map((_, idx) => {
+          const slot = this.handSlots.find((s) => !s.consumed && s.currentHandIndex === idx);
+          return slot
+            ? {
+                rotation: slot.container.rotation,
+                nameFontSize: slot.nameText.fontSize,
+                effectFontSize: slot.effectText.fontSize,
+              }
+            : null;
+        }),
         handScroll: this.handScroll,
         handScrollMax: this.handScrollMax(),
         detailMode: this.detailMode,
@@ -1167,23 +1177,30 @@ export class CardBattleScene extends Phaser.Scene {
     });
 
     let dragStartX: number | null = null;
+    let dragStartY: number | null = null;
     let dragStartScroll = 0;
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.handDragged = false;
-      dragStartX = this.handScrollMax() > 0 && pointer.y >= HAND_CLIP_RECT.y ? pointer.x : null;
+      const inHandArea = pointer.y >= HAND_CLIP_RECT.y;
+      dragStartX = inHandArea ? pointer.x : null;
+      dragStartY = inHandArea ? pointer.y : null;
       dragStartScroll = this.handScroll;
     });
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      if (dragStartX === null || !pointer.isDown) return;
+      if (dragStartX === null || dragStartY === null || !pointer.isDown) return;
       const dx = pointer.x - dragStartX;
-      if (this.handDragged || Math.abs(dx) >= HAND_DRAG_THRESHOLD_PX) {
+      const dy = pointer.y - dragStartY;
+      if (this.handDragged || Math.hypot(dx, dy) >= HAND_DRAG_THRESHOLD_PX) {
         this.handDragged = true;
-        this.handScroll = dragStartScroll - dx;
-        this.applyHandScroll();
+        if (this.handScrollMax() > 0) {
+          this.handScroll = dragStartScroll - dx;
+          this.applyHandScroll();
+        }
       }
     });
     this.input.on('pointerup', () => {
       dragStartX = null;
+      dragStartY = null;
     });
     this.input.on('wheel', (_p: Phaser.Input.Pointer, _o: unknown, dx: number, dy: number) => {
       this.scrollHandBy(dx || dy);

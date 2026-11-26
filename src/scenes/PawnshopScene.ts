@@ -373,6 +373,7 @@ export class PawnshopScene extends Phaser.Scene {
           canSkip: isNegotiating,
           lastToast: this.lastToast,
           lastGlossaryTip: this.lastGlossaryTip,
+          glossaryBannerVisible: Boolean(this.glossaryBanner),
           redemptionOffer: activeRedemption,
           bossPreview,
           shopkeeperNote:
@@ -545,6 +546,7 @@ export class PawnshopScene extends Phaser.Scene {
     } else if (this.state.phase === 'side_quest') {
       this.renderSideQuest();
     } else {
+      this.clearGlossaryTip();
       this.renderSummary();
     }
 
