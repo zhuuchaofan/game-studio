@@ -3,6 +3,8 @@ import {
   BATTLE_END_TURN_BUTTON,
   BATTLE_HAND_Y,
   computeHandCardX,
+  HAND_SCROLL_ARROW_WIDTH,
+  HAND_SCROLL_ARROW_Y,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
   PAWNSHOP_TIER_BUTTONS,
@@ -439,8 +441,18 @@ test('Rewind card (倒转) restores both playerHp and demonHp to previous round 
   const renqingBeforeRewind = state.renqing;
   const handLenBeforeRewind = state.hand.length;
 
+  for (let i = 0; i < 12 && state.handSlotXs && (state.handSlotXs[rewindIdx] < 40 || state.handSlotXs[rewindIdx] > 600); i += 1) {
+    const left = state.handSlotXs[rewindIdx] < 40;
+    await clickLogical(page, canvas, {
+      x: left ? HAND_SCROLL_ARROW_WIDTH / 2 : 640 - HAND_SCROLL_ARROW_WIDTH / 2,
+      y: HAND_SCROLL_ARROW_Y,
+    });
+    await page.waitForTimeout(80);
+    state = await getBattleState(page);
+  }
+
   await clickLogical(page, canvas, {
-    x: computeHandCardX(rewindIdx, state.hand.length),
+    x: state.handSlotXs?.[rewindIdx] ?? computeHandCardX(rewindIdx, state.hand.length),
     y: HAND_Y,
   });
 

@@ -53,6 +53,7 @@ Make the smallest change that fully solves the task. Do not add abstractions, fa
 - 挡上线（Block）：算错数（钱/血量/口碑等数值）、丢数据/丢存档、越权改动（改了任务书范围之外的文件或规则）
 - 其他只记建议（Suggestion），不挡
 - 最多审两轮。审稿意见先由 PL 核实（跑测试/读代码），核实过的才进修整单，未核实的丢弃并注明原因
+- 已固定为每轮必跑（制作人 2026-11-26 定）
 
 ## 错一次，补一个测试
 

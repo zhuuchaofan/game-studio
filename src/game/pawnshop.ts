@@ -1137,6 +1137,11 @@ export function wrapCjkText(text: string, maxCharsPerLine: number): string {
   return lines.join('\n');
 }
 
+/** 结算牌组列表 >6 张时只列前 5 名，第 6 格写余数（任务书 18 §5；「共」不在字库，禁用）。 */
+export function formatDeckRemainder(deckLength: number): string {
+  return `等${deckLength - 5}张`;
+}
+
 export function formatDay3Rumor(text: string): string {
   return wrapCjkText(text, DAY3_RUMOR_WRAP_CHARS);
 }

@@ -298,15 +298,15 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   await clickLogical(page, canvas, BUTTONS.titleStart);
   const day1Start = await waitForPawnshopPhase(page, 'negotiating');
   expect(day1Start.day).toBe(1);
-  expect(day1Start.money).toBe(200);
+  expect(day1Start.money).toBe(240);
   expect(day1Start.shopLevel).toBe(1);
   expect(day1Start.maxRenqing).toBe(3);
   expect(day1Start.itemsOrder).toEqual(['old_book', 'erhu', 'stamp_album']);
   await page.screenshot({ path: 'test-results/dayloop-desktop-day1.png' });
 
-  // Buy all 3 items at High tier (30 + 75 + 45 = 150 -> money 50, rep +4 with proud stamp_album +2, deck 3 cards)
+  // Buy all 3 items at High tier (30 + 75 + 45 = 150 -> money 90, rep +4 with proud stamp_album +2, deck 3 cards)
   const day1Summary = await completeDayPawnshopHigh(page, canvas);
-  expect(day1Summary.money).toBe(50);
+  expect(day1Summary.money).toBe(90);
   expect(day1Summary.money).toBeGreaterThanOrEqual(0);
   expect(day1Summary.reputation).toBe(4);
   expect(day1Summary.deck).toEqual(['旧书', '余音', '集邮']);
@@ -354,7 +354,7 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   expect(winResult.savedData!.version).toBe(3);
   expect(winResult.savedData!.day).toBe(2);
   expect(winResult.savedData!.shopLevel).toBe(2);
-  expect(winResult.savedData!.money).toBe(90); // 50 + 40 winRewardMoney
+  expect(winResult.savedData!.money).toBe(130); // 90 + 40 winRewardMoney
   expect(winResult.savedData!.money).toBeGreaterThanOrEqual(0);
   expect(winResult.savedData!.redeemTickets).toBe(1);
   expect(winResult.savedData!.deck).toHaveLength(4);
@@ -367,7 +367,7 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const day2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2.day).toBe(2);
-  expect(day2.money).toBe(90);
+  expect(day2.money).toBe(130);
   expect(day2.reputation).toBe(4);
   expect(day2.shopLevel).toBe(2);
   expect(day2.maxRenqing).toBe(4);
@@ -391,17 +391,17 @@ test('full Day 1 -> lamp-pull transition -> win night -> Day 2 (renqing 4, Demon
   await clickLogical(page, canvas, BUTTONS.redeemReject);
   const restoredDay2 = await waitForPawnshopPhase(page, 'negotiating');
   expect(restoredDay2.day).toBe(2);
-  expect(restoredDay2.money).toBe(90);
+  expect(restoredDay2.money).toBe(130);
   expect(restoredDay2.shopLevel).toBe(2);
   expect(restoredDay2.maxRenqing).toBe(4);
   expect(restoredDay2.deck).toEqual(winResult.savedData!.deck);
-  // 首位当客旧手表（真值 40）：钱 90 时低 20 / 平 40 / 高 60 全部买得起
+  // 首位当客旧手表（真值 40）：钱 130 时低 20 / 平 40 / 高 60 全部买得起
   expect(restoredDay2.tierAffordability).toEqual({ low: true, fair: true, high: true });
 
   // Day 2 pawnshop via Low tier (D2 排位下的 3 位未拥有当客)
   const day2Summary = await completeDayPawnshopLow(page, canvas);
   expect(day2Summary.money).toBeGreaterThanOrEqual(0);
-  expect(day2Summary.money).toBeLessThanOrEqual(90);
+  expect(day2Summary.money).toBeLessThanOrEqual(130);
   expect(day2Summary.deck.length).toBeGreaterThanOrEqual(4);
 
   // Proceed into Night 2 -> verifies Demon B rotation and maxRenqing = 4 (Lv.2)!
@@ -430,9 +430,9 @@ test('lose flow advances day +1 while keeping deck, money, shopLevel, and redeem
 
   await waitForPawnshopPhase(page, 'title');
   await clickLogical(page, canvas, BUTTONS.titleStart);
-  // seed=7 第 1 天高价 75 + 60 + 30 = 165，逐步 75 ≤ 200、60 ≤ 125、30 ≤ 65，全程可买，新规则下不受影响
+  // seed=7 第 1 天高价 75 + 60 + 30 = 165，逐步 75 ≤ 240、60 ≤ 165、30 ≤ 105，全程可买；开局 240 买齐后剩 75
   const day1Summary = await completeDayPawnshopHigh(page, canvas);
-  expect(day1Summary.money).toBe(35);
+  expect(day1Summary.money).toBe(75);
   expect(day1Summary.money).toBeGreaterThanOrEqual(0);
   expect(day1Summary.deck).toEqual(['余音', '倒转', '旧书']);
 
@@ -458,7 +458,7 @@ test('lose flow advances day +1 while keeping deck, money, shopLevel, and redeem
   expect(loseResult.savedData).toMatchObject({
     version: 3,
     day: 2,
-    money: 35,
+    money: 75,
     reputation: 3,
     deck: ['余音', '倒转', '旧书'],
     shopLevel: 1,
@@ -469,7 +469,7 @@ test('lose flow advances day +1 while keeping deck, money, shopLevel, and redeem
   await clickLogical(page, canvas, BUTTONS.resultNextDay);
   const day2AfterLose = await waitForPawnshopPhase(page, 'negotiating');
   expect(day2AfterLose.day).toBe(2);
-  expect(day2AfterLose.money).toBe(35);
+  expect(day2AfterLose.money).toBe(75);
   expect(day2AfterLose.shopLevel).toBe(1);
   expect(day2AfterLose.maxRenqing).toBe(3);
   expect(day2AfterLose.deck).toEqual(['余音', '倒转', '旧书']);
@@ -498,7 +498,7 @@ test('renders pixel font, 32x32 pixel art (2x), and day loop cleanly on mobile l
   await waitForPawnshopPhase(page, 'negotiating');
   await page.screenshot({ path: 'test-results/dayloop-mobile-day1.png' });
 
-  // seed=2 第 1 天高价 30 + 75 + 45 = 150 -> money 50（原 seed=4 高价 270 会在第 3 位当客卡死，见主流程注释）
+  // seed=2 第 1 天高价 30 + 75 + 45 = 150 -> money 90（原 seed=4 高价 270 会在第 3 位当客卡死，见主流程注释）
   await completeDayPawnshopHigh(page, canvas);
   await clickLogical(page, canvas, BUTTONS.enterNightBattle);
   await waitForBattleReady(page, 'play');

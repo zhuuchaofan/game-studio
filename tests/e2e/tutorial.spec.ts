@@ -238,7 +238,7 @@ async function clearAllStorage(page: Page): Promise<void> {
   );
 }
 
-test('first play walks all 6 Day 1 guide bubbles in order, persists completion, and replays via Title 教程 button + screenshots', async ({
+test('first play walks all 6 Day 1 guide bubbles in order, persists completion, and replays via Title 新手局 button + screenshots', async ({
   page,
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
@@ -376,7 +376,7 @@ test('first play walks all 6 Day 1 guide bubbles in order, persists completion, 
   expect(newDay1.currentStep).toBeNull();
   expect(newDay1.tutorialDone).toBe(true);
 
-  // Reload to TitleScreen -> click '教程' entry -> replays tutorial on Day 1!
+  // Reload to TitleScreen -> click '新手局' entry -> replays tutorial on Day 1!
   await page.reload();
   await expect(canvas).toBeVisible();
   await waitForPawnshopPhase(page, 'title');

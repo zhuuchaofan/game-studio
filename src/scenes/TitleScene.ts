@@ -32,7 +32,8 @@ export {
   TITLE_VOLUME_BUTTON,
 } from '../game/layout';
 
-export const GAME_VERSION = 'v0.4.3-ClearRunFix';
+export const GAME_VERSION = 'v0.4.4-OpeningLayout';
+export const TITLE_TUTORIAL_LABEL = '新手局';
 
 export class TitleScene extends Phaser.Scene {
   private handleWindowResize?: () => void;
@@ -83,6 +84,7 @@ export class TitleScene extends Phaser.Scene {
         currentStep: null,
         tutorialDone: loadTutorialDone(),
         version: GAME_VERSION,
+        tutorialButtonLabel: TITLE_TUTORIAL_LABEL,
         titleCompletedTeaser,
         titleSettlementLine,
         titleEndingLedger,
@@ -246,7 +248,7 @@ export class TitleScene extends Phaser.Scene {
       TITLE_TUTORIAL_BUTTON.y,
       TITLE_TUTORIAL_BUTTON.width,
       TITLE_TUTORIAL_BUTTON.height,
-      '教程',
+      TITLE_TUTORIAL_LABEL,
       () => {
         const fresh = createNewGame(undefined, existingSave?.chapter);
         clearPawnPrices();

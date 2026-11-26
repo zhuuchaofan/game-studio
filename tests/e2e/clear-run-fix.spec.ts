@@ -2,6 +2,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   BATTLE_END_TURN_BUTTON,
   DEMON_INTRO_BANNER_RECT,
+  HAND_SCROLL_ARROW_WIDTH,
+  HAND_SCROLL_ARROW_Y,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_SKIP_BUTTON,
   PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
@@ -47,7 +49,8 @@ interface BattleDebugState {
   hand: string[];
   handSlotXs?: number[];
   handSlotYs?: number[];
-  handSlotRotations?: number[];
+  handScroll?: number;
+  handScrollMax?: number;
   introBannerVisible?: boolean;
   detailLayerVisible?: boolean;
   lastFloatSpawns?: { label: string; lane: string; startY: number; endY: number }[];
@@ -124,6 +127,23 @@ async function waitForBattleReady(page: Page, phase: string): Promise<BattleDebu
     })
     .toBe(phase);
   return getBattleState(page);
+}
+
+/** 点两侧箭头把第 idx 张手牌滚进可点区域，返回滚动后的状态（槽位坐标已含滚动偏移）。 */
+async function bringIntoView(page: Page, canvas: Locator, idx: number): Promise<BattleDebugState> {
+  let s = await getBattleState(page);
+  for (let i = 0; i < 12 && (s.handSlotXs![idx] < 40 || s.handSlotXs![idx] > 600); i += 1) {
+    const left = s.handSlotXs![idx] < 40;
+    await clickLogical(page, canvas, { x: left ? HAND_SCROLL_ARROW_WIDTH / 2 : 640 - HAND_SCROLL_ARROW_WIDTH / 2, y: HAND_SCROLL_ARROW_Y });
+    await page.waitForTimeout(80);
+    s = await getBattleState(page);
+  }
+  return s;
+}
+
+async function clickSlot(page: Page, canvas: Locator, idx: number): Promise<void> {
+  const s = await bringIntoView(page, canvas, idx);
+  await clickLogical(page, canvas, { x: s.handSlotXs![idx], y: s.handSlotYs![idx] });
 }
 
 async function enterBattleFromSeededDay(page: Page, canvas: Locator): Promise<BattleDebugState> {
@@ -233,12 +253,10 @@ test('Task 17 §2 & §6: intro banner is clickable without misplay, detail strip
     const bookIdx = state.hand.indexOf('旧书');
     const pickIdx = abacusIdx >= 0 && state.renqing >= 1 ? abacusIdx : bookIdx;
     if (pickIdx >= 0 && state.renqing >= 1) {
-      const x = state.handSlotXs![pickIdx];
-      const y = state.handSlotYs![pickIdx];
       const prevDiscard = state.discardCount;
       const prevHandLen = state.hand.length;
       const prevRenqing = state.renqing;
-      await clickLogical(page, canvas, { x, y });
+      await clickSlot(page, canvas, pickIdx);
       await expect
         .poll(async () => {
           const s = await getBattleState(page);
@@ -266,13 +284,12 @@ test('Task 17 §2 & §6: intro banner is clickable without misplay, detail strip
 
   // Re-center via End Turn if < 7 started the turn, so we test a clean 7+ card fanned hand
   if (state.hand.length === 7) {
-    expect(state.handSlotRotations!.some((r) => Math.abs(r) > 0.01)).toBe(true);
-    const initialXs = [...state.handSlotXs!];
-    const initialYs = [...state.handSlotYs!];
-    const initialRots = [...state.handSlotRotations!];
     // Pick a non-draw card (守诺) so hand transitions 7 -> 6 cleanly and we verify fixed-slot keepPositions
     let targetIdx = state.hand.indexOf('守诺');
     if (targetIdx < 0) targetIdx = 0;
+    state = await bringIntoView(page, canvas, targetIdx);
+    const initialXs = [...state.handSlotXs!];
+    const initialYs = [...state.handSlotYs!];
     const prevDiscard = state.discardCount;
     await clickLogical(page, canvas, { x: initialXs[targetIdx], y: initialYs[targetIdx] });
     await expect
@@ -290,14 +307,10 @@ test('Task 17 §2 & §6: intro banner is clickable without misplay, detail strip
       ...initialYs.slice(0, targetIdx),
       ...initialYs.slice(targetIdx + 1),
     ]);
-    expect(after7Play.handSlotRotations).toEqual([
-      ...initialRots.slice(0, targetIdx),
-      ...initialRots.slice(targetIdx + 1),
-    ]);
     state = after7Play;
   }
 
-  // Grow hand to >= 10 cards and verify rotated click accuracy on edge and middle fanned cards
+  // Grow hand to >= 10 cards and verify click accuracy on edge and middle scrolled cards
   while (state.hand.length < 10) {
     const abacusIdx = state.hand.indexOf('算盘');
     const bookIdx = state.hand.indexOf('旧书');
@@ -306,10 +319,7 @@ test('Task 17 §2 & §6: intro banner is clickable without misplay, detail strip
       const prevDiscard = state.discardCount;
       const prevHandLen = state.hand.length;
       const prevRenqing = state.renqing;
-      await clickLogical(page, canvas, {
-        x: state.handSlotXs![pickIdx],
-        y: state.handSlotYs![pickIdx],
-      });
+      await clickSlot(page, canvas, pickIdx);
       await expect
         .poll(async () => {
           const s = await getBattleState(page);
@@ -336,14 +346,14 @@ test('Task 17 §2 & §6: intro banner is clickable without misplay, detail strip
   }
 
   expect(state.hand.length).toBeGreaterThanOrEqual(10);
-  expect(state.handSlotRotations!.some((r) => Math.abs(r) > 0.01)).toBe(true);
+  expect(state.handScrollMax!).toBeGreaterThan(0);
   // Ensure renqing >= 2 so we can click two fanned cards at 10+ hand size
   if (state.renqing < 2) {
     const abIdx = state.hand.indexOf('算盘');
     if (abIdx >= 0 && state.renqing >= 1) {
       const prevD = state.discardCount;
       const prevL = state.hand.length;
-      await clickLogical(page, canvas, { x: state.handSlotXs![abIdx], y: state.handSlotYs![abIdx] });
+      await clickSlot(page, canvas, abIdx);
       await expect
         .poll(async () => {
           const s = await getBattleState(page);
@@ -359,6 +369,7 @@ test('Task 17 §2 & §6: intro banner is clickable without misplay, detail strip
   const prevLen10 = state.hand.length;
   const prevDiscard10 = state.discardCount;
   const prevShield10 = state.shield;
+  state = await bringIntoView(page, canvas, 0);
   const xsBefore10 = [...state.handSlotXs!];
   await clickLogical(page, canvas, { x: state.handSlotXs![0], y: state.handSlotYs![0] });
   await expect
@@ -382,10 +393,7 @@ test('Task 17 §2 & §6: intro banner is clickable without misplay, detail strip
     const prevRLen = afterLeftClick.hand.length;
     const prevRRenqing = afterLeftClick.renqing;
     const prevRShield = afterLeftClick.shield;
-    await clickLogical(page, canvas, {
-      x: afterLeftClick.handSlotXs![rightIdx],
-      y: afterLeftClick.handSlotYs![rightIdx],
-    });
+    await clickSlot(page, canvas, rightIdx);
     await expect
       .poll(async () => {
         const s = await getBattleState(page);
@@ -647,7 +655,7 @@ test('Task 17 §4: normal failure page shows 3 lines for lose_timeout and lose_h
   expect(pageErrors).toEqual([]);
 });
 
-test('Task 17 §7 & §10: completed TitleScene shows two-line Ch2 teaser badge, settlement summary, version v0.4.3-ClearRunFix, and starts Ch1 cleanly', async ({
+test('Task 17 §7 & §10: completed TitleScene shows two-line Ch2 teaser badge, settlement summary, version v0.4.4-OpeningLayout, and starts Ch1 cleanly', async ({
   page,
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
@@ -697,7 +705,7 @@ test('Task 17 §7 & §10: completed TitleScene shows two-line Ch2 teaser badge, 
   await expect(canvas).toBeVisible();
   const titleState = await waitForPawnshopPhase(page, 'title');
 
-  expect(titleState.version).toBe('v0.4.3-ClearRunFix');
+  expect(titleState.version).toBe('v0.4.4-OpeningLayout');
   expect(titleState.titleCompletedTeaser).toBe('第2章「站稳招牌」· 未完待续');
   expect(titleState.titleSettlementLine).toBe('胜6 · 收8 · 钱182');
   expect(titleState.titleEndingLedger?.lines).toEqual([

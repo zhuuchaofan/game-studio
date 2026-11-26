@@ -25,6 +25,7 @@ import {
   deriveRedemptionSeed,
   FATHER_WATCH_CARD_NAME,
   formatDay3Rumor,
+  formatDeckRemainder,
   formatReputationHint,
   formatSignedDelta,
   getEffectiveAcceptRate,
@@ -2044,7 +2045,7 @@ export class PawnshopScene extends Phaser.Scene {
       });
       if (this.state.deck.length > maxSlots) {
         this.contentLayer.add(
-          addPixelText(this, slotXs[2], isDay3Rumor ? 194 : 238, `等${this.state.deck.length}张`, {
+          addPixelText(this, slotXs[2], isDay3Rumor ? 194 : 238, formatDeckRemainder(this.state.deck.length), {
             color: PALETTE.deepWood.hex,
             origin: 0.5,
           }),

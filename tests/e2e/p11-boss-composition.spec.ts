@@ -308,7 +308,7 @@ test('P11 E2E 1: Shopkeeper opening note, Calendar Boss badges update on pawn & 
 
   // Title screen shows shopkeeper opening note & version
   const titleState = await waitForPawnshopPhase(page, 'title');
-  expect(titleState.version).toBe('v0.4.3-ClearRunFix');
+  expect(titleState.version).toBe('v0.4.4-OpeningLayout');
   expect(titleState.shopkeeperNote).toContain('有人回来赎东西，先找当票，别让人白跑。');
   await clickLogical(page, canvas, BUTTONS.titleStart);
 

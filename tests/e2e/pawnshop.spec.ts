@@ -81,7 +81,7 @@ test('accepts all three tiers (low/fair/high) with fixed seed=7 and verifies GDD
   await expect(canvas).toBeVisible();
 
   const titleState = await waitForPhase(page, 'title');
-  expect(titleState.money).toBe(200);
+  expect(titleState.money).toBe(240);
   expect(titleState.reputation).toBe(0);
   expect(titleState.deck).toEqual([]);
 
@@ -98,7 +98,7 @@ test('accepts all three tiers (low/fair/high) with fixed seed=7 and verifies GDD
   // Customer 1: Erhu (trueValue 50) -> low (50% = 25), seed=7 roll 1 (~0.0117 < 0.3) => ACCEPT
   await clickLogical(page, canvas, BUTTONS.tierLow);
   const afterFirst = await waitForPhase(page, 'feedback');
-  expect(afterFirst.money).toBe(175);
+  expect(afterFirst.money).toBe(215);
   expect(afterFirst.reputation).toBe(-1);
   expect(afterFirst.deck).toEqual(['余音']);
 
@@ -109,7 +109,7 @@ test('accepts all three tiers (low/fair/high) with fixed seed=7 and verifies GDD
   // Customer 2: Watch (trueValue 40) -> fair (100% = 40), seed=7 roll 2 (~0.062 < 0.8) => ACCEPT
   await clickLogical(page, canvas, BUTTONS.tierFair);
   const afterSecond = await waitForPhase(page, 'feedback');
-  expect(afterSecond.money).toBe(135);
+  expect(afterSecond.money).toBe(175);
   expect(afterSecond.reputation).toBe(-1);
   expect(afterSecond.deck).toEqual(['余音', '倒转']);
 
@@ -120,7 +120,7 @@ test('accepts all three tiers (low/fair/high) with fixed seed=7 and verifies GDD
   // Customer 3: Old book (trueValue 20) -> high (150% = 30), acceptRate 1.0 => ACCEPT
   await clickLogical(page, canvas, BUTTONS.tierHigh);
   const afterThird = await waitForPhase(page, 'feedback');
-  expect(afterThird.money).toBe(105);
+  expect(afterThird.money).toBe(145);
   expect(afterThird.reputation).toBe(0);
   expect(afterThird.deck).toEqual(['余音', '倒转', '旧书']);
 
@@ -128,7 +128,7 @@ test('accepts all three tiers (low/fair/high) with fixed seed=7 and verifies GDD
   await clickLogical(page, canvas, BUTTONS.nextOrSummary);
   const summaryState = await waitForPhase(page, 'summary');
   expect(summaryState.customerIndex).toBe(3);
-  expect(summaryState.money).toBe(105);
+  expect(summaryState.money).toBe(145);
   expect(summaryState.reputation).toBe(0);
   expect(summaryState.deck).toEqual(['余音', '倒转', '旧书']);
   expect(summaryState.log).toHaveLength(3);
@@ -160,7 +160,7 @@ test('rejects offers with fixed seed=10 without changing money, reputation, or d
   // Customer 1: Watch -> low, seed=10 roll 1 (~0.502 >= 0.3) => REJECT
   await clickLogical(page, canvas, BUTTONS.tierLow);
   const afterWatch = await waitForPhase(page, 'feedback');
-  expect(afterWatch.money).toBe(200);
+  expect(afterWatch.money).toBe(240);
   expect(afterWatch.reputation).toBe(0);
   expect(afterWatch.deck).toEqual([]);
 
@@ -170,7 +170,7 @@ test('rejects offers with fixed seed=10 without changing money, reputation, or d
   // Customer 2: Ring -> fair, seed=10 roll 2 (~0.917 >= 0.8) => REJECT
   await clickLogical(page, canvas, BUTTONS.tierFair);
   const afterRing = await waitForPhase(page, 'feedback');
-  expect(afterRing.money).toBe(200);
+  expect(afterRing.money).toBe(240);
   expect(afterRing.reputation).toBe(0);
   expect(afterRing.deck).toEqual([]);
 
@@ -180,14 +180,14 @@ test('rejects offers with fixed seed=10 without changing money, reputation, or d
   // Customer 3: Old book -> low, seed=10 roll 3 (~0.691 >= 0.3) => REJECT
   await clickLogical(page, canvas, BUTTONS.tierLow);
   const afterBook = await waitForPhase(page, 'feedback');
-  expect(afterBook.money).toBe(200);
+  expect(afterBook.money).toBe(240);
   expect(afterBook.reputation).toBe(0);
   expect(afterBook.deck).toEqual([]);
 
   // Advance to Summary
   await clickLogical(page, canvas, BUTTONS.nextOrSummary);
   const summaryState = await waitForPhase(page, 'summary');
-  expect(summaryState.money).toBe(200);
+  expect(summaryState.money).toBe(240);
   expect(summaryState.reputation).toBe(0);
   expect(summaryState.deck).toEqual([]);
   expect(summaryState.log).toHaveLength(3);
