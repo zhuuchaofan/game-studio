@@ -476,7 +476,7 @@ describe('P12 阶段 C：校验、存档透传、奖励排除与上限管理', (
 
     const badMilestones = {
       ...legacySave,
-      chapter: { ...legacySave.chapter, heirloomMilestonesClaimed: ['3'] },
+      chapter: { ...legacySave.chapter, heirloomMilestonesClaimed: ['2'] },
     };
     storage.setItem(SAVE_STORAGE_KEY, JSON.stringify(badMilestones));
     expect(loadSaveDetailed(storage).quarantinedCorrupt).toBe(true);
@@ -484,7 +484,7 @@ describe('P12 阶段 C：校验、存档透传、奖励排除与上限管理', (
     // 3. cloneChapterState 深拷贝不共享引用
     const ch = createInitialChapterState({
       heirlooms: ['old_abacus', 'quilt'],
-      heirloomMilestonesClaimed: [3],
+      heirloomMilestonesClaimed: [2],
     });
     const cloned = cloneChapterState(ch);
     expect(cloned.heirlooms).toEqual(['old_abacus', 'quilt']);
@@ -499,7 +499,7 @@ describe('P12 阶段 C：校验、存档透传、奖励排除与上限管理', (
       chapter: createInitialChapterState({
         dayInChapter: 3,
         heirlooms: ['old_abacus', 'gold_signboard'],
-        heirloomMilestonesClaimed: [3, 5],
+        heirloomMilestonesClaimed: [2, 4],
       }),
     };
     const branches = [
@@ -520,7 +520,7 @@ describe('P12 阶段 C：校验、存档透传、奖励排除与上限管理', (
     ];
     for (const out of branches) {
       expect(out.chapter.heirlooms).toEqual(['old_abacus', 'gold_signboard']);
-      expect(out.chapter.heirloomMilestonesClaimed).toEqual([3, 5]);
+      expect(out.chapter.heirloomMilestonesClaimed).toEqual([2, 4]);
       expect(out.chapter.heirlooms).not.toBe(day3Save.chapter.heirlooms);
       expect(out.chapter.heirloomMilestonesClaimed).not.toBe(
         day3Save.chapter.heirloomMilestonesClaimed,
@@ -562,12 +562,12 @@ describe('P12 阶段 C：校验、存档透传、奖励排除与上限管理', (
   });
 
   it('口碑里程碑触发一次、持有上限 3 件与替换纯函数', () => {
-    expect(getNewlyReachedMilestones(2, [])).toEqual([]);
-    expect(getNewlyReachedMilestones(3, [])).toEqual([3]);
-    expect(getNewlyReachedMilestones(3, [3])).toEqual([]);
-    expect(getNewlyReachedMilestones(5, [3])).toEqual([5]);
-    expect(getNewlyReachedMilestones(5, [])).toEqual([3, 5]);
-    expect(getNewlyReachedMilestones(6, [3, 5])).toEqual([]);
+    expect(getNewlyReachedMilestones(1, [])).toEqual([]);
+    expect(getNewlyReachedMilestones(2, [])).toEqual([2]);
+    expect(getNewlyReachedMilestones(2, [2])).toEqual([]);
+    expect(getNewlyReachedMilestones(4, [2])).toEqual([4]);
+    expect(getNewlyReachedMilestones(4, [])).toEqual([2, 4]);
+    expect(getNewlyReachedMilestones(5, [2, 4])).toEqual([]);
 
     const picked = pickRandomUnownedHeirloom(['old_abacus', 'quilt'], mulberry32(1));
     expect(picked).not.toBeNull();

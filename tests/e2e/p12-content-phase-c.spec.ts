@@ -44,6 +44,11 @@ interface PawnshopDebugState {
   deck: string[];
   day?: number;
   pactChoice?: string | null;
+  chapter?: {
+    chapter1Completed?: boolean;
+    status?: string;
+    heirlooms?: string[];
+  };
   heirlooms?: string[];
   heirloomMilestonesClaimed?: number[];
   heirloomBarVisible?: boolean;
@@ -70,6 +75,7 @@ interface BattleDebugState {
   introBannerVisible?: boolean;
   log?: string[];
   heirlooms?: string[];
+  bossDropNeedsReplace?: boolean;
   bossHeirloomDrop?: { id: string; name: string; shortLabel: string; effectText: string } | null;
   lastFloatSpawns?: { label: string; lane: string; startY: number; endY: number }[];
   savedData?: {
@@ -384,7 +390,7 @@ test('P12 阶段 C：7 件传家宝战斗效果逐一验证（含棉被开局回
   expect(pageErrors).toEqual([]);
 });
 
-test('P12 阶段 C：老物件栏(0/1/3件)、点击看说明、口碑≥3/≥5获取、第4天四选一与上限3件替换、不进牌组', async ({
+test('P12 阶段 C：老物件栏(0/1/3件)、点击看说明、口碑≥2/≥4获取、第4天四选一与上限3件替换、不进牌组', async ({
   page,
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
@@ -394,15 +400,15 @@ test('P12 阶段 C：老物件栏(0/1/3件)、点击看说明、口碑≥3/≥5�
     ...HEIRLOOMS.map((h) => h.name),
   ]);
 
-  // 1) 0 件老物件栏 + 口碑 >=3 / >=5 里程碑获取
+  // 1) 0 件老物件栏 + 口碑 >=2 / >=4 两档里程碑连续获取
   await seedAndStartSavedDay(
     page,
     canvas,
     '/?seed=7',
     buildSeededSave({
       day: 2,
-      money: 240,
-      reputation: 2,
+      money: 500,
+      reputation: 1,
       deck: ['钢笔'],
       heirlooms: [],
       heirloomMilestonesClaimed: [],
@@ -414,38 +420,44 @@ test('P12 阶段 C：老物件栏(0/1/3件)、点击看说明、口碑≥3/≥5�
   expect(neg0.heirloomBarVisible).toBe(true);
   expect(neg0.heirlooms).toEqual([]);
 
-  // 高价成交：口碑 2 -> 3，触发口碑里程碑 >=3
+  // 高价成交：口碑 1 -> 2/3，触发第一档里程碑 >=2，得第 1 件老物件
   await clickLogical(page, canvas, PAWNSHOP_TIER_BUTTONS.high);
-  const fbRep3 = await waitForPawnshopPhase(page, 'feedback');
-  expect(fbRep3.reputation).toBeGreaterThanOrEqual(3);
-  expect(fbRep3.heirlooms).toHaveLength(1);
-  expect(fbRep3.heirloomMilestonesClaimed).toContain(3);
+  const fbRep2 = await waitForPawnshopPhase(page, 'feedback');
+  expect(fbRep2.reputation).toBeGreaterThanOrEqual(2);
+  expect(fbRep2.reputation).toBeLessThan(4);
+  expect(fbRep2.heirlooms).toHaveLength(1);
+  expect(fbRep2.heirloomMilestonesClaimed).toEqual([2]);
   // 老物件不得进入牌组
-  for (const card of fbRep3.deck) {
+  for (const card of fbRep2.deck) {
     expect(heirloomNamesAndIds.has(card)).toBe(false);
   }
 
   // 点击老物件栏第 1 槽位查看说明，再点关闭
   await clickLogical(page, canvas, HEIRLOOM_BAR_SLOTS[0]);
   await expect.poll(async () => (await getPawnshopState(page)).inspectedHeirloomId).toBe(
-    fbRep3.heirlooms![0],
+    fbRep2.heirlooms![0],
   );
   const inspected1 = await getPawnshopState(page);
-  const expectedDef = HEIRLOOMS.find((h) => h.id === fbRep3.heirlooms![0])!;
+  const expectedDef = HEIRLOOMS.find((h) => h.id === fbRep2.heirlooms![0])!;
   expect(inspected1.inspectedHeirloomText).toContain(expectedDef.name);
   expect(inspected1.inspectedHeirloomText).toContain(expectedDef.effectText);
   expect(inspected1.inspectedHeirloomText).toContain(expectedDef.story);
   await clickLogical(page, canvas, HEIRLOOM_BAR_SLOTS[0]);
   await expect.poll(async () => (await getPawnshopState(page)).inspectedHeirloomId).toBeNull();
 
-  // 下一位继续高价成交，推高口碑到 >=5 触发第二档里程碑
-  await clickLogical(page, canvas, PAWNSHOP_FEEDBACK_NEXT_BUTTON);
-  await waitForPawnshopPhase(page, 'negotiating');
-  await clickLogical(page, canvas, PAWNSHOP_TIER_BUTTONS.high);
-  const fbRep5 = await waitForPawnshopPhase(page, 'feedback');
-  expect(fbRep5.heirlooms?.length).toBeGreaterThanOrEqual(1);
+  // 继续高价成交推高口碑到 >=4，触发第二档里程碑 >=4 再得第 2 件老物件
+  let fbAfter = fbRep2;
+  for (let i = 0; i < 2 && fbAfter.reputation < 4; i += 1) {
+    await clickLogical(page, canvas, PAWNSHOP_FEEDBACK_NEXT_BUTTON);
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, PAWNSHOP_TIER_BUTTONS.high);
+    fbAfter = await waitForPawnshopPhase(page, 'feedback');
+  }
+  expect(fbAfter.reputation).toBeGreaterThanOrEqual(4);
+  expect(fbAfter.heirlooms).toHaveLength(2);
+  expect(fbAfter.heirloomMilestonesClaimed).toEqual([2, 4]);
 
-  // 显式在 rep=4 时验证 >=5 档触发一次、已领不重领
+  // 显式在 rep=3 时验证 >=4 档触发一次、已领不重领
   await seedAndStartSavedDay(
     page,
     canvas,
@@ -453,20 +465,20 @@ test('P12 阶段 C：老物件栏(0/1/3件)、点击看说明、口碑≥3/≥5�
     buildSeededSave({
       day: 2,
       money: 240,
-      reputation: 4,
+      reputation: 3,
       deck: ['钢笔'],
       heirlooms: ['old_abacus'],
-      heirloomMilestonesClaimed: [3],
+      heirloomMilestonesClaimed: [2],
     }),
   );
   await waitForPawnshopPhase(page, 'morning');
   await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   await waitForPawnshopPhase(page, 'negotiating');
   await clickLogical(page, canvas, PAWNSHOP_TIER_BUTTONS.high);
-  const rep5After = await waitForPawnshopPhase(page, 'feedback');
-  expect(rep5After.reputation).toBeGreaterThanOrEqual(5);
-  expect(rep5After.heirlooms).toHaveLength(2);
-  expect(rep5After.heirloomMilestonesClaimed).toEqual([3, 5]);
+  const rep4After = await waitForPawnshopPhase(page, 'feedback');
+  expect(rep4After.reputation).toBeGreaterThanOrEqual(4);
+  expect(rep4After.heirlooms).toHaveLength(2);
+  expect(rep4After.heirloomMilestonesClaimed).toEqual([2, 4]);
 
   // 2) 第 4 天四选一契约（4 槽位全在 640×360 内，选第 4 选项「老街人情」立得 1 件且存档可读）
   for (const slot of PACT_OPTION_BUTTONS) {
@@ -485,7 +497,7 @@ test('P12 阶段 C：老物件栏(0/1/3件)、点击看说明、口碑≥3/≥5�
       pactChoice: null,
       day4TrimDone: true,
       heirlooms: ['old_abacus'],
-      heirloomMilestonesClaimed: [3],
+      heirloomMilestonesClaimed: [2],
     }),
   );
   await waitForPawnshopPhase(page, 'morning');
@@ -519,7 +531,7 @@ test('P12 阶段 C：老物件栏(0/1/3件)、点击看说明、口碑≥3/≥5�
       pactChoice: null,
       day4TrimDone: true,
       heirlooms: ['old_abacus', 'gold_signboard', 'quilt'],
-      heirloomMilestonesClaimed: [3, 5],
+      heirloomMilestonesClaimed: [2, 4],
     }),
   );
   await waitForPawnshopPhase(page, 'morning');
@@ -547,7 +559,7 @@ test('P12 阶段 C：老物件栏(0/1/3件)、点击看说明、口碑≥3/≥5�
       pactChoice: null,
       day4TrimDone: true,
       heirlooms: ['old_abacus', 'gold_signboard', 'quilt'],
-      heirloomMilestonesClaimed: [3, 5],
+      heirloomMilestonesClaimed: [2, 4],
     }),
   );
   await waitForPawnshopPhase(page, 'morning');
@@ -628,6 +640,340 @@ test('P12 阶段 C：Boss 胜掉落传家宝并与胜利奖励同屏显示', asy
   // 可继续点「翻到结局」
   await clickLogical(page, canvas, DIARY_CONTINUE_BUTTON);
   await expect.poll(async () => (await getBattleState(page)).resultView).toBe('ending');
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+async function readStoredSave(page: Page): Promise<{
+  money: number;
+  reputation: number;
+  deck: string[];
+  chapter: {
+    status: string;
+    chapter1Completed: boolean;
+    pactChoice: string | null;
+    heirlooms?: string[];
+    heirloomMilestonesClaimed?: number[];
+  };
+}> {
+  const raw = await page.evaluate((key) => localStorage.getItem(key), SAVE_STORAGE_KEY);
+  expect(raw).not.toBeNull();
+  return JSON.parse(raw!);
+}
+
+async function replayBossFromBossPreview(
+  page: Page,
+  canvas: Locator,
+): Promise<BattleDebugState> {
+  await waitForPawnshopPhase(page, 'boss_preview');
+  await clickLogical(page, canvas, { x: 320, y: 316 });
+  for (let i = 0; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  }
+  await waitForPawnshopPhase(page, 'summary');
+  await clickLogical(page, canvas, PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON);
+
+  await waitForBattleReady(page, 'play');
+  await dismissBattleBannerIfPresent(page, canvas);
+
+  for (let i = 0; i < 12; i += 1) {
+    const s = await waitForBattleReady(page, 'play').catch(() => null);
+    if (!s || s.phase === 'result_scene') break;
+    if (s.hand.includes('秤砣') && s.renqing >= 1) {
+      await playHandCardByName(page, canvas, '秤砣');
+    } else {
+      const prevRound = s.round;
+      await clickLogical(page, canvas, BATTLE_END_TURN_BUTTON);
+      await expect
+        .poll(async () => {
+          const cur = await getBattleState(page);
+          return !cur.isAnimating && (cur.phase === 'result_scene' || cur.round !== prevRound);
+        })
+        .toBe(true);
+    }
+  }
+  await expect.poll(async () => (await getBattleState(page)).phase).toBe('result_scene');
+  return getBattleState(page);
+}
+
+async function playSeededDay7ToBossResult(
+  page: Page,
+  canvas: Locator,
+): Promise<BattleDebugState> {
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+  return replayBossFromBossPreview(page, canvas);
+}
+
+test('P12 修整 2：满持有时契约与口碑触发待替换，刷新后不丢触发且可恢复完成替换/跳过', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+  const canvas = page.locator('#game-container canvas');
+  const initialThree = ['old_abacus', 'gold_signboard', 'quilt'];
+
+  // 路径 A：第 4 天契约「老街人情」满持有触发替换面板 -> 刷新 -> 重做契约再次出面板 -> 替换
+  await seedAndStartSavedDay(
+    page,
+    canvas,
+    '/?seed=10',
+    buildSeededSave({
+      day: 4,
+      deck: ['钢笔'],
+      pactChoice: null,
+      day4TrimDone: true,
+      heirlooms: initialThree,
+      heirloomMilestonesClaimed: [2, 4],
+    }),
+  );
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+  await waitForPawnshopPhase(page, 'pact');
+  await clickLogical(page, canvas, PACT_OPTION_BUTTONS[3]);
+  const pactReplace1 = await waitForPawnshopPhase(page, 'replace_heirloom');
+  expect(pactReplace1.pendingHeirloomOffer).not.toBeNull();
+  const pactOfferId = pactReplace1.pendingHeirloomOffer!.id;
+
+  // 在替换面板未解决前，磁盘不得包含已消耗的 pactChoice，且持有仍为原 3 件
+  const diskBeforePactReload = await readStoredSave(page);
+  expect(diskBeforePactReload.chapter.pactChoice).toBeNull();
+  expect(diskBeforePactReload.chapter.heirlooms).toEqual(initialThree);
+
+  // 刷新页面 -> 点「继续」回到第 4 天 pact -> 重做契约 -> 再次出现同一老物件替换面板
+  await page.reload();
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  await waitForPawnshopPhase(page, 'pact');
+  await clickLogical(page, canvas, PACT_OPTION_BUTTONS[3]);
+  const pactReplace2 = await waitForPawnshopPhase(page, 'replace_heirloom');
+  expect(pactReplace2.pendingHeirloomOffer?.id).toBe(pactOfferId);
+
+  // 完成第 1 槽替换 -> 恰得 1 件新老物件、不重复发放、磁盘落盘
+  await clickLogical(page, canvas, HEIRLOOM_REPLACE_SLOTS[0]);
+  const afterPactReplace = await waitForPawnshopPhase(page, 'negotiating');
+  expect(afterPactReplace.pactChoice).toBe('street_favor');
+  expect(afterPactReplace.heirlooms).toEqual([pactOfferId, 'gold_signboard', 'quilt']);
+  const diskAfterPactReplace = await readStoredSave(page);
+  expect(diskAfterPactReplace.chapter.pactChoice).toBe('street_favor');
+  expect(diskAfterPactReplace.chapter.heirlooms).toEqual([pactOfferId, 'gold_signboard', 'quilt']);
+
+  // 再刷新验证不会再次触发契约或重复发放
+  await page.reload();
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  const pactSteady = await waitForPawnshopPhase(page, 'negotiating');
+  expect(pactSteady.pactChoice).toBe('street_favor');
+  expect(pactSteady.heirlooms).toEqual([pactOfferId, 'gold_signboard', 'quilt']);
+
+  // 路径 B：口碑里程碑 >=2 满持有触发替换面板 -> 刷新 -> 重做成交再次出面板 -> 替换 & 再测跳过
+  await seedAndStartSavedDay(
+    page,
+    canvas,
+    '/?seed=12',
+    buildSeededSave({
+      day: 2,
+      money: 300,
+      reputation: 1,
+      deck: ['钢笔'],
+      heirlooms: initialThree,
+      heirloomMilestonesClaimed: [],
+    }),
+  );
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+  await waitForPawnshopPhase(page, 'negotiating');
+  await clickLogical(page, canvas, PAWNSHOP_TIER_BUTTONS.high);
+  const repReplace1 = await waitForPawnshopPhase(page, 'replace_heirloom');
+  expect(repReplace1.pendingHeirloomOffer).not.toBeNull();
+  const repOfferId = repReplace1.pendingHeirloomOffer!.id;
+
+  // 在替换面板未解决前，磁盘不得写入已领取档位与成交后口碑
+  const diskBeforeRepReload = await readStoredSave(page);
+  expect(diskBeforeRepReload.reputation).toBe(1);
+  expect(diskBeforeRepReload.chapter.heirloomMilestonesClaimed).toEqual([]);
+  expect(diskBeforeRepReload.chapter.heirlooms).toEqual(initialThree);
+
+  // 刷新后读档回到 negotiating，重做高价成交，面板再次出现同件老物件
+  await page.reload();
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  const negAfterReload = await waitForPawnshopPhase(page, 'negotiating');
+  expect(negAfterReload.reputation).toBe(1);
+  expect(negAfterReload.heirloomMilestonesClaimed).toEqual([]);
+  await clickLogical(page, canvas, PAWNSHOP_TIER_BUTTONS.high);
+  const repReplace2 = await waitForPawnshopPhase(page, 'replace_heirloom');
+  expect(repReplace2.pendingHeirloomOffer?.id).toBe(repOfferId);
+
+  // 选择第 2 槽替换 -> 恰得 1 件新老物件且档位 [2] 落盘
+  await clickLogical(page, canvas, HEIRLOOM_REPLACE_SLOTS[1]);
+  const afterRepReplace = await waitForPawnshopPhase(page, 'feedback');
+  expect(afterRepReplace.reputation).toBeGreaterThanOrEqual(2);
+  expect(afterRepReplace.heirloomMilestonesClaimed).toEqual([2]);
+  expect(afterRepReplace.heirlooms).toEqual(['old_abacus', repOfferId, 'quilt']);
+  const diskAfterRepReplace = await readStoredSave(page);
+  expect(diskAfterRepReplace.chapter.heirloomMilestonesClaimed).toEqual([2]);
+  expect(diskAfterRepReplace.chapter.heirlooms).toEqual(['old_abacus', repOfferId, 'quilt']);
+
+  // 补充验证口碑路径主动跳过（暂不换）：刷新重做后点暂不换，保留原 3 件且档位 [2] 已落盘不再重发
+  await seedAndStartSavedDay(
+    page,
+    canvas,
+    '/?seed=14',
+    buildSeededSave({
+      day: 2,
+      money: 300,
+      reputation: 1,
+      deck: ['钢笔'],
+      heirlooms: initialThree,
+      heirloomMilestonesClaimed: [],
+    }),
+  );
+  await waitForPawnshopPhase(page, 'morning');
+  await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
+  await waitForPawnshopPhase(page, 'negotiating');
+  await clickLogical(page, canvas, PAWNSHOP_TIER_BUTTONS.high);
+  await waitForPawnshopPhase(page, 'replace_heirloom');
+  await page.reload();
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  await waitForPawnshopPhase(page, 'negotiating');
+  await clickLogical(page, canvas, PAWNSHOP_TIER_BUTTONS.high);
+  await waitForPawnshopPhase(page, 'replace_heirloom');
+  await clickLogical(page, canvas, HEIRLOOM_REPLACE_SKIP_BUTTON);
+  const afterRepSkip = await waitForPawnshopPhase(page, 'feedback');
+  expect(afterRepSkip.heirlooms).toEqual(initialThree);
+  expect(afterRepSkip.heirloomMilestonesClaimed).toEqual([2]);
+  const diskAfterRepSkip = await readStoredSave(page);
+  expect(diskAfterRepSkip.chapter.heirlooms).toEqual(initialThree);
+  expect(diskAfterRepSkip.chapter.heirloomMilestonesClaimed).toEqual([2]);
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('P12 修整 3a：Boss 掉落满持有时刷新不丢进度，回第7天重打后可完成替换且不重复发放', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+  const canvas = page.locator('#game-container canvas');
+  const initialThree = ['old_abacus', 'gold_signboard', 'quilt'];
+
+  // 路径 A：Boss 胜掉落满持有 -> 进入替换面板后刷新 -> 标题「继续」回到第 7 天 -> 重打 Boss -> 替换
+  await seedAndStartSavedDay(
+    page,
+    canvas,
+    '/?seed=11',
+    buildSeededSave({
+      day: 7,
+      money: 200,
+      reputation: 2,
+      shopLevel: 6,
+      deck: ['秤砣', '秤砣', '秤砣', '秤砣', '秤砣', '秤砣', '秤砣'],
+      pactChoice: 'steady_shop',
+      day4TrimDone: true,
+      heirlooms: initialThree,
+      heirloomMilestonesClaimed: [2, 4],
+    }),
+  );
+  const bossRes1 = await playSeededDay7ToBossResult(page, canvas);
+  expect(bossRes1.result).toBe('win');
+  expect(bossRes1.resultView).toBe('diary');
+  expect(bossRes1.bossHeirloomDrop).not.toBeNull();
+  expect(bossRes1.savedData?.chapter?.heirlooms).toEqual(initialThree);
+  const dropId = bossRes1.bossHeirloomDrop!.id;
+
+  // 在处理替换前，磁盘不得提前把章节标记为已完成
+  const diskBeforeBossReload = await readStoredSave(page);
+  expect(diskBeforeBossReload.chapter.chapter1Completed).toBe(false);
+  expect(diskBeforeBossReload.chapter.status).toBe('in_progress');
+  expect(diskBeforeBossReload.chapter.heirlooms).toEqual(initialThree);
+
+  // 点「替换老物件」进入替换面板后再刷新
+  await clickLogical(page, canvas, { x: 192, y: DIARY_CONTINUE_BUTTON.y });
+  await page.reload();
+  const titleAfterBossReload = await waitForPawnshopPhase(page, 'title');
+  expect(titleAfterBossReload.chapter?.chapter1Completed).toBe(false);
+  expect(titleAfterBossReload.chapter?.status).toBe('in_progress');
+
+  // 点标题「继续」回到第 7 天当铺（因为当天已选过早上工作，直接进 boss_preview）
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  const bossRes2 = await replayBossFromBossPreview(page, canvas);
+  expect(bossRes2.bossDropNeedsReplace).toBe(true);
+  expect(bossRes2.bossHeirloomDrop?.id).toBe(dropId);
+
+  // 完成替换（点「替换老物件」-> 点第 1 槽）-> 回到日记页且章节完成落盘
+  await clickLogical(page, canvas, { x: 192, y: DIARY_CONTINUE_BUTTON.y });
+  await clickLogical(page, canvas, HEIRLOOM_REPLACE_SLOTS[0]);
+  await expect.poll(async () => (await getBattleState(page)).savedData?.chapter?.chapter1Completed).toBe(true);
+  const bossAfterReplace = await getBattleState(page);
+  expect(bossAfterReplace.bossDropNeedsReplace).toBe(false);
+  expect(bossAfterReplace.savedData?.chapter?.chapter1Completed).toBe(true);
+  expect(bossAfterReplace.savedData?.chapter?.heirlooms).toEqual([dropId, 'gold_signboard', 'quilt']);
+  const diskAfterBossReplace = await readStoredSave(page);
+  expect(diskAfterBossReplace.chapter.chapter1Completed).toBe(true);
+  expect(diskAfterBossReplace.chapter.status).toBe('completed');
+  expect(diskAfterBossReplace.chapter.heirlooms).toEqual([dropId, 'gold_signboard', 'quilt']);
+
+  // 再刷新确认进入已通关标题，不重复发放
+  await page.reload();
+  const titleCompleted1 = await waitForPawnshopPhase(page, 'title');
+  expect(titleCompleted1.chapter?.chapter1Completed).toBe(true);
+  expect(titleCompleted1.chapter?.heirlooms).toEqual([dropId, 'gold_signboard', 'quilt']);
+
+  expect(failedRequests).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+test('P12 修整 3b：Boss 掉落满持有时刷新不丢进度，回第7天重打后可跳过且不重复发放', async ({
+  page,
+}) => {
+  const { pageErrors, failedRequests } = trackErrors(page);
+  const canvas = page.locator('#game-container canvas');
+  const initialThree = ['old_abacus', 'gold_signboard', 'quilt'];
+
+  // 路径 B：Boss 掉落满持有 -> 刷新 -> 回第 7 天重打 -> 日记页直接点「翻到结局」跳过
+  await seedAndStartSavedDay(
+    page,
+    canvas,
+    '/?seed=13',
+    buildSeededSave({
+      day: 7,
+      money: 200,
+      reputation: 2,
+      shopLevel: 6,
+      deck: ['秤砣', '秤砣', '秤砣', '秤砣', '秤砣', '秤砣', '秤砣'],
+      pactChoice: 'steady_shop',
+      day4TrimDone: true,
+      heirlooms: initialThree,
+      heirloomMilestonesClaimed: [2, 4],
+    }),
+  );
+  const bossSkipRes1 = await playSeededDay7ToBossResult(page, canvas);
+  expect(bossSkipRes1.bossHeirloomDrop).not.toBeNull();
+  expect((await readStoredSave(page)).chapter.chapter1Completed).toBe(false);
+
+  await page.reload();
+  await waitForPawnshopPhase(page, 'title');
+  await clickLogical(page, canvas, TITLE_CONTINUE_BUTTON);
+  await replayBossFromBossPreview(page, canvas);
+
+  // 在日记页点「翻到结局」跳过掉落并落盘完成
+  await clickLogical(page, canvas, { x: 448, y: DIARY_CONTINUE_BUTTON.y });
+  await expect.poll(async () => (await getBattleState(page)).resultView).toBe('ending');
+  const bossAfterSkip = await getBattleState(page);
+  expect(bossAfterSkip.heirlooms).toEqual(initialThree);
+  const diskAfterBossSkip = await readStoredSave(page);
+  expect(diskAfterBossSkip.chapter.chapter1Completed).toBe(true);
+  expect(diskAfterBossSkip.chapter.status).toBe('completed');
+  expect(diskAfterBossSkip.chapter.heirlooms).toEqual(initialThree);
+
+  // 再刷新确认章节已完成，不再重复发放
+  await page.reload();
+  const titleCompleted2 = await waitForPawnshopPhase(page, 'title');
+  expect(titleCompleted2.chapter?.chapter1Completed).toBe(true);
+  expect(titleCompleted2.chapter?.heirlooms).toEqual(initialThree);
 
   expect(failedRequests).toEqual([]);
   expect(pageErrors).toEqual([]);

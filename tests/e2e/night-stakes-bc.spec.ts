@@ -53,6 +53,7 @@ interface BattleDebugState {
   introBannerVisible?: boolean;
   lastGlossaryTip?: string | null;
   result: string;
+  heirlooms?: string[];
   loseReason?: string | null;
   normalFailContinueLine?: string | null;
   savedData?: {
@@ -234,7 +235,9 @@ test('Task 19 §2/§3/§6: persistent HP carries across nights (+5 sleep heal), 
   await clickLogical(page, canvas, PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON);
 
   const night2 = await waitForBattleReady(page, 'play');
-  expect(night2.playerHp).toBe(24);
+  // 第 1 天三次高价成交累计口碑 +4，触发口碑里程碑 [2, 4]；?seed=7 下抽中棉被（每夜开始回血 +3），故第 2 夜开局为 24 + 3 = 27
+  const quiltHeal = night2.heirlooms?.includes('quilt') ? 3 : 0;
+  expect(night2.playerHp).toBe(24 + quiltHeal);
   expect(night2.maxPlayerHp).toBe(30);
 
   // 2) KO via ?deck=test&playerHp=2 on Night 2 -> wakes at 5 HP on Day 3, chapter continues

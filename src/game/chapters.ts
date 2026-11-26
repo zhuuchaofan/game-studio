@@ -100,7 +100,7 @@ export interface ChapterSaveState {
   bossComponentItemIds?: string[];
   /** P12 阶段 C：当前持有的老物件 ID 列表（最多 3 件）。 */
   heirlooms?: string[];
-  /** P12 阶段 C：本章已领取的口碑里程碑档位（如 [3]、[3, 5]）。 */
+  /** P12 阶段 C：本章已领取的口碑里程碑档位（如 [2]、[2, 4]）。 */
   heirloomMilestonesClaimed?: number[];
 }
 

@@ -1387,10 +1387,13 @@ export class PawnshopScene extends Phaser.Scene {
     if (milestoneToast) {
       toastParts.push(milestoneToast);
     }
-    saveGame(this.save);
+    const needsTrim = this.state.deck.length > 0 && !this.save.chapter.day4TrimDone;
+    if (!needsTrim) {
+      this.save.chapter.day4TrimDone = true;
+    }
 
     const proceedAfterPact = (): void => {
-      if (this.state.deck.length > 0 && !this.save.chapter.day4TrimDone) {
+      if (needsTrim) {
         this.trimPage = 0;
         this.state = { ...this.state, phase: 'trim_deck' };
         this.renderCurrentPhase();
@@ -1400,8 +1403,6 @@ export class PawnshopScene extends Phaser.Scene {
         return;
       }
 
-      this.save.chapter.day4TrimDone = true;
-      saveGame(this.save);
       this.enterPostDay4Events();
       if (toastParts.length > 0) {
         this.showToast(toastParts[0], 2600);
@@ -1412,6 +1413,7 @@ export class PawnshopScene extends Phaser.Scene {
       return;
     }
 
+    saveGame(this.save);
     proceedAfterPact();
   }
 
@@ -1993,10 +1995,6 @@ export class PawnshopScene extends Phaser.Scene {
       redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
       chapter: nextChapter,
     };
-    saveGame(this.save);
-    if (this.state.pawnPrices) {
-      savePawnPrices(this.state.pawnPrices);
-    }
 
     // P10 子项 4 & P11 子项 2②：新娘/父亲故事事件不占当日随机赎当名额；结束后照常检查当日随机赎当（不改动 createRedemptionOffer）
     if (wasBride || wasFather) {
@@ -2035,9 +2033,6 @@ export class PawnshopScene extends Phaser.Scene {
     }
 
     const milestoneToast = accept ? this.checkReputationMilestones() : null;
-    if (accept) {
-      saveGame(this.save);
-    }
     const postPhase = this.state.phase;
     if (
       this.enterReplaceHeirloomIfNeeded(() => {
@@ -2049,6 +2044,11 @@ export class PawnshopScene extends Phaser.Scene {
       })
     ) {
       return;
+    }
+
+    saveGame(this.save);
+    if (this.state.pawnPrices) {
+      savePawnPrices(this.state.pawnPrices);
     }
 
     this.renderCurrentPhase();
@@ -2694,9 +2694,6 @@ export class PawnshopScene extends Phaser.Scene {
       if (this.state.day === 1 && item.id === BRIDE_RING_ITEM_ID) {
         this.save.chapter.day1RingPawned = true;
       }
-      if (this.state.pawnPrices) {
-        savePawnPrices(this.state.pawnPrices);
-      }
       audio.playSfx('deal_closed');
       this.time.delayedCall(140, () => {
         if (this.scene.isActive()) {
@@ -2718,9 +2715,6 @@ export class PawnshopScene extends Phaser.Scene {
         redeemTickets: this.state.redeemTickets ?? this.save.redeemTickets,
       };
       milestoneToast = this.checkReputationMilestones();
-      if (milestoneToast || this.pendingHeirloomQueue.length > 0) {
-        saveGame(this.save);
-      }
     }
 
     if (
@@ -2733,6 +2727,15 @@ export class PawnshopScene extends Phaser.Scene {
       })
     ) {
       return;
+    }
+
+    if (accepted) {
+      if (this.state.pawnPrices) {
+        savePawnPrices(this.state.pawnPrices);
+      }
+      if (milestoneToast) {
+        saveGame(this.save);
+      }
     }
 
     this.renderCurrentPhase();
@@ -2992,10 +2995,13 @@ export class PawnshopScene extends Phaser.Scene {
     audio.playSfx('receive_card');
     const owned = this.save.chapter.heirlooms ?? [];
     this.save.chapter.heirlooms = replaceHeirloomAtIndex(owned, slotIndex, offer.heirloom.id);
-    saveGame(this.save);
     if (this.pendingHeirloomQueue.length > 0) {
       this.renderCurrentPhase();
       return;
+    }
+    saveGame(this.save);
+    if (this.state.pawnPrices) {
+      savePawnPrices(this.state.pawnPrices);
     }
     const cb = this.afterHeirloomReplaceCallback;
     this.afterHeirloomReplaceCallback = null;
@@ -3014,6 +3020,10 @@ export class PawnshopScene extends Phaser.Scene {
     if (this.pendingHeirloomQueue.length > 0) {
       this.renderCurrentPhase();
       return;
+    }
+    saveGame(this.save);
+    if (this.state.pawnPrices) {
+      savePawnPrices(this.state.pawnPrices);
     }
     const cb = this.afterHeirloomReplaceCallback;
     this.afterHeirloomReplaceCallback = null;

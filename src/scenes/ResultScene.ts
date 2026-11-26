@@ -214,7 +214,9 @@ export class ResultScene extends Phaser.Scene {
       this.bossReward = reward;
     }
 
-    saveGame(nextSave);
+    if (!this.bossDropNeedsReplace) {
+      saveGame(nextSave);
+    }
 
     if (isBossBattle && result === 'win') {
       this.endingLedger = buildEndingLedger(nextSave.deck, nextSave.chapter, ITEMS);
@@ -283,6 +285,7 @@ export class ResultScene extends Phaser.Scene {
         endingLedger: this.endingLedger,
         epilogueLines: this.epilogueLines,
         heirlooms: [...(nextSave.chapter.heirlooms ?? [])],
+        bossDropNeedsReplace: this.bossDropNeedsReplace,
         bossHeirloomDrop: this.bossHeirloomDrop
           ? {
               id: this.bossHeirloomDrop.id,
@@ -392,6 +395,8 @@ export class ResultScene extends Phaser.Scene {
         this.renderBossHeirloomReplace(nextSave);
       });
       this.createResultButton(448, DIARY_CONTINUE_BUTTON.y, 212, DIARY_CONTINUE_BUTTON.height, '翻到结局', () => {
+        this.bossDropNeedsReplace = false;
+        saveGame(nextSave);
         this.resultView = 'ending';
         this.renderEndingScreen(nextSave);
       });
@@ -500,6 +505,7 @@ export class ResultScene extends Phaser.Scene {
       '暂不换',
       () => {
         this.bossDropNeedsReplace = false;
+        saveGame(nextSave);
         this.renderDiaryPage(nextSave);
       },
     );

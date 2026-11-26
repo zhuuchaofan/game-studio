@@ -202,8 +202,8 @@ export interface ChapterOneSimStats {
   shortPoolDays: number;
   totalSimulatedDays: number;
   shortPoolDayRate: number;
-  repMilestone3Rate: number;
-  repMilestone5Rate: number;
+  repMilestone2Rate: number;
+  repMilestone4Rate: number;
   avgHeirloomsHeld: number;
   day7Samples: Day7EndgameSample[];
   persistentHpMetrics?: PersistentHpSimMetrics;
@@ -1083,8 +1083,8 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
   let totalWorks = 0;
   let totalDebtNotesAdded = 0;
   let totalEndReputation = 0;
-  let reachedRep3Runs = 0;
-  let reachedRep5Runs = 0;
+  let reachedRep2Runs = 0;
+  let reachedRep4Runs = 0;
   let totalHeirloomsHeld = 0;
 
   for (let seed = 1; seed <= runs; seed += 1) {
@@ -1109,12 +1109,12 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     let maxConsecutiveLosses = 0;
     let heirlooms: string[] = opts.fixedHeirlooms ? [...opts.fixedHeirlooms] : [];
     const claimedMilestones: number[] = [];
-    let reachedRep3 = reputation >= 3;
-    let reachedRep5 = reputation >= 5;
+    let reachedRep2 = reputation >= 2;
+    let reachedRep4 = reputation >= 4;
 
     const handleRepUpdate = (rep: number): void => {
-      if (rep >= 3) reachedRep3 = true;
-      if (rep >= 5) reachedRep5 = true;
+      if (rep >= 2) reachedRep2 = true;
+      if (rep >= 4) reachedRep4 = true;
       if (opts.fixedHeirlooms) {
         return;
       }
@@ -1417,8 +1417,8 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     if (maxConsecutiveLosses >= 3) {
       lossStreakGe3Count += 1;
     }
-    if (reachedRep3) reachedRep3Runs += 1;
-    if (reachedRep5) reachedRep5Runs += 1;
+    if (reachedRep2) reachedRep2Runs += 1;
+    if (reachedRep4) reachedRep4Runs += 1;
     totalHeirloomsHeld += heirlooms.length;
     totalEndReputation += reputation;
     totalNightsWon += nightsWon;
@@ -1445,8 +1445,8 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
     shortPoolDays,
     totalSimulatedDays,
     shortPoolDayRate: totalSimulatedDays > 0 ? shortPoolDays / totalSimulatedDays : 0,
-    repMilestone3Rate: runs > 0 ? reachedRep3Runs / runs : 0,
-    repMilestone5Rate: runs > 0 ? reachedRep5Runs / runs : 0,
+    repMilestone2Rate: runs > 0 ? reachedRep2Runs / runs : 0,
+    repMilestone4Rate: runs > 0 ? reachedRep4Runs / runs : 0,
     avgHeirloomsHeld: runs > 0 ? totalHeirloomsHeld / runs : 0,
     day7Samples,
     ...(persistentHp
@@ -2927,7 +2927,7 @@ export function formatSimReport(report: BalanceSimulationReport): string {
     );
   }
   lines.push(
-    `  口碑里程碑占率(B+C生命结转): 首次到3 ${(ph.repMilestone3Rate * 100).toFixed(1)}% | 首次到5 ${(ph.repMilestone5Rate * 100).toFixed(1)}% | 均持有老物件 ${ph.avgHeirloomsHeld.toFixed(2)}`,
+    `  口碑里程碑占率(B+C生命结转): 首次到2 ${(ph.repMilestone2Rate * 100).toFixed(1)}% | 首次到4 ${(ph.repMilestone4Rate * 100).toFixed(1)}% | 均持有老物件 ${ph.avgHeirloomsHeld.toFixed(2)}`,
   );
 
   lines.push(`\n[老物件单件与三件组合测量(仅测量,${ph.runs}局)]`);

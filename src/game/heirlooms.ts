@@ -24,7 +24,7 @@ export interface HeirloomDef {
 
 export const HEIRLOOMS: readonly HeirloomDef[] = heirloomsJson as HeirloomDef[];
 export const HEIRLOOM_CAP = 3;
-export const HEIRLOOM_REP_MILESTONES: readonly number[] = [3, 5] as const;
+export const HEIRLOOM_REP_MILESTONES: readonly number[] = [2, 4] as const;
 
 export function getHeirloomById(
   id: string,
