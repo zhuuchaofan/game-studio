@@ -565,14 +565,14 @@ test('P12 Phase B §3.2: All four demon mechanics (A 3/3/5, B R1/R2 1 shield, C 
   expect(pageErrors).toEqual([]);
 });
 
-test('P12 Follow-up 1: owned items never reappear in customer pool and short pool (<3) shows fewer customers without padding', async ({
+test('P12 Follow-up 1 + Phase E fallback: owned items excluded first and Tier 2 fills 3rd customer', async ({
   page,
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
   const canvas = page.locator('#game-container canvas');
 
-  // 1) Buy watch on Day 1 (seed=24), then on Day 2 with only 2 other unowned items left (10 owned in deck),
-  //    watch does NOT appear and Day 2 only presents the 2 unowned items (tin_trunk, gold_watch).
+  // 1) With 10 items owned in deck (only tin_trunk & gold_watch unowned), Day 3 presents
+  //    tin_trunk & gold_watch first (Tier 1), then falls back to 1 owned unredeemed item (Tier 2) to fill 3.
   const tenOwnedExceptLastTwo = [
     '倒转',
     '守诺',
@@ -608,14 +608,16 @@ test('P12 Follow-up 1: owned items never reappear in customer pool and short poo
   );
   await clickLogical(page, canvas, MORNING_OPTION_BUTTONS.work);
   const neg = await waitForPawnshopPhase(page, 'negotiating');
-  expect(neg.itemsOrder).toHaveLength(2);
-  expect(new Set(neg.itemsOrder)).toEqual(new Set(['tin_trunk', 'gold_watch']));
-  expect(neg.itemsOrder).not.toContain('watch');
+  expect(neg.itemsOrder).toHaveLength(3);
+  expect(new Set(neg.itemsOrder?.slice(0, 2))).toEqual(new Set(['tin_trunk', 'gold_watch']));
+  expect(neg.itemsOrder?.[2]).not.toBe('tin_trunk');
+  expect(neg.itemsOrder?.[2]).not.toBe('gold_watch');
 
-  // Skip the 2 customers -> enters summary cleanly without padding a 3rd owned customer
-  await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
-  await waitForPawnshopPhase(page, 'negotiating');
-  await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  // Skip the 3 customers -> enters summary cleanly
+  for (let i = 0; i < 3; i += 1) {
+    await waitForPawnshopPhase(page, 'negotiating');
+    await clickLogical(page, canvas, PAWNSHOP_SKIP_BUTTON);
+  }
   await waitForPawnshopPhase(page, 'summary');
 
   expect(failedRequests).toEqual([]);

@@ -29,10 +29,9 @@ import {
   createFatherOverdueRedemptionOffer,
   createInitialState,
   createRedemptionOffer,
-  isItemOnRedemptionCooldown,
+  isItemRedeemedInChapter,
   ITEMS,
   pickDailyItems,
-  REDEMPTION_COOLDOWN_DAYS,
   resolveRedemption,
   SHOPKEEPER_OPENING_NOTE_LINES,
   type PawnItem,
@@ -418,55 +417,45 @@ describe('P11 Sub-item 2 & 3: Mainline packaging, Father event & conditional ban
   });
 });
 
-describe('P11 Sub-item 4: Anti-repetition D1 cooldown & D2 soft unowned priority', () => {
-  it('excludes redeemed item for N=2 days (D1) and allows it back after cooldown expires', () => {
-    expect(REDEMPTION_COOLDOWN_DAYS).toBe(2);
+describe('P12 Phase E: Anti-repetition D1-A chapter exclusion & D2 unified 3-tier fallback', () => {
+  it('excludes redeemed item for the rest of the chapter (D1-A) unless Tier 3 fallback is needed', () => {
     const redeemed = { ring: 2 };
 
-    expect(isItemOnRedemptionCooldown('ring', 2, redeemed)).toBe(true);
-    expect(isItemOnRedemptionCooldown('ring', 3, redeemed)).toBe(true);
-    expect(isItemOnRedemptionCooldown('ring', 4, redeemed)).toBe(true);
-    expect(isItemOnRedemptionCooldown('ring', 5, redeemed)).toBe(false);
+    expect(isItemRedeemedInChapter('ring', redeemed)).toBe(true);
+    expect(isItemRedeemedInChapter('watch', redeemed)).toBe(false);
 
-    // Across many seeds, ring must NOT appear on Day 3 or Day 4, and CAN appear on Day 5
+    // Across many seeds, ring must NOT appear on Day 3, 4, 5, 6, or 7 while enough unredeemed items exist
     for (let s = 1; s <= 40; s += 1) {
-      const day3 = pickDailyItems(ITEMS, 3, mulberry32(s), 3, { redeemedDayByItem: redeemed });
-      const day4 = pickDailyItems(ITEMS, 4, mulberry32(s), 3, { redeemedDayByItem: redeemed });
-      expect(day3.some((i) => i.id === 'ring')).toBe(false);
-      expect(day4.some((i) => i.id === 'ring')).toBe(false);
-    }
-
-    let seenOnDay5 = false;
-    for (let s = 1; s <= 40; s += 1) {
-      const day5 = pickDailyItems(ITEMS, 5, mulberry32(s), 3, { redeemedDayByItem: redeemed });
-      if (day5.some((i) => i.id === 'ring')) {
-        seenOnDay5 = true;
-        break;
+      for (const day of [3, 4, 5, 6, 7]) {
+        const picked = pickDailyItems(ITEMS, day, mulberry32(s), 3, { redeemedDayByItem: redeemed });
+        expect(picked).toHaveLength(3);
+        expect(picked.some((i) => i.id === 'ring')).toBe(false);
       }
     }
-    expect(seenOnDay5).toBe(true);
 
-    // validateChapters ensures pool remains non-empty after D1 exclusion
+    // validateChapters ensures pool satisfies >= 5 unique items & 3-tier fallback invariant
     const validation = validateChapters(REAL_CHAPTERS, DEMONS, REAL_ITEMS);
     expect(validation.valid).toBe(true);
   });
 
-  it('excludes owned items (Follow-up 1 hard exclusion) and returns fewer customers when eligible pool < 3', () => {
+  it('excludes owned items first (D2 hard) and always fills 3 customers via unified 3-tier fallback', () => {
     // 3 owned items -> remaining unowned items must be picked exclusively
     const deck3 = ['倒转', '守诺', '旧书'];
     const picked3 = pickDailyItems(ITEMS, 3, mulberry32(11), 3, { deck: deck3 });
     expect(picked3).toHaveLength(3);
     expect(picked3.every((i) => !deck3.includes(i.cardName))).toBe(true);
 
-    // 10 owned items -> only the 2 remaining unowned items appear (no owned padding)
+    // 10 owned items -> first 2 are unowned (Tier 1), 3rd falls back to owned unredeemed (Tier 2)
     const deck10 = ITEMS.slice(0, 10).map((i) => i.cardName);
     const picked10 = pickDailyItems(ITEMS, 4, mulberry32(22), 3, { deck: deck10 });
-    expect(picked10).toHaveLength(2);
-    expect(picked10.every((i) => !deck10.includes(i.cardName))).toBe(true);
+    expect(picked10).toHaveLength(3);
+    expect(picked10.slice(0, 2).every((i) => !deck10.includes(i.cardName))).toBe(true);
+    expect(deck10.includes(picked10[2].cardName)).toBe(true);
 
-    // All 12 owned -> 0 customers without crashing
+    // All 12 owned -> still fills 3 owned customers via Tier 2 fallback
     const deck12 = ITEMS.map((i) => i.cardName);
     const picked12 = pickDailyItems(ITEMS, 5, mulberry32(33), 3, { deck: deck12 });
-    expect(picked12).toHaveLength(0);
+    expect(picked12).toHaveLength(3);
+    expect(new Set(picked12.map((i) => i.id)).size).toBe(3);
   });
 });

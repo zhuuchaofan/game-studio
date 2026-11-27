@@ -229,7 +229,7 @@
           "fragmentName": "布票的执念",
           "shortLabel": "票",
           "effectText": "R4伤害+2",
-          "hpBonus": 1,
+          "hpBonus": 0,
           "roundDeltas": { "4": 2 },
           "shield": 0,
           "chargeThresholdDelta": 0
@@ -241,7 +241,7 @@
           "fragmentName": "口琴的执念",
           "shortLabel": "口",
           "effectText": "R3伤害+2",
-          "hpBonus": 1,
+          "hpBonus": 0,
           "roundDeltas": { "3": 2 },
           "shield": 0,
           "chargeThresholdDelta": 0
@@ -253,7 +253,7 @@
           "fragmentName": "药箱的执念",
           "shortLabel": "药",
           "effectText": "封门阈值+1",
-          "hpBonus": 1,
+          "hpBonus": 0,
           "roundDeltas": {},
           "shield": 0,
           "chargeThresholdDelta": 1
@@ -265,7 +265,7 @@
           "fragmentName": "账本的执念",
           "shortLabel": "账",
           "effectText": "R1伤害+1",
-          "hpBonus": 1,
+          "hpBonus": 0,
           "roundDeltas": { "1": 1 },
           "shield": 0,
           "chargeThresholdDelta": 0
@@ -277,7 +277,7 @@
           "fragmentName": "铁箱的执念",
           "shortLabel": "箱",
           "effectText": "开局盾+2",
-          "hpBonus": 1,
+          "hpBonus": 0,
           "roundDeltas": {},
           "shield": 2,
           "chargeThresholdDelta": 0
@@ -289,7 +289,7 @@
           "fragmentName": "金表的执念",
           "shortLabel": "金",
           "effectText": "R4伤害+3",
-          "hpBonus": 1,
+          "hpBonus": 0,
           "roundDeltas": { "4": 3 },
           "shield": 0,
           "chargeThresholdDelta": 0

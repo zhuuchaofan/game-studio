@@ -68,7 +68,6 @@ import {
   MORNING_REST_HEAL,
   pickDailyItems,
   quotePrice,
-  REDEMPTION_COOLDOWN_DAYS,
   resolveOffer,
   type BalanceConfig,
   type PawnItem,
@@ -376,7 +375,6 @@ export interface BalanceSimulationReport {
   boss: MonteCarloStats;
   chapter1: ChapterOneSimStats;
   chapter1PersistentHp: ChapterOneSimStats;
-  chapter1PersistentHpSoftControl: ChapterOneSimStats;
   bossComposition: BossCompositionScanReport;
   newPlayerFirstNight: NewPlayerFirstNightStats;
   thinDeckPath: ThinDeckPathReport;
@@ -699,7 +697,6 @@ export function simulateSevenDayEconomy(opts: EconomySimOptions): SevenDayEconom
       const dailyCustomers = pickDailyItems(items, day, dayRng, DAILY_CUSTOMER_COUNT, {
         deck,
         redeemedDayByItem,
-        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
       });
 
       for (const item of dailyCustomers) {
@@ -782,8 +779,6 @@ export interface ChapterOneSimOptions {
   runs?: number;
   /** 任务书 19 §9：开启跨夜生命结转 + 早上三选一 + 欠条 + 口碑-1。缺省关闭（满血基线）。 */
   persistentHp?: PersistentHpOptions;
-  /** P12 跟进 1：收当不重复硬排除（默认 true；false 仅用于 sim 开关对照）。 */
-  excludeOwnedHard?: boolean;
   /** P12 阶段 C：固定持有老物件列表（用于单件/三件组合测量）。 */
   fixedHeirlooms?: readonly string[];
 }
@@ -1071,7 +1066,6 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
   const day7Samples: Day7EndgameSample[] = [];
   const baseBoss = getBossDemonDef(demons, chapter.bossId);
   const persistentHp = opts.persistentHp;
-  const excludeOwnedHard = opts.excludeOwnedHard ?? true;
   let shortPoolDays = 0;
   let totalSimulatedDays = 0;
   const bossEntryHps: number[] = [];
@@ -1209,13 +1203,11 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
         }
       }
 
-      // Daytime pawnshop (3 customers, or 2 when rested; Day 1 damage guarantee + P11 D1 cooldown + P12 hard exclude owned)
+      // Daytime pawnshop (3 customers, or 2 when rested; Day 1 damage guarantee + P12 §6.1 D1-A/D2-hard unified fallback)
       totalSimulatedDays += 1;
       const eligibleCount = countEligibleDailyItems(items, day, {
         deck,
         redeemedDayByItem,
-        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
-        excludeOwnedHard,
       });
       if (eligibleCount < DAILY_CUSTOMER_COUNT) {
         shortPoolDays += 1;
@@ -1224,8 +1216,6 @@ export function simulateChapterOne(opts: ChapterOneSimOptions = {}): ChapterOneS
       const dailyCustomers = pickDailyItems(items, day, dayRng, dailyCustomerCount, {
         deck,
         redeemedDayByItem,
-        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
-        excludeOwnedHard,
       });
 
       // Day 6 optional side quest: accept when deck still wants another damage/draw item and money >= 40
@@ -2089,7 +2079,6 @@ export function simulateNightOneMoneyCurve(
       const dailyItems = pickDailyItems(items, 1, dayRng, DAILY_CUSTOMER_COUNT, {
         deck: [],
         redeemedDayByItem: {},
-        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
       });
 
       let money = startingMoney;
@@ -2637,19 +2626,6 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     persistentHp: DEFAULT_PERSISTENT_HP_OPTIONS,
   });
 
-  // Follow-up 1 control: old soft D2 rule (excludeOwnedHard: false) under persistent HP
-  const chapter1PersistentHpSoftControl = simulateChapterOne({
-    cards,
-    demons,
-    battleBalance,
-    pawnBalance,
-    items: ITEMS,
-    chapters: CHAPTERS,
-    runs,
-    persistentHp: DEFAULT_PERSISTENT_HP_OPTIONS,
-    excludeOwnedHard: false,
-  });
-
   // P11 Composed Boss sweep (n = 0..12, credit_stock on/off, single-item sensitivity, redemption path, stamp interrupt study)
   const bossComposition = simulateBossCompositionScan({
     cards,
@@ -2708,7 +2684,6 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
     boss: bossStats,
     chapter1,
     chapter1PersistentHp,
-    chapter1PersistentHpSoftControl,
     bossComposition,
     newPlayerFirstNight,
     thinDeckPath,
@@ -2724,7 +2699,7 @@ export function runBalanceSimulation(overrides: SimTuneOverrides = {}): BalanceS
  * - Chapter 1 7-day clear rate must be within [35%, 75%].
  * - P10 New-player Night 1 win rate [20%, 45%], single-attack [5%, 25%].
  * - P11 Composed Boss typical tiers (n=2..5) [40%, 85%], bare (n=0) [50%, 90%],
- *   full+credit (48 HP) >= 25%, monotonicity (<= +3% noise), redemption weakening (>= -3% noise),
+ *   full+credit (40 HP) >= 25%, monotonicity (<= +3% noise), redemption weakening (>= -3% noise),
  *   and full-composition stamp_album interrupt rate >= 10%.
  */
 export function checkSimGuardrails(report: BalanceSimulationReport): SimGuardrailCheckResult {
@@ -2901,7 +2876,7 @@ export function formatSimReport(report: BalanceSimulationReport): string {
   );
 
   const ch = report.chapter1;
-  lines.push('\n[第 1 章 7 天完整通关模拟 (满血对照, 组合 Boss + D1 冷却 + D2 优先未拥有)]');
+  lines.push('\n[第 1 章 7 天完整通关模拟 (满血对照, 组合 Boss + D1/D2 三档兜底)]');
   lines.push(
     `  7 天通关率: ${(ch.clearRate * 100).toFixed(1)}% (${ch.clears}/${ch.runs}) | Boss战胜率: ${(ch.bossWinRate * 100).toFixed(1)}% | Boss打断率: ${(ch.bossInterruptRate * 100).toFixed(1)}% | 平均组件数: ${ch.avgBossComponents.toFixed(2)}`,
   );
@@ -2929,6 +2904,9 @@ export function formatSimReport(report: BalanceSimulationReport): string {
   lines.push(
     `  口碑里程碑占率(B+C生命结转): 首次到2 ${(ph.repMilestone2Rate * 100).toFixed(1)}% | 首次到4 ${(ph.repMilestone4Rate * 100).toFixed(1)}% | 均持有老物件 ${ph.avgHeirloomsHeld.toFixed(2)}`,
   );
+  lines.push(
+    `  首档(<3件未拥有未赎回)兜底天数占: ${(ph.shortPoolDayRate * 100).toFixed(2)}% (${ph.shortPoolDays}/${ph.totalSimulatedDays})`,
+  );
 
   lines.push(`\n[老物件单件与三件组合测量(仅测量,${ph.runs}局)]`);
   for (const row of report.heirloomStudies) {
@@ -2936,17 +2914,6 @@ export function formatSimReport(report: BalanceSimulationReport): string {
       `  ${row.label}: 7 天通关率 ${(row.clearRate * 100).toFixed(1)}% (${row.clears}/${row.runs})`,
     );
   }
-
-  const soft = report.chapter1PersistentHpSoftControl;
-  const diffPp = (ph.clearRate - soft.clearRate) * 100;
-  const diffStr = `${diffPp >= 0 ? '+' : ''}${diffPp.toFixed(1)}`;
-  lines.push(`\n[收当不重复对照 (仅测量, 生命结转 ${ph.runs} 局)]`);
-  lines.push(
-    `  不重复开(现行): 7 天通关率 ${(ph.clearRate * 100).toFixed(1)}% (${ph.clears}/${ph.runs}) | 可收旧物<3件天数占 ${(ph.shortPoolDayRate * 100).toFixed(2)}% (${ph.shortPoolDays}/${ph.totalSimulatedDays})`,
-  );
-  lines.push(
-    `  不重复关(优先未拥有): 7 天通关率 ${(soft.clearRate * 100).toFixed(1)}% (${soft.clears}/${soft.runs}) | 差值 ${diffStr}pp`,
-  );
 
   const bc = report.bossComposition;
   const avgTierMetrics = (tier: BossTierSummary): { avgRound: number; avgRemainHp: number } => {
