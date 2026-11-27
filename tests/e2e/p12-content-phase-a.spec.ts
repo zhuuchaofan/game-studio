@@ -429,7 +429,7 @@ test('P12 Phase A (c): Day 7 Boss composition (>6 fragments), calendar preview, 
   const preview = await waitForPawnshopPhase(page, 'boss_preview');
   expect(preview.bossPreview).not.toBeNull();
   expect(preview.bossPreview?.componentCount).toBe(8);
-  expect(preview.bossPreview?.finalHp).toBe(36);
+  expect(preview.bossPreview?.finalHp).toBe(32);
   expect(preview.bossPreview?.r1Shield).toBe(4);
   expect(preview.bossPreview?.chargeThreshold).toBe(11);
   for (const frag of NEW_BOSS_FRAGMENTS) {
@@ -442,7 +442,7 @@ test('P12 Phase A (c): Day 7 Boss composition (>6 fragments), calendar preview, 
   await expect.poll(async () => (await getCalendarState(page))?.active).toBe(true);
   const cal = (await getCalendarState(page))!;
   expect(cal.bossComponentCount).toBe(8);
-  expect(cal.bossHp).toBe(36);
+  expect(cal.bossHp).toBe(32);
   for (const itemId of NEW_ITEM_IDS) {
     expect(cal.bossActiveItemIds).toContain(itemId);
   }
@@ -450,7 +450,7 @@ test('P12 Phase A (c): Day 7 Boss composition (>6 fragments), calendar preview, 
     expect(cal.bossFragmentNames).toContain(frag);
   }
   expect(cal.bossPreviewText).toContain('8件');
-  expect(cal.bossPreviewText).toContain('36血');
+  expect(cal.bossPreviewText).toContain('32血');
   await clickLogical(page, canvas, CALENDAR_RETURN_BUTTON);
   await expect.poll(async () => (await getCalendarState(page))?.active).toBe(false);
 
@@ -464,7 +464,7 @@ test('P12 Phase A (c): Day 7 Boss composition (>6 fragments), calendar preview, 
   const bossStart = await waitForBattleReady(page, 'play');
   expect(bossStart.isBoss).toBe(true);
   expect(bossStart.bossComponentCount).toBe(8);
-  expect(bossStart.demonMaxHp).toBe(36);
+  expect(bossStart.demonMaxHp).toBe(32);
   expect(bossStart.demonShield).toBe(4);
   expect(bossStart.bossComposedChargeThreshold).toBe(11);
   for (const frag of NEW_BOSS_FRAGMENTS) {

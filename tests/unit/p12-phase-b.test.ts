@@ -363,8 +363,8 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
     expect(stD.demonShield).toBe(0);
   });
 
-  it('跟进 1 收当不重复：已拥有硬排除、拒绝/跳过可再出现、D1 冷却不变、池不足少出不补、全拥有直入 summary', () => {
-    // 1. Owned item never appears across 50 seeds
+  it('阶段 E 统一兜底：已拥有与已赎回优先排除、拒绝/跳过可再出现、三档兜底恒取满 3 位、空池安全转 summary', () => {
+    // 1. Owned item never appears across 50 seeds while Tier 1 has >= 3 items
     const deckWithWatch = ['倒转'];
     for (let s = 1; s <= 50; s += 1) {
       const picked = pickDailyItems(ITEMS, 3, mulberry32(s), 3, { deck: deckWithWatch });
@@ -387,41 +387,44 @@ describe('P12 阶段 B：执念提前 + 心魔机制 + 牌组合', () => {
     }
     expect(watchReturned).toBe(true);
 
-    // 3. D1 2-day cooldown still excludes redeemed items even when not in deck
+    // 3. D1-A excludes redeemed items across remaining days in the chapter (even when not in deck)
     for (let s = 1; s <= 30; s += 1) {
-      const picked = pickDailyItems(ITEMS, 3, mulberry32(s), 3, {
+      const picked = pickDailyItems(ITEMS, 6, mulberry32(s), 3, {
         deck: [],
         redeemedDayByItem: { ring: 2 },
       });
       expect(picked.some((i) => i.id === 'ring')).toBe(false);
     }
 
-    // 4. Pool < 3 returns exact remaining count (no padding with owned or cooldown items)
+    // 4. Tier 1 < 3 falls back to Tier 2 (owned & unredeemed) to fill 3 customers
     const deck10 = ITEMS.slice(0, 10).map((i) => i.cardName);
     expect(countEligibleDailyItems(ITEMS, 5, { deck: deck10 })).toBe(2);
     const picked2 = pickDailyItems(ITEMS, 5, mulberry32(7), 3, { deck: deck10 });
-    expect(picked2).toHaveLength(2);
-    expect(picked2.map((i) => i.id).sort()).toEqual(['gold_watch', 'tin_trunk']);
+    expect(picked2).toHaveLength(3);
+    expect(picked2.slice(0, 2).map((i) => i.id).sort()).toEqual(['gold_watch', 'tin_trunk']);
+    expect(deck10).toContain(picked2[2].cardName);
 
-    // If 1 of the remaining 2 is on D1 cooldown, only 1 customer appears
+    // If 1 of the remaining 2 unowned items was redeemed, Tier 1 gives tin_trunk and Tier 2 fills remaining 2
     const picked1 = pickDailyItems(ITEMS, 5, mulberry32(7), 3, {
       deck: deck10,
       redeemedDayByItem: { gold_watch: 4 },
     });
-    expect(picked1.map((i) => i.id)).toEqual(['tin_trunk']);
+    expect(picked1).toHaveLength(3);
+    expect(picked1[0].id).toBe('tin_trunk');
+    expect(picked1.some((i) => i.id === 'gold_watch')).toBe(false);
 
-    // 5. All 12 owned -> 0 customers -> createInitialState & resolveRedemption transition cleanly to summary
+    // 5. All 12 owned -> Tier 2 fills 3 items; explicit empty items still transitions cleanly to summary
     const all12Deck = ITEMS.map((i) => i.cardName);
-    const emptyPicked = pickDailyItems(ITEMS, 6, mulberry32(9), 3, { deck: all12Deck });
-    expect(emptyPicked).toEqual([]);
-    const emptyState = createInitialState({ day: 6, deck: all12Deck, items: emptyPicked });
+    const fullPicked = pickDailyItems(ITEMS, 6, mulberry32(9), 3, { deck: all12Deck });
+    expect(fullPicked).toHaveLength(3);
+    const emptyState = createInitialState({ day: 6, deck: all12Deck, items: [] });
     expect(emptyState.phase).toBe('summary');
 
     const offer = createRedemptionOffer(all12Deck, 1, {}, mulberry32(1), ITEMS)!;
     const redeemState = createInitialState({
       day: 6,
       deck: all12Deck,
-      items: emptyPicked,
+      items: [],
       redeemTickets: 1,
       redemptionOffer: offer,
     });

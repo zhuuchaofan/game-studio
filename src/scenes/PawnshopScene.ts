@@ -55,7 +55,6 @@ import {
   parseHexColor,
   pickDailyItems,
   quotePrice,
-  REDEMPTION_COOLDOWN_DAYS,
   resolveOffer,
   resolveRedemption,
   settle,
@@ -281,8 +280,7 @@ export class PawnshopScene extends Phaser.Scene {
 
   private buildDailyItems(customerCount: number, money: number): PawnItem[] {
     // 每天开始时按 ?seed= + 天数洗牌当客池并取前 customerCount 位（默认 3，休息日 2）
-    // （第 1 天保底含 1 件伤害牌旧物，P6 B2；输首夜后第 2 天保底 1 件可负担伤害牌旧物，P10 子项 3；
-    //  P11 子项 4：D1 赎回后 N=2 天冷却排除 + D2 优先未拥有软版）
+    // P12 §6.1：D1-A 本章内已赎排除 + D2 未拥有硬排除 + 统一三档兜底链
     const shuffleRng = mulberry32(deriveDaySeed(this.seed, this.save.day));
     const lostNight1 =
       this.save.day === 2 &&
@@ -291,7 +289,6 @@ export class PawnshopScene extends Phaser.Scene {
     return pickDailyItems(ITEMS, this.save.day, shuffleRng, customerCount, {
       deck: this.save.deck,
       redeemedDayByItem: this.save.chapter.redeemedDayByItem,
-      cooldownDays: REDEMPTION_COOLDOWN_DAYS,
       ...(lostNight1
         ? {
             recoverDamageAfterDay1Loss: {
@@ -2008,7 +2005,6 @@ export class PawnshopScene extends Phaser.Scene {
       const refreshedItems = pickDailyItems(ITEMS, this.state.day, shuffleRng, this.dailyCustomerCount, {
         deck: this.state.deck,
         redeemedDayByItem: nextChapter.redeemedDayByItem,
-        cooldownDays: REDEMPTION_COOLDOWN_DAYS,
         ...(lostNight1
           ? {
               recoverDamageAfterDay1Loss: {

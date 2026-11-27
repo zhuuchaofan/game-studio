@@ -330,7 +330,7 @@ describe('skipCustomer & hasAnyAffordableTier', () => {
 });
 
 describe('P6 B2: Day 1 guaranteed damage item pool', () => {
-  it('guarantees at least one damage-card item (bicycle or erhu) on Day 1 across 1000 seeds', () => {
+  it('guarantees at least one damage-card item (bicycle, erhu, or harmonica) on Day 1 across 1000 seeds', () => {
     for (let seed = 1; seed <= 1000; seed += 1) {
       const picked = pickDailyItems(ITEMS, 1, mulberry32(deriveDaySeed(seed, 1)), 3);
       expect(picked).toHaveLength(3);
@@ -637,15 +637,15 @@ describe('P8 feedback story wrapping (all 12 items)', () => {
 });
 
 describe('P10: Day 2 loss recovery, Bride scripted redemption, and Day 3 rumor wrapping', () => {
-  it('Day 2 loss recovery guarantees an affordable damage item (low <= money), covering both erhu unowned and erhu owned', () => {
-    // 1. Erhu UNOWNED, money = 30 (can afford erhu low=25, cannot afford bicycle low=40)
+  it('Day 2 loss recovery guarantees an affordable damage item (low <= money), covering both unowned and owned fallback', () => {
+    // 1. Erhu & harmonica UNOWNED, money = 30 (erhu low=25 & harmonica low=15 affordable; bicycle low=40 unaffordable)
     for (let seed = 1; seed <= 200; seed += 1) {
       const picked = pickDailyItems(ITEMS, 2, mulberry32(deriveDaySeed(seed, 2)), 3, {
         recoverDamageAfterDay1Loss: { money: 30, deck: ['倒转', '守诺', '旧书'] },
       });
       expect(picked).toHaveLength(3);
       expect(new Set(picked.map((i) => i.id)).size).toBe(3);
-      expect(picked.some((i) => i.id === 'erhu')).toBe(true);
+      expect(picked.some((i) => i.id === 'erhu' || i.id === 'harmonica')).toBe(true);
       expect(
         picked.some(
           (i) =>
@@ -655,24 +655,24 @@ describe('P10: Day 2 loss recovery, Bride scripted redemption, and Day 3 rumor w
       ).toBe(true);
     }
 
-    // 2. Erhu OWNED, money = 45 (both erhu low=25 and bicycle low=40 affordable -> prefers UNOWNED bicycle!)
+    // 2. Erhu & harmonica OWNED, money = 45 (erhu/harmonica/bicycle all affordable -> prefers UNOWNED bicycle!)
     for (let seed = 1; seed <= 200; seed += 1) {
       const picked = pickDailyItems(ITEMS, 2, mulberry32(deriveDaySeed(seed, 2)), 3, {
-        recoverDamageAfterDay1Loss: { money: 45, deck: ['余音', '倒转', '旧书'] },
+        recoverDamageAfterDay1Loss: { money: 45, deck: ['余音', '口琴', '倒转', '旧书'] },
       });
       expect(picked).toHaveLength(3);
       expect(new Set(picked.map((i) => i.id)).size).toBe(3);
       expect(picked.some((i) => i.id === 'bicycle')).toBe(true);
     }
 
-    // 3. Erhu OWNED, money = 30 (bicycle low=40 unaffordable -> falls back to affordable erhu low=25)
+    // 3. Erhu & harmonica OWNED, money = 30 (bicycle low=40 unaffordable -> falls back to affordable owned erhu or harmonica)
     for (let seed = 1; seed <= 200; seed += 1) {
       const picked = pickDailyItems(ITEMS, 2, mulberry32(deriveDaySeed(seed, 2)), 3, {
-        recoverDamageAfterDay1Loss: { money: 30, deck: ['余音', '倒转', '旧书'] },
+        recoverDamageAfterDay1Loss: { money: 30, deck: ['余音', '口琴', '倒转', '旧书'] },
       });
       expect(picked).toHaveLength(3);
       expect(new Set(picked.map((i) => i.id)).size).toBe(3);
-      expect(picked.some((i) => i.id === 'erhu')).toBe(true);
+      expect(picked.some((i) => i.id === 'erhu' || i.id === 'harmonica')).toBe(true);
     }
   });
 

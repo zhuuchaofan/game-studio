@@ -26,7 +26,7 @@ export interface ComposedBossResult {
   finalHp: number;
   maxCompositionHp: number;
   absoluteMaxHp: number;
-  /** True when rawTotalHp > absoluteMaxHp (e.g. 6 components 36 + credit_stock 6 = 42 -> capped at 40). */
+  /** True when rawTotalHp > absoluteMaxHp (e.g. 6+ HP components 36 + credit_stock 6 = 42 -> capped at 40). */
   hpCapped: boolean;
   r1Shield: number;
   chargeThreshold: number;
@@ -99,8 +99,8 @@ export function getBossCompositionConfig(
  * Computes the Night 7 Boss definition from the player's current deck + pact state.
  * - Counts deduplicated pawnshop item cards (0..12); duplicate copies of the same item count once.
  * - Non-item victory reward cards do not count.
- * - Base HP 30, +1 per component (composition cap 36), +6 for credit_stock pact,
- *   absolute cap 40 (with hpCapped=true so pre-battle preview explicitly states "已到顶").
+ * - Base HP 30, +1 per original 6 components (new 6 items hpBonus=0, effects only; composition cap 36),
+ *   +6 for credit_stock pact, absolute cap 40 (with hpCapped=true so pre-battle preview explicitly states "已到顶").
  * - 0 components falls back cleanly to bare Boss (素体) with introLine "柜子空了，债主只身前来".
  * - Does not alter R2 charge/interrupt rules; only adds JSON-driven deltas.
  */

@@ -858,8 +858,8 @@ test('Playtest fix round: Day 7 daytime deal shows Boss已涨血 toast and chapt
 }) => {
   const { pageErrors, failedRequests } = trackErrors(page);
 
-  // Day 7 with 0 items in deck (30 HP) -> buy first customer item (high tier) -> Boss strengthens 30->31
-  await page.goto('/?seed=4&demon=boss_ch1');
+  // Day 7 with 0 items in deck (30 HP) -> buy first customer item (erhu on seed=2, hpBonus: 1 under Plan C) -> Boss strengthens 30->31
+  await page.goto('/?seed=2&demon=boss_ch1');
   await page.evaluate(
     ([saveKey, tutKey]) => {
       localStorage.setItem(tutKey, '1');

@@ -16,11 +16,13 @@ import type { HeirloomDef } from './heirlooms';
 import { BATTLE_HOOK_NAMES } from './hooks';
 import {
   DAILY_CUSTOMER_COUNT,
-  REDEMPTION_COOLDOWN_DAYS,
+  pickDailyItems,
   type CustomerTemperament,
   type PawnItem,
 } from './pawnshop';
 import { PIXEL_PALETTE } from './pixelart';
+
+export const MIN_CHAPTER_ITEM_POOL_SIZE = 5;
 
 export interface DataValidationResult {
   valid: boolean;
@@ -487,12 +489,40 @@ export function validateChapters(
           errors.push(`${label}: itemPool references unknown item "${itemId}"`);
         }
       });
-      const uniquePoolCount = new Set(chapter.itemPool).size;
-      const maxSimultaneousRedemptions = REDEMPTION_COOLDOWN_DAYS;
-      if (uniquePoolCount - maxSimultaneousRedemptions < DAILY_CUSTOMER_COUNT) {
+      const uniqueIds = Array.from(new Set<string>(chapter.itemPool));
+      const uniquePoolCount = uniqueIds.length;
+      if (uniquePoolCount < MIN_CHAPTER_ITEM_POOL_SIZE) {
         errors.push(
-          `${label}: itemPool (${uniquePoolCount} unique items) must retain at least ${DAILY_CUSTOMER_COUNT} items after ${maxSimultaneousRedemptions}-day D1 redemption cooldown exclusion`,
+          `${label}: itemPool (${uniquePoolCount} unique items) must contain at least ${MIN_CHAPTER_ITEM_POOL_SIZE} unique items`,
         );
+      } else {
+        const poolItems = uniqueIds
+          .map((id) => itemById.get(id))
+          .filter((item): item is PawnItem => item !== undefined);
+        if (poolItems.length >= MIN_CHAPTER_ITEM_POOL_SIZE) {
+          const allOwnedDeck = poolItems.map((item) => item.cardName);
+          const allRedeemed = Object.fromEntries(poolItems.map((item, idx) => [item.id, idx + 1]));
+          const halfSplit = Math.ceil(poolItems.length / 2);
+          const halfOwnedDeck = poolItems.slice(0, halfSplit).map((item) => item.cardName);
+          const halfRedeemed = Object.fromEntries(
+            poolItems.slice(halfSplit).map((item, idx) => [item.id, idx + 1]),
+          );
+          const worstCases = [
+            { deck: allOwnedDeck },
+            { redeemedDayByItem: allRedeemed },
+            { deck: halfOwnedDeck, redeemedDayByItem: halfRedeemed },
+          ];
+          const fillsAll = worstCases.every(
+            (opts) =>
+              pickDailyItems(poolItems, CHAPTER_DAYS, () => 0.5, DAILY_CUSTOMER_COUNT, opts)
+                .length === DAILY_CUSTOMER_COUNT,
+          );
+          if (!fillsAll) {
+            errors.push(
+              `${label}: itemPool fallback chain failed to fill ${DAILY_CUSTOMER_COUNT} daily customers`,
+            );
+          }
+        }
       }
     }
 

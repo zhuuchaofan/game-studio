@@ -358,8 +358,8 @@ export function applyMorningChoice(input: {
   };
 }
 
-/** 第 1 天当客池保底：至少 1 件出伤害牌的旧物（永久自行车→飞驰 / 二胡→余音，P6 B2）。 */
-export const DAY1_GUARANTEED_DAMAGE_ITEM_IDS: readonly string[] = ['bicycle', 'erhu'];
+/** 第 1 天当客池保底：至少 1 件出伤害牌的旧物（永久自行车→飞驰 / 二胡→余音 / 口琴→口琴，P6 B2 + P12 Q12）。 */
+export const DAY1_GUARANTEED_DAMAGE_ITEM_IDS: readonly string[] = ['bicycle', 'erhu', 'harmonica'];
 
 /** P10 子项 4：第 2 天新娘剧本化赎当对应的婚戒旧物与牌名。 */
 export const BRIDE_RING_ITEM_ID = 'ring';
@@ -369,8 +369,7 @@ export const BRIDE_RING_CARD_NAME = '守诺';
 export const FATHER_WATCH_ITEM_ID = 'watch';
 export const FATHER_WATCH_CARD_NAME = '倒转';
 
-/** P11 子项 4 D1 方案 B：旧物被赎回后的冷却天数（N = 2，6 件池/日 3 位/7 天章下不抽干池子且次日与隔日均不重现）。 */
-export const REDEMPTION_COOLDOWN_DAYS = 2;
+/** P12 阶段 E D1-A：已赎旧物在本章内不再进入优先池，保留赎回日映射供三档兜底按赎回日升序排列。 */
 
 /** P11 子项 2①：开场掌柜交代（1987 口吻，21 天结构不变，叙事“出门一个月，前三周 + 月末对账尾声”）。 */
 export const SHOPKEEPER_OPENING_NOTE_LINES: readonly [string, string] = [
@@ -654,33 +653,26 @@ export interface PickDailyItemsOptions {
     deck: readonly string[];
   };
   balance?: BalanceConfig;
-  /** P11 子项 4 D2 软版：当前牌库（用于优先抽未拥有的旧物，池子不足时自动放宽到已拥有）。 */
+  /** P12 阶段 E D2 硬版：当前牌库（用于优先抽未拥有的旧物，不足时由统一三档兜底链补满）。 */
   deck?: readonly string[];
-  /** P11 子项 4 D1 方案 B：旧物最近一次被赎回的天数映射（itemId -> day）。 */
+  /** P12 阶段 E D1-A：旧物最近一次被赎回的天数映射（itemId -> day），本章内排除，第 3 档兜底按升序回流。 */
   redeemedDayByItem?: Readonly<Record<string, number>>;
-  /** P11 子项 4 D1 方案 B：赎回后冷却天数（默认 REDEMPTION_COOLDOWN_DAYS = 2）。 */
-  cooldownDays?: number;
-  /** P12 跟进 1：收当不重复硬排除（默认 true；false 仅用于 sim 旧软版对照）。 */
-  excludeOwnedHard?: boolean;
 }
 
 /**
- * Counts how many items are eligible for selection on `day` under D1 cooldown and D2 hard exclusion.
+ * Counts how many items are in Tier 1 (unowned & not redeemed in chapter) for `pickDailyItems`.
  */
 export function countEligibleDailyItems(
   items: readonly PawnItem[],
-  day: number,
+  _day: number,
   options?: PickDailyItemsOptions,
 ): number {
-  const cooldownDays = options?.cooldownDays ?? REDEMPTION_COOLDOWN_DAYS;
   const redeemedDayByItem = options?.redeemedDayByItem;
-  const excludeOwnedHard = options?.excludeOwnedHard ?? true;
-  const ownedCards =
-    excludeOwnedHard && options?.deck && options.deck.length > 0 ? new Set(options.deck) : null;
+  const ownedCards = options?.deck && options.deck.length > 0 ? new Set(options.deck) : null;
 
   let count = 0;
   for (const item of items) {
-    if (isItemOnRedemptionCooldown(item.id, day, redeemedDayByItem, cooldownDays)) {
+    if (isItemRedeemedInChapter(item.id, redeemedDayByItem)) {
       continue;
     }
     if (ownedCards && ownedCards.has(item.cardName)) {
@@ -692,31 +684,21 @@ export function countEligibleDailyItems(
 }
 
 /**
- * Checks whether an item is currently under D1 post-redemption cooldown on `day`.
- * An item redeemed on `redeemedDay` is excluded for `cooldownDays` days (0 <= day - redeemedDay <= cooldownDays).
+ * P12 §6.1 D1-A: Checks whether an item has already been redeemed during the current chapter.
  */
-export function isItemOnRedemptionCooldown(
+export function isItemRedeemedInChapter(
   itemId: string,
-  day: number,
   redeemedDayByItem?: Readonly<Record<string, number>>,
-  cooldownDays: number = REDEMPTION_COOLDOWN_DAYS,
 ): boolean {
-  if (!redeemedDayByItem || cooldownDays <= 0) {
-    return false;
-  }
-  const redeemedDay = redeemedDayByItem[itemId];
-  if (redeemedDay === undefined) {
-    return false;
-  }
-  const elapsed = day - redeemedDay;
-  return elapsed >= 0 && elapsed <= cooldownDays;
+  return Boolean(redeemedDayByItem && redeemedDayByItem[itemId] !== undefined);
 }
 
 /**
- * Picks daily customers (default 3) via Fisher-Yates shuffle with unified P11 D1+D2 rules:
- * 1. D1 cooldown exclusion: items redeemed within the last N days are excluded (fallback only if pool < count).
- * 2. D2 soft unowned preference: unowned eligible items are prioritized first, relaxing to owned eligible items when pool is insufficient.
- * 3. Fallback: if eligible pool is smaller than `count`, relaxes to cooldown items (oldest redemption first) so pool is never empty.
+ * Picks daily customers (default 3) via Fisher-Yates shuffle with P12 §6.1 unified D1-A + D2-hard fallback chain:
+ * 1. Tier 1 (priority): unowned in deck AND not redeemed in this chapter.
+ * 2. Tier 2 (fallback): owned in deck AND not redeemed in this chapter.
+ * 3. Tier 3 (fallback): redeemed in this chapter, sorted by redeemedDay ascending (oldest redemption returns first).
+ * Always fills `count` items whenever `items.length >= count`.
  * Also preserves Day 1 damage guarantee (P6 B2) and Day 2 post-Night-1-loss recovery (P10).
  */
 export function pickDailyItems(
@@ -727,38 +709,28 @@ export function pickDailyItems(
   options?: PickDailyItemsOptions,
 ): PawnItem[] {
   const shuffled = shuffleItems(items, rng);
-  const cooldownDays = options?.cooldownDays ?? REDEMPTION_COOLDOWN_DAYS;
   const redeemedDayByItem = options?.redeemedDayByItem;
+  const ownedCards = options?.deck && options.deck.length > 0 ? new Set(options.deck) : null;
 
-  const eligible: PawnItem[] = [];
-  const onCooldown: PawnItem[] = [];
+  const unownedNotRedeemed: PawnItem[] = [];
+  const ownedNotRedeemed: PawnItem[] = [];
+  const redeemed: PawnItem[] = [];
   for (const item of shuffled) {
-    if (isItemOnRedemptionCooldown(item.id, day, redeemedDayByItem, cooldownDays)) {
-      onCooldown.push(item);
+    if (isItemRedeemedInChapter(item.id, redeemedDayByItem)) {
+      redeemed.push(item);
+    } else if (ownedCards && ownedCards.has(item.cardName)) {
+      ownedNotRedeemed.push(item);
     } else {
-      eligible.push(item);
+      unownedNotRedeemed.push(item);
     }
   }
 
-  // Sort cooldown fallback oldest-redeemed first so if forced to fall back, the least recently redeemed returns first
-  if (onCooldown.length > 1 && redeemedDayByItem) {
-    onCooldown.sort((a, b) => (redeemedDayByItem[a.id] ?? 0) - (redeemedDayByItem[b.id] ?? 0));
+  // Sort redeemed fallback oldest-redeemed first so the most recently redeemed returns last
+  if (redeemed.length > 1 && redeemedDayByItem) {
+    redeemed.sort((a, b) => (redeemedDayByItem[a.id] ?? 0) - (redeemedDayByItem[b.id] ?? 0));
   }
 
-  const excludeOwnedHard = options?.excludeOwnedHard ?? true;
-  const ownedCards = options?.deck && options.deck.length > 0 ? new Set(options.deck) : null;
-  let orderedPool: PawnItem[];
-  if (excludeOwnedHard) {
-    orderedPool = ownedCards
-      ? eligible.filter((item) => !ownedCards.has(item.cardName))
-      : [...eligible];
-  } else if (ownedCards) {
-    const eligibleUnowned = eligible.filter((item) => !ownedCards.has(item.cardName));
-    const eligibleOwned = eligible.filter((item) => ownedCards.has(item.cardName));
-    orderedPool = [...eligibleUnowned, ...eligibleOwned, ...onCooldown];
-  } else {
-    orderedPool = [...eligible, ...onCooldown];
-  }
+  const orderedPool = [...unownedNotRedeemed, ...ownedNotRedeemed, ...redeemed];
 
   const picked = orderedPool.slice(0, count);
 
