@@ -694,7 +694,7 @@
 - **存档字段与落点（`SAVE_VERSION = 3` 不升版）**：
   - `ChapterSaveState` 合计 6 个 P12 数组字段（阶段 C 的 `heirlooms`、`heirloomMilestonesClaimed` + 阶段 D 的 `seenItems?: string[]`、`seenCards?: string[]`、`redeemedItems?: string[]`、`diaryFragments?: string[]`）。
   - `createInitialChapterState` 初始化为空数组；`cloneChapterState` 显式 `[...]` 深拷贝；`isValidSaveData` 严格校验 string/number 数组（非法判损坏隔离，老存档缺省按空数组处理）；`applyDayResult` 四分支原样透传不变。
-  - **写入点**：收当成交（`PawnshopScene.handleOffer`）写入 `seenItems`、`seenCards` 并立刻落盘；接受赎当（`PawnshopScene.handleRedemption`）写入 `redeemedItems` 与 `seenItems`；战斗胜利得牌（`ResultScene`）写入 `seenCards`。
+  - **写入点**：收当成交（`PawnshopScene.handleOffer`）写入 `seenItems`、`seenCards` 并落盘（进入老物件替换面板时延迟至替换/跳过完成后落盘，与阶段 C 的延迟落盘一致）；接受赎当（`PawnshopScene.handleRedemption`）写入 `redeemedItems` 与 `seenItems`；战斗胜利得牌（`ResultScene`）写入 `seenCards`。
 - **赎当后日谈 12 条（`src/data/collection.json`）**：
 
 | 旧物 | 赎当后日谈 |
