@@ -10,6 +10,7 @@ import {
   type ComposedBossResult,
 } from '../game/bossComposition';
 import { cloneChapterState, deriveSideQuestSeed, getChapterConfig, getNightDemonHpBonus, getRedemptionMultiplier, getSkipCustomerReputationDelta, isBossDay, pickSideQuestItem, removeCardAtIndex, selectDemonForChapterDay, type PactId } from '../game/chapters';
+import { recordDealCollection, recordRedemptionCollection } from '../game/collection';
 import { consumeFirstGlossaryTip, hasSeenGlossaryTerm, type GlossaryTermId } from '../game/glossary';
 import {
   addHeirloom,
@@ -21,6 +22,7 @@ import {
   replaceHeirloomAtIndex,
   type HeirloomDef,
 } from '../game/heirlooms';
+import { LedgerOverlay, type LedgerTab } from '../game/ledgerOverlay';
 import {
   advanceCustomer,
   applyMorningChoice,
@@ -103,8 +105,10 @@ import {
   PAWNSHOP_CALENDAR_BUTTON,
   PAWNSHOP_FEEDBACK_NEXT_BUTTON,
   PAWNSHOP_HUD_HEIGHT,
+  PAWNSHOP_LEDGER_BUTTON,
   PAWNSHOP_SKIP_BUTTON,
   PAWNSHOP_SUMMARY_ENTER_NIGHT_BUTTON,
+  PAWNSHOP_SUMMARY_LEDGER_BUTTON,
   PAWNSHOP_SUMMARY_RETURN_TITLE_BUTTON,
   PAWNSHOP_TIER_BUTTONS,
   PAWNSHOP_TRIM_NEXT_BUTTON,
@@ -127,6 +131,8 @@ export {
   MORNING_OPTION_BUTTONS,
   PACT_OPTION_BUTTONS,
   PAWNSHOP_CALENDAR_BUTTON,
+  PAWNSHOP_LEDGER_BUTTON,
+  PAWNSHOP_SUMMARY_LEDGER_BUTTON,
   REDEMPTION_ACCEPT_BUTTON,
   REDEMPTION_REJECT_BUTTON,
   SIDE_QUEST_ACCEPT_BUTTON,
@@ -182,6 +188,7 @@ export class PawnshopScene extends Phaser.Scene {
   private hudDeckText!: Phaser.GameObjects.BitmapText;
   private hudProgressText!: Phaser.GameObjects.BitmapText;
   private hudDayText!: Phaser.GameObjects.BitmapText;
+  private ledgerOverlay!: LedgerOverlay;
   private handleWindowResize?: () => void;
 
   constructor() {
@@ -241,6 +248,10 @@ export class PawnshopScene extends Phaser.Scene {
     this.heirloomTooltip = undefined;
     this.pendingHeirloomQueue = [];
     this.afterHeirloomReplaceCallback = null;
+    this.ledgerOverlay = new LedgerOverlay(this, () => ({
+      deck: this.state.deck,
+      chapter: this.save.chapter,
+    }));
     this.tutorial = createTutorialState({
       day: this.state.day,
       tutorialDone: loadTutorialDone(),
@@ -490,6 +501,7 @@ export class PawnshopScene extends Phaser.Scene {
                 effectText: pendingOffer.effectText,
               }
             : null,
+          ledger: this.ledgerOverlay.getSnapshot(),
         };
       },
     };
@@ -533,39 +545,60 @@ export class PawnshopScene extends Phaser.Scene {
     this.add.rectangle(centerX, HUD_HEIGHT - 2, BASE_WIDTH, 2, PALETTE.brass.num);
     this.add.rectangle(centerX, HUD_HEIGHT, BASE_WIDTH, 2, PALETTE.ink.num);
 
-    addPixelText(this, 6, hudY, '钱:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudMoneyText = addPixelText(this, 42, hudY, '', {
+    addPixelText(this, 4, hudY, '钱:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudMoneyText = addPixelText(this, 41, hudY, '', {
       color: PALETTE.lampYellow.hex,
       origin: [0, 0.5],
     });
 
-    addPixelText(this, 90, hudY, '命：', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudHpText = addPixelText(this, 138, hudY, '', {
+    addPixelText(this, 88, hudY, '命:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudHpText = addPixelText(this, 125, hudY, '', {
       color: PALETTE.paperWhite.hex,
       origin: [0, 0.5],
     });
 
-    addPixelText(this, 204, hudY, '口碑:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudRepText = addPixelText(this, 264, hudY, '', {
+    addPixelText(this, 191, hudY, '口碑:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudRepText = addPixelText(this, 252, hudY, '', {
       color: PALETTE.brass.hex,
       origin: [0, 0.5],
     });
 
-    addPixelText(this, 304, hudY, '牌:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
-    this.hudDeckText = addPixelText(this, 340, hudY, '', {
+    addPixelText(this, 288, hudY, '牌:', { color: PALETTE.candle.hex, origin: [0, 0.5] });
+    this.hudDeckText = addPixelText(this, 325, hudY, '', {
       color: PALETTE.lampYellow.hex,
       origin: [0, 0.5],
     });
 
-    this.hudProgressText = addPixelText(this, 372, hudY, '', {
+    this.hudProgressText = addPixelText(this, 354, hudY, '', {
       color: PALETTE.oldPaper.hex,
       origin: [0, 0.5],
     });
 
-    this.hudDayText = addPixelText(this, 550, hudY, '', {
+    this.hudDayText = addPixelText(this, 514, hudY, '', {
       color: PALETTE.paperWhite.hex,
       origin: [1, 0.5],
     });
+
+    // P12 阶段 D：顶部 HUD「账本」按钮（552×288 模态覆层入口）
+    const ledgerBtn = this.add
+      .rectangle(
+        PAWNSHOP_LEDGER_BUTTON.x,
+        PAWNSHOP_LEDGER_BUTTON.y,
+        PAWNSHOP_LEDGER_BUTTON.width,
+        PAWNSHOP_LEDGER_BUTTON.height,
+        PALETTE.oldPaper.num,
+      )
+      .setStrokeStyle(2, PALETTE.ink.num)
+      .setInteractive({ useHandCursor: true });
+
+    addPixelText(this, PAWNSHOP_LEDGER_BUTTON.x, PAWNSHOP_LEDGER_BUTTON.y, '账本', {
+      color: PALETTE.ink.hex,
+      origin: 0.5,
+    });
+
+    ledgerBtn.on('pointerover', () => ledgerBtn.setFillStyle(PALETTE.lampYellow.num));
+    ledgerBtn.on('pointerout', () => ledgerBtn.setFillStyle(PALETTE.oldPaper.num));
+    ledgerBtn.on('pointerdown', () => this.openLedgerOverlay('deck'));
 
     // P9 顶部 HUD「台历」按钮（打开独立全屏台历屏，返回状态不丢）
     const calBtn = this.add
@@ -1941,7 +1974,7 @@ export class PawnshopScene extends Phaser.Scene {
     audio.playSfx(accept ? 'redeem_deal' : 'button_click');
     this.state = resolveRedemption(this.state, accept);
 
-    const nextChapter = cloneChapterState(this.save.chapter);
+    let nextChapter = cloneChapterState(this.save.chapter);
     if (wasBride) {
       nextChapter.day2BrideRedemptionDone = true;
     }
@@ -1953,6 +1986,11 @@ export class PawnshopScene extends Phaser.Scene {
         ...(nextChapter.redeemedDayByItem ?? {}),
         [redeemedItemId]: this.state.day,
       };
+      nextChapter = recordRedemptionCollection(
+        nextChapter,
+        redeemedItemId,
+        this.state.deck.length,
+      );
     } else if (!accept && !wasBride && !wasFather && redeemedItemId) {
       nextChapter.rejectedRedemptionDayByItem = {
         ...(nextChapter.rejectedRedemptionDayByItem ?? {}),
@@ -2325,15 +2363,28 @@ export class PawnshopScene extends Phaser.Scene {
     const chapterCfg = getChapterConfig(this.save.chapter.currentChapter);
     const isDay3Rumor = this.save.chapter.dayInChapter === 3;
 
-    // 标题条
-    const titleY = isDay3Rumor ? 64 : 76;
-    const titleH = isDay3Rumor ? 32 : 40;
+    // 标题条（y=48..80 与结算主卡片顶边齐平，右侧放「账本」入口不挡两按钮）
+    const titleY = 64;
+    const titleH = 32;
     this.contentLayer.add(this.add.rectangle(centerX, titleY, cardWidth, titleH, PALETTE.deepWood.num));
     this.contentLayer.add(
       addPixelText(this, centerX, titleY, `第${this.state.day}天 · 白天结束`, {
         color: PALETTE.lampYellow.hex,
         origin: 0.5,
       }),
+    );
+
+    this.addActionButton(
+      PAWNSHOP_SUMMARY_LEDGER_BUTTON.x,
+      PAWNSHOP_SUMMARY_LEDGER_BUTTON.y,
+      PAWNSHOP_SUMMARY_LEDGER_BUTTON.width,
+      PAWNSHOP_SUMMARY_LEDGER_BUTTON.height,
+      '账本',
+      null,
+      () => this.openLedgerOverlay('deck'),
+      false,
+      PALETTE.oldPaper.num,
+      PALETTE.lampYellow.num,
     );
 
     // 钱与口碑摘要条
@@ -2694,6 +2745,12 @@ export class PawnshopScene extends Phaser.Scene {
       if (this.state.day === 1 && item.id === BRIDE_RING_ITEM_ID) {
         this.save.chapter.day1RingPawned = true;
       }
+      this.save.chapter = recordDealCollection(
+        this.save.chapter,
+        item.id,
+        item.cardName,
+        this.state.deck.length,
+      );
       audio.playSfx('deal_closed');
       this.time.delayedCall(140, () => {
         if (this.scene.isActive()) {
@@ -2733,9 +2790,7 @@ export class PawnshopScene extends Phaser.Scene {
       if (this.state.pawnPrices) {
         savePawnPrices(this.state.pawnPrices);
       }
-      if (milestoneToast) {
-        saveGame(this.save);
-      }
+      saveGame(this.save);
     }
 
     this.renderCurrentPhase();
@@ -3032,6 +3087,15 @@ export class PawnshopScene extends Phaser.Scene {
     }
   }
 
+  private openLedgerOverlay(initialTab: LedgerTab = 'deck'): void {
+    this.dismissShopkeeperBanner();
+    this.clearGlossaryTip();
+    this.clearHeirloomTooltip();
+    audio.unlock();
+    audio.playSfx('button_click');
+    this.ledgerOverlay.open(initialTab);
+  }
+
   private syncInputBounds(): void {
     const refresh = (): void => {
       if (this.scene.isActive()) {
@@ -3049,6 +3113,7 @@ export class PawnshopScene extends Phaser.Scene {
       this.clearGlossaryTip();
       this.clearHeirloomTooltip();
       this.dismissShopkeeperBanner();
+      this.ledgerOverlay?.destroy();
       if (this.handleWindowResize) {
         window.removeEventListener('resize', this.handleWindowResize);
         this.handleWindowResize = undefined;

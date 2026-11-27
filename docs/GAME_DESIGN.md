@@ -678,3 +678,41 @@
 - **存档字段（`SAVE_VERSION = 3` 不升版）**：
   - `ChapterSaveState` 新增可选字段 `heirlooms?: string[]`、`heirloomMilestonesClaimed?: number[]`。
   - 老存档缺省按空数组处理；`isValidSaveData` 严格校验类型（非 string/number 数组判损坏隔离）；`cloneChapterState` 显式深拷贝；`applyDayResult` 四分支原样透传不丢。
+
+### 25.5 阶段 D：账本与收集
+
+- **账本覆层（`src/game/ledgerOverlay.ts`、`src/game/layout.ts`）**：
+  - 居中模态覆层 `552×288`（`640×360` 逻辑画布下 `x=44..596, y=36..324`），打开时暂停白天交互；点外部遮罩空白处或右上角常驻 `×` 关闭（像素字库无「闭」字，禁用「关闭」）。
+  - **两处入口**：白天顶部 HUD「账本」按钮（紧邻「台历」，与钱/命/口碑/牌/进度/第几天横向无重叠）与日间结算页右上角「账本」按钮（不挡进入夜晚与返回标题按钮）。
+  - **三页 Tab**：
+    1. **牌库**：按获得顺序列出当前牌组全部卡牌（>12 张翻页），正式取代「等 N 张」截断展示。
+    2. **老物件**：一屏展示全部 7 件传家宝（已拥有 / 未拥有、短标、效果与故事）。
+    3. **收集**：顶部计数行「收集 X/12」「牌 Y/29」「老物件 Z/7」；中部可滚动展示 12 件旧物格（已赎格下直接显示「赎当后日谈」）、29 张可收集牌格与 7 件老物件格；底部固定《老掌柜的日记》3 格碎片（未解锁显示「未找到」）。
+- **收集计数口径（`src/game/collection.ts`）**：
+  - 旧物分母：`items.json` 全部 `12` 件；老物件分母：`heirlooms.json` 全部 `7` 件。
+  - 卡牌分母：由 `cards.filter(c => !c.unplayable).length` 动态计算（排除不可出惩罚卡「欠条」，当前共 `29` 张）。
+- **存档字段与落点（`SAVE_VERSION = 3` 不升版）**：
+  - `ChapterSaveState` 合计 6 个 P12 数组字段（阶段 C 的 `heirlooms`、`heirloomMilestonesClaimed` + 阶段 D 的 `seenItems?: string[]`、`seenCards?: string[]`、`redeemedItems?: string[]`、`diaryFragments?: string[]`）。
+  - `createInitialChapterState` 初始化为空数组；`cloneChapterState` 显式 `[...]` 深拷贝；`isValidSaveData` 严格校验 string/number 数组（非法判损坏隔离，老存档缺省按空数组处理）；`applyDayResult` 四分支原样透传不变。
+  - **写入点**：收当成交（`PawnshopScene.handleOffer`）写入 `seenItems`、`seenCards` 并落盘（进入老物件替换面板时延迟至替换/跳过完成后落盘，与阶段 C 的延迟落盘一致）；接受赎当（`PawnshopScene.handleRedemption`）写入 `redeemedItems` 与 `seenItems`；战斗胜利得牌（`ResultScene`）写入 `seenCards`。
+- **赎当后日谈 12 条（`src/data/collection.json`）**：
+
+| 旧物 | 赎当后日谈 |
+|---|---|
+| 旧手表 | 父亲回来赎走了手表，说药费有着落了 |
+| 婚戒 | 新娘赎走了婚戒，说等的人回来了 |
+| 旧书 | 学生赎走了旧书，说考上了想回来看看 |
+| 永久自行车 | 父亲赎走了自行车，说儿子回来就骑它 |
+| 二胡 | 拉琴的老人赎走了二胡，说弦还能再拉几年 |
+| 邮票册 | 攒邮票的人赎走了册子，说最后一页满了 |
+| 布票 | 布票赎走了，孩子的衣有着落了 |
+| 口琴 | 工人赎走了口琴，说收了工还要用它 |
+| 药箱 | 药箱赎走了，救人的老头又背上它了 |
+| 账本 | 账本赎走了，对门又开始记赊账了 |
+| 铁皮箱 | 铁皮箱赎走了，出门的人又把它背上了 |
+| 金表 | 金表赎走了，当表的人说家里日子好起来了 |
+
+- **《老掌柜的日记》碎片 3 条**：
+  1. `first_clear`（首次通关 Boss 胜解锁）：「腊月前的账总算平了」（取自 `chapters.json` 的 `diary.body` 首句）。
+  2. `redeem_5_items`（赎回满 5 件不同旧物解锁）：「赎出去的东西，总有人回来拿」。
+  3. `own_10_cards`（持有牌组满 10 张解锁）：「柜子里的牌，越攒越好」。

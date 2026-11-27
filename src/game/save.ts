@@ -275,6 +275,30 @@ function isValidChapterSaveState(raw: unknown): raw is ChapterSaveState {
   ) {
     return false;
   }
+  if (
+    ch.seenItems !== undefined &&
+    (!Array.isArray(ch.seenItems) || !ch.seenItems.every((id) => typeof id === 'string'))
+  ) {
+    return false;
+  }
+  if (
+    ch.seenCards !== undefined &&
+    (!Array.isArray(ch.seenCards) || !ch.seenCards.every((id) => typeof id === 'string'))
+  ) {
+    return false;
+  }
+  if (
+    ch.redeemedItems !== undefined &&
+    (!Array.isArray(ch.redeemedItems) || !ch.redeemedItems.every((id) => typeof id === 'string'))
+  ) {
+    return false;
+  }
+  if (
+    ch.diaryFragments !== undefined &&
+    (!Array.isArray(ch.diaryFragments) || !ch.diaryFragments.every((id) => typeof id === 'string'))
+  ) {
+    return false;
+  }
   return true;
 }
 
